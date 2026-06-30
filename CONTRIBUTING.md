@@ -4,6 +4,7 @@
 - develop: 통합 개발
 - feature/<scope>-<desc>: 기능 개발 브랜치
 
+
 ## 커밋 규칙
 - .gitmessage.txt 템플릿 사용
 - 타입: 내용
