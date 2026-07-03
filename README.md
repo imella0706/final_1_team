@@ -53,7 +53,8 @@ python -m http.server 5500
 
 `http://localhost:5500`에서 모델을 선택해 같은 광고 입력의 결과를 비교할 수 있습니다.
 
-```cmd(vision model 연결)
+```cmd
+vision model 연결
 API 서버 실행
 cd /d C:\final_1_team\apps\api
 uvicorn app.extensions.ad_content.main:app --host 127.0.0.1 --port 8000
