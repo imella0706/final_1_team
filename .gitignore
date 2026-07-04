@@ -22,6 +22,8 @@ coverage/
 storage/
 uploads/
 outputs/
+*.sqlite3
+*.sqlite
 
 # Editors and OS
 .idea/

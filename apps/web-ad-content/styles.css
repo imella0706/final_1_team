@@ -627,21 +627,6 @@ select:focus {
   letter-spacing: 0.12em;
 }
 
-.hashtags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 5px;
-}
-
-.hashtags span {
-  padding: 5px 7px;
-  border-radius: 4px;
-  color: #5e54a4;
-  background: #f0ebfa;
-  font-size: 9px;
-  font-weight: 750;
-}
-
 .safety-check {
   margin-top: 14px;
   padding: 11px;

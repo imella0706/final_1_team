@@ -27,8 +27,8 @@ class ImageModelOption(BaseModel):
 
 class AdImageRequest(BaseModel):
     model: ImageModel = ImageModel.FLUX_SCHNELL
-    prompt: str = Field(min_length=1, max_length=2000)
-    negative_prompt: str | None = Field(default=None, max_length=1000)
+    prompt: str = Field(min_length=1, max_length=4000)
+    negative_prompt: str | None = Field(default=None, max_length=2000)
     width: int = Field(default=1024, ge=512, le=1536)
     height: int = Field(default=1280, ge=512, le=1536)
     guidance_scale: float = Field(default=3.5, ge=1, le=20)
@@ -55,6 +55,15 @@ class AdContentRequest(BaseModel):
 class AdContentResponse(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
+    input: dict[str, object] = Field(default_factory=dict)
+    ad_copy: dict[str, list[str]] = Field(default_factory=dict)
     copy_result: AdCopyResponse = Field(alias="copy")
+    marketing_strategy: dict[str, object] = Field(default_factory=dict)
+    visual_brief: dict[str, object] = Field(default_factory=dict)
+    product_visualization: dict[str, object] = Field(default_factory=dict)
     image: AdImageResponse
     image_prompt: str
+    negative_prompt: str = ""
+    image_url: str = ""
+    validation: dict[str, object] = Field(default_factory=dict)
+    models: dict[str, str | None] = Field(default_factory=dict)

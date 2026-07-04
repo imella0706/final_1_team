@@ -199,14 +199,6 @@ function renderResult(input, result) {
     `data:${image.media_type};base64,${image.image_base64}`;
   document.querySelector("#image-caption").textContent = result.image_prompt;
 
-  const hashtags = document.querySelector("#hashtags");
-  hashtags.replaceChildren();
-  copy.hashtags.forEach((hashtag) => {
-    const chip = document.createElement("span");
-    chip.textContent = hashtag;
-    hashtags.append(chip);
-  });
-
   payloadPreview.textContent = JSON.stringify(
     {
       model_1_input: input.copy,
@@ -214,9 +206,12 @@ function renderResult(input, result) {
       model_2_input: {
         model: input.image_model,
         prompt: result.image_prompt,
+        negative_prompt: result.negative_prompt,
         width: input.image_width,
         height: input.image_height,
       },
+      validation: result.validation,
+      models: result.models,
       model_2_output: {
         model: image.model,
         media_type: image.media_type,
