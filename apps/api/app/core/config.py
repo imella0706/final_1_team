@@ -41,6 +41,10 @@ class Settings(BaseSettings):
     openjourney_model: str | None = None
     image_provider: str = "huggingface"
     image_prompt_template: str = "generic"
+    comfyui_base_url: str = "http://127.0.0.1:8188"
+    comfyui_workflow_path: str | None = None
+    comfyui_timeout_seconds: float = 300
+    comfyui_poll_interval_seconds: float = 1
     image_validation_enabled: bool = False
     image_validator_model_name: str | None = None
     image_validation_threshold: float = 0.24
