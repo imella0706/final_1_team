@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="BrandMate 광고 문구와 이미지 생성 모델 통합 화면" />
+    <title>BrandMate Ad Content Studio</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <a class="brand" href="#" aria-label="BrandMate">
+        <span class="brand-mark" aria-hidden="true">B</span>
+        <span>
+          <strong>BrandMate</strong>
+          <small>CONTENT STUDIO</small>
+        </span>
+      </a>
+      <div class="topbar-status">
+        <span class="status-dot" aria-hidden="true"></span>
+        <span id="api-state">API 확인 중</span>
+      </div>
+    </header>
+
+    <main>
+      <section class="intro">
+        <div>
+          <p class="eyebrow">COPY + IMAGE MODEL PIPELINE</p>
+          <h1>광고 문구와 이미지를<br /><em>한 번에 생성</em></h1>
+          <p class="intro-copy">
+            기존 광고 문구 모델 흐름에 이미지 생성 모델 선택을 더해, 입력한 광고 정보에 맞는
+            최종 광고 콘텐츠를 실제 이미지 모델 결과로 확인합니다.
+          </p>
+        </div>
+        <div class="flow-summary" aria-label="생성 흐름">
+          <span>입력</span><i></i><span>카피 모델</span><i></i><span>이미지 모델</span><i></i><span>콘텐츠</span>
+        </div>
+      </section>
+
+      <div class="workspace">
+        <section class="panel input-panel">
+          <div class="panel-heading">
+            <div>
+              <span class="step-number">01</span>
+              <h2>광고 정보</h2>
+            </div>
+            <button class="text-button" id="reset-button" type="button">초기화</button>
+          </div>
+
+          <form id="ad-form">
+            <div class="model-grid">
+              <div class="model-field">
+                <label for="copy-model">광고 문구 모델 <b>필수</b></label>
+                <select id="copy-model" name="copyModel"></select>
+                <small id="copy-model-help">모델 정보를 불러오는 중입니다.</small>
+              </div>
+              <div class="model-field image">
+                <label for="image-model">이미지 생성 모델 <b>필수</b></label>
+                <select id="image-model" name="imageModel"></select>
+                <small id="image-model-help">모델 정보를 불러오는 중입니다.</small>
+              </div>
+            </div>
+
+            <fieldset>
+              <legend>업종</legend>
+              <div class="choice-grid five">
+                <label><input type="radio" name="businessType" value="cafe" checked /><span>카페</span></label>
+                <label><input type="radio" name="businessType" value="bakery" /><span>베이커리</span></label>
+                <label><input type="radio" name="businessType" value="dessert" /><span>디저트</span></label>
+                <label><input type="radio" name="businessType" value="restaurant" /><span>음식점</span></label>
+                <label><input type="radio" name="businessType" value="pub" /><span>주점</span></label>
+              </div>
+            </fieldset>
+
+            <fieldset>
+              <legend>상황</legend>
+              <div class="choice-grid three">
+                <label><input type="radio" name="situation" value="new_menu" checked /><span>신메뉴</span></label>
+                <label><input type="radio" name="situation" value="discount" /><span>할인</span></label>
+                <label><input type="radio" name="situation" value="event" /><span>이벤트</span></label>
+                <label><input type="radio" name="situation" value="delivery" /><span>배달</span></label>
+                <label><input type="radio" name="situation" value="takeout" /><span>포장</span></label>
+                <label><input type="radio" name="situation" value="visit" /><span>방문 유도</span></label>
+              </div>
+            </fieldset>
+
+            <fieldset>
+              <legend>타겟</legend>
+              <div class="choice-grid five">
+                <label><input type="checkbox" name="target" value="teens" /><span>10대</span></label>
+                <label><input type="checkbox" name="target" value="twenties" checked /><span>20대</span></label>
+                <label><input type="checkbox" name="target" value="office_workers" checked /><span>직장인</span></label>
+                <label><input type="checkbox" name="target" value="families" /><span>가족</span></label>
+                <label><input type="checkbox" name="target" value="couples" /><span>커플</span></label>
+              </div>
+            </fieldset>
+
+            <div class="two-columns">
+              <fieldset>
+                <legend>톤</legend>
+                <select name="tone">
+                  <option value="emotional">감성적</option>
+                  <option value="friendly">친근한</option>
+                  <option value="playful">재치있는</option>
+                  <option value="premium">고급스러운</option>
+                </select>
+              </fieldset>
+              <fieldset>
+                <legend>채널</legend>
+                <select name="channel">
+                  <option value="instagram">인스타그램</option>
+                  <option value="naver_blog">네이버 블로그</option>
+                  <option value="delivery_app">배달앱</option>
+                  <option value="store_poster">매장 포스터</option>
+                </select>
+              </fieldset>
+            </div>
+
+            <div class="field">
+              <label for="business-name">상호명 <b>필수</b></label>
+              <input id="business-name" name="businessName" value="오후의 조각" maxlength="100" required />
+            </div>
+
+            <div class="field">
+              <label for="products">상품 <b>필수</b></label>
+              <input id="products" name="products" value="수제 딸기 티라미수, 피치에이드" required />
+              <small>쉼표로 여러 상품을 구분할 수 있습니다.</small>
+            </div>
+
+            <div class="field">
+              <label for="features">강조할 특징</label>
+              <textarea id="features" name="features" rows="3">매일 아침 직접 만드는 디저트
+평일 오전 11시부터 오후 2시까지 런치 세트 운영</textarea>
+            </div>
+
+            <div class="field">
+              <label for="prohibited">금지 표현</label>
+              <input id="prohibited" name="prohibited" value="최고, 무조건, 인생 맛집" />
+            </div>
+
+            <button class="generate-button" type="submit">
+              <span>광고 콘텐츠 생성</span>
+              <span aria-hidden="true">→</span>
+            </button>
+          </form>
+        </section>
+
+        <section class="result-column" aria-live="polite">
+          <div class="panel process-panel">
+            <div class="panel-heading">
+              <div>
+                <span class="step-number">02</span>
+                <h2>처리 과정</h2>
+              </div>
+              <span class="run-state" id="run-state">대기</span>
+            </div>
+
+            <ol class="pipeline" id="pipeline">
+              <li data-stage="input"><span>IN</span><strong>입력 정리</strong><small>대기</small></li>
+              <li data-stage="copy"><span>M1</span><strong>광고 문구 모델</strong><small>대기</small></li>
+              <li data-stage="bridge"><span>BR</span><strong>이미지 프롬프트</strong><small>대기</small></li>
+              <li data-stage="image"><span>M2</span><strong>이미지 생성 모델</strong><small>대기</small></li>
+            </ol>
+
+            <div class="error-box" id="error-box" hidden>
+              <strong>생성에 실패했습니다</strong>
+              <p id="error-message"></p>
+            </div>
+
+            <details class="payload-box">
+              <summary>모델 간 전달 데이터 보기 <span>JSON</span></summary>
+              <pre id="payload-preview">아직 생성된 데이터가 없습니다.</pre>
+            </details>
+          </div>
+
+          <div class="panel output-panel is-empty" id="output-panel">
+            <div class="empty-state" id="empty-state">
+              <strong>아직 만들어진 광고가 없습니다</strong>
+              <p>광고 정보를 확인하고 콘텐츠 생성을 실행해 주세요.</p>
+            </div>
+
+            <div class="generated-content" id="generated-content" hidden>
+              <div class="panel-heading output-heading">
+                <div>
+                  <span class="step-number">03</span>
+                  <h2>최종 광고 콘텐츠</h2>
+                </div>
+                <span class="complete-badge">완료</span>
+              </div>
+
+              <div class="result-grid">
+                <article class="copy-result">
+                  <div class="result-label">AD COPY <span id="result-copy-model"></span></div>
+                  <p class="context-line" id="context-line"></p>
+                  <h3 id="headline"></h3>
+                  <p class="body-copy" id="body-copy"></p>
+                  <div class="result-block">
+                    <small>CTA</small>
+                    <strong id="cta"></strong>
+                  </div>
+                  <div class="safety-check">
+                    <span>✓</span>
+                    <div><strong>금지어 검토 결과</strong><small id="safety-copy"></small></div>
+                  </div>
+                </article>
+
+                <article class="image-result">
+                  <div class="result-label">AD IMAGE <span id="result-image-model"></span></div>
+                  <figure class="generated-image-frame">
+                    <img id="generated-image" alt="생성된 광고 이미지" />
+                  </figure>
+                  <p class="image-caption" id="image-caption"></p>
+                </article>
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
+    </main>
+
+    <script src="./app.js"></script>
+  </body>
+</html>

@@ -1,0 +1,31 @@
+[project]
+name = "brandmate-api"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = [
+  "fastapi>=0.115",
+  "httpx>=0.27",
+  "pydantic>=2.0",
+  "pydantic-settings>=2.0",
+  "uvicorn[standard]>=0.30",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.0",
+  "ruff>=0.8",
+]
+image = [
+  "accelerate>=0.33",
+  "diffusers>=0.30",
+  "safetensors>=0.4",
+  "torch>=2.3",
+  "transformers>=4.43",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100

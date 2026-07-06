@@ -2,3 +2,30 @@ node_modules/
 dist/
 .env
 .DS_Store
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.venv/
+*.egg-info/
+
+# Next.js
+.next/
+coverage/
+
+# Generated/user assets
+storage/
+uploads/
+outputs/
+*.sqlite3
+*.sqlite
+
+# Editors and OS
+.idea/
+.vscode/
+Thumbs.db

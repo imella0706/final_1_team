@@ -1,0 +1,305 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="소상공인 광고 문구와 이미지 생성 과정을 확인하는 BrandMate 테스트 페이지"
+    />
+    <title>BrandMate · 광고 생성 테스트</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <a class="brand" href="#" aria-label="BrandMate 홈">
+        <span class="brand-mark" aria-hidden="true">B</span>
+        <span>
+          <strong>BrandMate</strong>
+          <small>AD LAB</small>
+        </span>
+      </a>
+      <div class="topbar-status">
+        <span class="status-dot" aria-hidden="true"></span>
+        테스트 환경
+        <span class="mode-badge">LIVE COPY · MOCK IMAGE</span>
+      </div>
+    </header>
+
+    <main>
+      <section class="intro">
+        <div>
+          <p class="eyebrow">AD CREATION WORKBENCH</p>
+          <h1>아이디어가 광고가 되는<br /><em>두 번의 생성 과정</em></h1>
+          <p class="intro-copy">
+            소상공인의 언어로 입력하고, 카피 모델과 이미지 모델 사이에
+            어떤 정보가 오가는지 직접 확인해보세요.
+          </p>
+        </div>
+        <div class="flow-summary" aria-label="생성 흐름 요약">
+          <span>01 입력</span><i></i><span>02 카피</span><i></i><span>03 이미지</span>
+        </div>
+      </section>
+
+      <div class="workspace">
+        <section class="panel input-panel">
+          <div class="panel-heading">
+            <div>
+              <span class="step-number">01</span>
+              <h2>광고 정보 입력</h2>
+            </div>
+            <button class="text-button" id="reset-button" type="button">초기화</button>
+          </div>
+
+          <form id="ad-form">
+            <div class="model-field">
+              <div class="model-field-heading">
+                <label for="copy-model">광고 문구 모델 <b>필수</b></label>
+                <span id="api-connection">API 확인 중</span>
+              </div>
+              <select id="copy-model" name="model" aria-describedby="model-help">
+                <option
+                  value="Qwen/Qwen2.5-7B-Instruct"
+                  data-note="추천 · 한국어 광고 문구의 기본 비교 모델"
+                  selected
+                >Qwen 2.5 7B Instruct · 7.6B</option>
+                <option
+                  value="meta-llama/Llama-3.1-8B-Instruct"
+                  data-note="접근 동의 필요 · Meta Llama 라이선스"
+                >Llama 3.1 8B Instruct · 8B</option>
+                <option
+                  value="mistralai/Mistral-7B-Instruct-v0.3"
+                  data-note="로컬 전용 · 현재 HF 호스팅 Provider 없음"
+                >Mistral 7B Instruct v0.3 · 7B</option>
+                <option
+                  value="google/gemma-2-9b-it"
+                  data-note="현재 기본 HF Router 미지원 · 별도 서버 필요"
+                >Gemma 2 9B Instruct · 9B</option>
+                <option
+                  value="microsoft/Phi-4-mini-instruct"
+                  data-note="현재 기본 HF Router 미지원 · 별도 서버 필요"
+                >Phi 4 Mini Instruct · 4B</option>
+                <option
+                  value="upstage/SOLAR-10.7B-Instruct-v1.0"
+                  data-note="Router 미지원 · CC BY-NC 4.0 연구 전용"
+                >SOLAR 10.7B Instruct · 10.7B</option>
+              </select>
+              <small id="model-help">추천 · 한국어 광고 문구의 기본 비교 모델</small>
+            </div>
+
+            <fieldset>
+              <legend>업종 <b>필수</b></legend>
+              <div class="choice-grid five">
+                <label><input type="radio" name="businessType" value="카페" checked /><span>☕ 카페</span></label>
+                <label><input type="radio" name="businessType" value="베이커리" /><span>🥐 베이커리</span></label>
+                <label><input type="radio" name="businessType" value="디저트" /><span>🍰 디저트</span></label>
+                <label><input type="radio" name="businessType" value="음식점" /><span>🍽 음식점</span></label>
+                <label><input type="radio" name="businessType" value="주점" /><span>🍷 주점</span></label>
+              </div>
+            </fieldset>
+
+            <fieldset>
+              <legend>상황 <b>필수</b></legend>
+              <div class="choice-grid three">
+                <label><input type="radio" name="situation" value="신메뉴" checked /><span>신메뉴</span></label>
+                <label><input type="radio" name="situation" value="할인" /><span>할인</span></label>
+                <label><input type="radio" name="situation" value="이벤트" /><span>이벤트</span></label>
+                <label><input type="radio" name="situation" value="배달" /><span>배달</span></label>
+                <label><input type="radio" name="situation" value="포장" /><span>포장</span></label>
+                <label><input type="radio" name="situation" value="방문 유도" /><span>방문 유도</span></label>
+              </div>
+            </fieldset>
+
+            <fieldset>
+              <legend>타겟 <b>복수 선택</b></legend>
+              <div class="choice-grid five">
+                <label><input type="checkbox" name="target" value="10대" /><span>10대</span></label>
+                <label><input type="checkbox" name="target" value="20대" checked /><span>20대</span></label>
+                <label><input type="checkbox" name="target" value="직장인" checked /><span>직장인</span></label>
+                <label><input type="checkbox" name="target" value="가족" /><span>가족</span></label>
+                <label><input type="checkbox" name="target" value="커플" /><span>커플</span></label>
+              </div>
+            </fieldset>
+
+            <div class="two-columns">
+              <fieldset>
+                <legend>톤</legend>
+                <select name="tone" aria-label="광고 문구 톤">
+                  <option value="감성적">감성적</option>
+                  <option value="친근한">친근한</option>
+                  <option value="재치있는">재치있는</option>
+                  <option value="고급스러운">고급스러운</option>
+                </select>
+              </fieldset>
+              <fieldset>
+                <legend>게시 채널</legend>
+                <select name="channel" aria-label="게시 채널">
+                  <option value="인스타그램">인스타그램</option>
+                  <option value="네이버 블로그">네이버 블로그</option>
+                  <option value="배달앱">배달앱</option>
+                  <option value="매장 포스터">매장 포스터</option>
+                </select>
+              </fieldset>
+            </div>
+
+            <div class="field">
+              <label for="business-name">상호명 <b>필수</b></label>
+              <input id="business-name" name="businessName" value="오후의 조각" maxlength="100" required />
+            </div>
+
+            <div class="field">
+              <label for="products">상품 <b>필수</b></label>
+              <input
+                id="products"
+                name="products"
+                value="수제 딸기 티라미수, 런치세트"
+                placeholder="쉼표로 여러 상품을 구분해주세요"
+                required
+              />
+              <small>예: 수제 딸기 티라미수, 런치세트</small>
+            </div>
+
+            <div class="field">
+              <label for="features">강조할 특징 <span>선택</span></label>
+              <textarea
+                id="features"
+                name="features"
+                rows="3"
+                placeholder="재료, 가격, 기간 등 사실에 근거한 특징을 입력해주세요"
+              >매일 아침 직접 만드는 디저트, 평일 오전 11시부터 오후 2시까지</textarea>
+            </div>
+
+            <div class="field">
+              <label for="prohibited">금칙어·기피 표현 <span>선택</span></label>
+              <input
+                id="prohibited"
+                name="prohibited"
+                value="최고, 무조건, 인생 맛집"
+                placeholder="쉼표로 구분해주세요"
+              />
+            </div>
+
+            <button class="generate-button" type="submit">
+              <span>광고 생성 테스트</span>
+              <span aria-hidden="true">→</span>
+            </button>
+            <p class="form-note">광고 문구는 선택한 실제 LLM, 이미지는 모의 시안으로 생성됩니다.</p>
+          </form>
+        </section>
+
+        <section class="result-column" aria-live="polite">
+          <div class="panel process-panel">
+            <div class="panel-heading">
+              <div>
+                <span class="step-number">02</span>
+                <h2>모델 처리 과정</h2>
+              </div>
+              <span class="run-state" id="run-state">실행 전</span>
+            </div>
+
+            <ol class="pipeline" id="pipeline">
+              <li data-stage="input">
+                <span class="pipeline-icon">IN</span>
+                <div><strong>입력 구조화</strong><small>폼 데이터를 모델 입력 JSON으로 변환</small></div>
+                <span class="stage-state">대기</span>
+              </li>
+              <li data-stage="copy">
+                <span class="pipeline-icon coral">M1</span>
+                <div><strong>광고 문구 모델</strong><small id="pipeline-model">Qwen 2.5 7B · 실제 호출</small></div>
+                <span class="stage-state">대기</span>
+              </li>
+              <li data-stage="bridge">
+                <span class="pipeline-icon yellow">→</span>
+                <div><strong>프롬프트 브리지</strong><small>카피 결과를 이미지 모델 입력으로 전달</small></div>
+                <span class="stage-state">대기</span>
+              </li>
+              <li data-stage="image">
+                <span class="pipeline-icon violet">M2</span>
+                <div><strong>광고 이미지 모델</strong><small>상품과 카피 분위기를 반영한 시안 생성</small></div>
+                <span class="stage-state">대기</span>
+              </li>
+            </ol>
+
+            <div class="error-box" id="error-box" hidden>
+              <strong>모델 호출에 실패했습니다</strong>
+              <p id="error-message"></p>
+            </div>
+
+            <details class="payload-box">
+              <summary>모델 사이 전달 데이터 보기 <span>JSON</span></summary>
+              <pre id="payload-preview">아직 생성된 데이터가 없습니다.</pre>
+            </details>
+          </div>
+
+          <div class="panel output-panel is-empty" id="output-panel">
+            <div class="empty-state" id="empty-state">
+              <div class="empty-visual"><span></span><span></span><span></span></div>
+              <strong>아직 만들어진 광고가 없어요</strong>
+              <p>왼쪽 정보를 확인하고 ‘광고 생성 테스트’를 눌러주세요.</p>
+            </div>
+
+            <div class="generated-content" id="generated-content" hidden>
+              <div class="panel-heading output-heading">
+                <div>
+                  <span class="step-number">03</span>
+                  <h2>생성 결과</h2>
+                </div>
+                <span class="complete-badge">완료</span>
+              </div>
+
+              <div class="result-grid">
+                <article class="copy-result">
+                  <div class="result-label">AD COPY <span id="result-model">MODEL 1</span></div>
+                  <p class="context-line" id="context-line"></p>
+                  <h3 id="headline"></h3>
+                  <p class="body-copy" id="body-copy"></p>
+
+                  <div class="result-block">
+                    <small>CTA</small>
+                    <strong id="cta"></strong>
+                  </div>
+                  <div class="result-block">
+                    <small>HASHTAGS</small>
+                    <div class="hashtags" id="hashtags"></div>
+                  </div>
+                  <div class="safety-check">
+                    <span>✓</span>
+                    <div><strong>금칙어 검사 완료</strong><small id="safety-copy"></small></div>
+                  </div>
+                </article>
+
+                <article class="image-result">
+                  <div class="result-label">AD VISUAL <span>MODEL 2 · MOCK</span></div>
+                  <div class="poster" id="poster">
+                    <div class="poster-top">
+                      <span id="poster-category">CAFE · NEW</span>
+                      <span>01 / 01</span>
+                    </div>
+                    <div class="dessert-art" aria-hidden="true">
+                      <span class="plate"></span>
+                      <span class="cake cake-one"></span>
+                      <span class="cake cake-two"></span>
+                      <span class="berry berry-one"></span>
+                      <span class="berry berry-two"></span>
+                      <span class="leaf"></span>
+                    </div>
+                    <div class="poster-copy">
+                      <small id="poster-business"></small>
+                      <strong id="poster-headline"></strong>
+                      <span id="poster-products"></span>
+                    </div>
+                  </div>
+                  <p class="image-caption">
+                    현재는 CSS로 만든 모의 이미지입니다. 실제 이미지 모델 연결 시 이 영역에 결과가 표시됩니다.
+                  </p>
+                </article>
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
+    </main>
+
+    <script src="./app.js"></script>
+  </body>
+</html>
