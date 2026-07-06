@@ -191,9 +191,13 @@ async def generate_ad_copy(request: AdCopyRequest) -> AdCopyResponse:
     started_at = perf_counter()
     model_spec = get_model_spec(request.model)
     raw_content = await _call_model(request)
+    attempts = 1
+    output_repaired = False
     try:
         content = _parse_content(raw_content)
     except InvalidModelOutputError:
+        attempts = 2
+        output_repaired = True
         repaired_content = await _call_model(request, invalid_content=raw_content)
         content = _parse_content(repaired_content)
     content = _add_prohibited_term_warnings(content, request.prohibited_terms)
@@ -206,4 +210,6 @@ async def generate_ad_copy(request: AdCopyRequest) -> AdCopyResponse:
         provider=model_spec.provider,
         prompt_version=PROMPT_VERSION,
         latency_ms=latency_ms,
+        attempts=attempts,
+        output_repaired=output_repaired,
     )

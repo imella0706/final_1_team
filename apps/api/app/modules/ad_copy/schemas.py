@@ -102,3 +102,5 @@ class AdCopyResponse(AdCopyContent):
     provider: str
     prompt_version: str
     latency_ms: int
+    attempts: int = 1
+    output_repaired: bool = False

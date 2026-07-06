@@ -44,7 +44,9 @@ Provider 접근·호출 또는 출력 검증에 실패하면 `502`를 반환합�
   "routed_model": "Qwen/Qwen2.5-7B-Instruct",
   "provider": "auto",
   "prompt_version": "ad-copy-v1",
-  "latency_ms": 1840
+  "latency_ms": 1840,
+  "attempts": 1,
+  "output_repaired": false
 }
 ```
 

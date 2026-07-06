@@ -57,3 +57,11 @@ uvicorn app.main:app --reload
 ```powershell
 python scripts/benchmark_models.py
 ```
+
+품질·성공률·지연시간 분포를 포함한 평가 보고서는 다음 명령으로 생성합니다.
+
+```powershell
+python -m scripts.evaluate_models --repeats 3 --concurrency 1
+```
+
+상세한 지표 정의와 부하 테스트 방법은 `docs/EVALUATION.md`를 참고합니다.

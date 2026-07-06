@@ -262,6 +262,8 @@ def test_generate_retries_once_when_required_json_key_is_missing(monkeypatch) ->
     )
 
     assert result.headlines == ["수정 문구"]
+    assert result.attempts == 2
+    assert result.output_repaired is True
     assert captured_invalid_content == [
         None,
         '{"headlines":["첫 문구"],"body_copies":["첫 본문"]}',
