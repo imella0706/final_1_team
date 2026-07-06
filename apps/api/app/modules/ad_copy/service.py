@@ -6,6 +6,7 @@ import httpx
 from pydantic import ValidationError
 
 from app.core.config import settings
+from app.modules.ad_copy.models import get_model_spec
 from app.modules.ad_copy.prompt import PROMPT_VERSION, build_prompt
 from app.modules.ad_copy.schemas import AdCopyContent, AdCopyRequest, AdCopyResponse
 
@@ -22,20 +23,43 @@ class InvalidModelOutputError(RuntimeError):
     """Raised when a model response does not satisfy the advertising-copy schema."""
 
 
-def _request_payload(request: AdCopyRequest, *, structured: bool) -> dict[str, Any]:
+def _request_payload(
+    request: AdCopyRequest,
+    *,
+    structured: bool,
+    invalid_content: str | None = None,
+) -> dict[str, Any]:
+    model_spec = get_model_spec(request.model)
+    system_prompt = (
+        "당신은 한국 소상공인을 위한 광고 카피라이터입니다. "
+        "입력에 없는 사실을 만들지 말고 JSON 객체만 출력하세요."
+    )
+    user_prompt = build_prompt(request)
+    if invalid_content is not None:
+        user_prompt += f"""
+
+[형식 수정 요청]
+직전 응답은 필수 키가 빠졌거나 JSON 형식이 잘못되었습니다.
+아래 직전 응답의 내용을 보존하면서 반드시 모든 필수 키를 채운 JSON 객체로 다시 작성하세요.
+필수 키: headlines, body_copies, ctas, hashtags, image_prompt, safety_notes
+각 목록 필드는 JSON 배열이어야 하며, safety_notes가 없으면 빈 배열([])을 사용하세요.
+설명이나 마크다운 코드 블록을 덧붙이지 마세요.
+
+직전 응답:
+{invalid_content[:6000]}
+"""
+    messages = (
+        [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ]
+        if model_spec.supports_system_role
+        else [{"role": "user", "content": f"{system_prompt}\n\n{user_prompt}"}]
+    )
     payload: dict[str, Any] = {
-        "model": request.model.value,
-        "messages": [
-            {
-                "role": "system",
-                "content": (
-                    "당신은 한국 소상공인을 위한 광고 카피라이터입니다. "
-                    "입력에 없는 사실을 만들지 말고 JSON 객체만 출력하세요."
-                ),
-            },
-            {"role": "user", "content": build_prompt(request)},
-        ],
-        "temperature": 0.75,
+        "model": model_spec.routed_model,
+        "messages": messages,
+        "temperature": 0.2 if invalid_content is not None else 0.75,
         "max_tokens": 1200,
     }
     if structured:
@@ -76,15 +100,29 @@ def _parse_content(content: str) -> AdCopyContent:
         ) from error
 
 
-async def _call_model(request: AdCopyRequest) -> str:
-    if settings.llm_api_key is None:
+async def _call_model(
+    request: AdCopyRequest,
+    *,
+    invalid_content: str | None = None,
+) -> str:
+    model_spec = get_model_spec(request.model)
+    if model_spec.provider == "nvidia":
+        base_url = settings.nvidia_base_url
+        api_key = settings.nvidia_api_key
+        api_key_name = "BRANDMATE_NVIDIA_API_KEY"
+    else:
+        base_url = settings.llm_base_url
+        api_key = settings.llm_api_key
+        api_key_name = "BRANDMATE_LLM_API_KEY"
+
+    if api_key is None or not api_key.get_secret_value().strip():
         raise ModelNotConfiguredError(
-            "BRANDMATE_LLM_API_KEY가 없습니다. API 서버의 .env를 설정해주세요."
+            f"{api_key_name}가 없습니다. API 서버의 .env를 설정해주세요."
         )
 
-    endpoint = f"{settings.llm_base_url.rstrip('/')}/chat/completions"
+    endpoint = f"{base_url.rstrip('/')}/chat/completions"
     headers = {
-        "Authorization": f"Bearer {settings.llm_api_key.get_secret_value()}",
+        "Authorization": f"Bearer {api_key.get_secret_value()}",
         "Content-Type": "application/json",
     }
 
@@ -93,14 +131,25 @@ async def _call_model(request: AdCopyRequest) -> str:
             response = await client.post(
                 endpoint,
                 headers=headers,
-                json=_request_payload(request, structured=True),
+                json=_request_payload(
+                    request,
+                    structured=model_spec.supports_structured_output,
+                    invalid_content=invalid_content,
+                ),
             )
 
-            if response.status_code in {400, 422}:
+            if model_spec.supports_structured_output and response.status_code in {
+                400,
+                422,
+            }:
                 response = await client.post(
                     endpoint,
                     headers=headers,
-                    json=_request_payload(request, structured=False),
+                    json=_request_payload(
+                        request,
+                        structured=False,
+                        invalid_content=invalid_content,
+                    ),
                 )
 
             response.raise_for_status()
@@ -140,14 +189,21 @@ def _add_prohibited_term_warnings(
 
 async def generate_ad_copy(request: AdCopyRequest) -> AdCopyResponse:
     started_at = perf_counter()
+    model_spec = get_model_spec(request.model)
     raw_content = await _call_model(request)
-    content = _parse_content(raw_content)
+    try:
+        content = _parse_content(raw_content)
+    except InvalidModelOutputError:
+        repaired_content = await _call_model(request, invalid_content=raw_content)
+        content = _parse_content(repaired_content)
     content = _add_prohibited_term_warnings(content, request.prohibited_terms)
     latency_ms = round((perf_counter() - started_at) * 1000)
 
     return AdCopyResponse(
         **content.model_dump(),
         model=request.model.value,
+        routed_model=model_spec.routed_model,
+        provider=model_spec.provider,
         prompt_version=PROMPT_VERSION,
         latency_ms=latency_ms,
     )

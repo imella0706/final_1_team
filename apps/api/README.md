@@ -19,6 +19,10 @@ Copy-Item .env.example .env
 ```dotenv
 BRANDMATE_LLM_BASE_URL=https://router.huggingface.co/v1
 BRANDMATE_LLM_API_KEY=hf_...
+
+# NVIDIA 모델을 선택할 때만 필요
+BRANDMATE_NVIDIA_BASE_URL=https://integrate.api.nvidia.com/v1
+BRANDMATE_NVIDIA_API_KEY=nvapi_...
 ```
 
 ## 실행
@@ -40,6 +44,16 @@ uvicorn app.main:app --reload
 주의사항:
 
 - Llama는 Hugging Face 계정에서 Meta 모델 접근 동의가 필요합니다.
-- Mistral 7B Instruct v0.3은 현재 HF Inference Provider가 없어 로컬 서버가 필요합니다.
+- Qwen과 Llama는 HF Router가 Provider를 자동 선택합니다.
+- `NVIDIA · Llama 3.1 8B`는 NVIDIA NIM 무료 시험용 Endpoint와 별도 키를 사용합니다.
+- Mistral, Gemma, Phi, SOLAR는 모델 ID에 `:featherless-ai`를 자동으로 붙여
+  기존 Hugging Face 토큰으로 Featherless AI에 라우팅합니다.
+- Gemma는 Hugging Face에서 Google 사용 조건에 먼저 동의해야 합니다.
 - SOLAR 10.7B Instruct v1.0은 CC BY-NC 4.0이므로 상업 서비스에 사용할 수 없습니다.
 - 모델 또는 Provider가 JSON Schema를 거부하면 일반 JSON 출력 요청으로 한 번 재시도합니다.
+
+전체 모델의 동일 입력 호출시간은 API 서버 실행 후 다음 명령으로 비교할 수 있습니다.
+
+```powershell
+python scripts/benchmark_models.py
+```

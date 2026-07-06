@@ -41,6 +41,8 @@ Provider 접근·호출 또는 출력 검증에 실패하면 `502`를 반환합�
   "image_prompt": "Editorial food photography of handmade strawberry tiramisu...",
   "safety_notes": [],
   "model": "Qwen/Qwen2.5-7B-Instruct",
+  "routed_model": "Qwen/Qwen2.5-7B-Instruct",
+  "provider": "auto",
   "prompt_version": "ad-copy-v1",
   "latency_ms": 1840
 }
@@ -55,3 +57,13 @@ Provider 접근·호출 또는 출력 검증에 실패하면 `502`를 반환합�
 
 모델 ID와 크기, 호스팅 가능 여부, 접근·라이선스 주의사항을 반환합니다. 프론트엔드는
 이 목록과 같은 모델 ID를 생성 요청의 `model` 필드에 전달합니다.
+
+NVIDIA NIM의 Llama 3.1 8B를 선택할 때는 다음 모델 ID를 사용합니다.
+
+```json
+{
+  "model": "nvidia/meta/llama-3.1-8b-instruct"
+}
+```
+
+이 선택 ID는 내부적으로 NVIDIA의 `meta/llama-3.1-8b-instruct` 모델에 라우팅됩니다.

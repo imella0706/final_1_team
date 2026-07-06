@@ -56,6 +56,7 @@ const labelMaps = {
 const shortModelNames = {
   "Qwen/Qwen2.5-7B-Instruct": "Qwen 2.5 7B",
   "meta-llama/Llama-3.1-8B-Instruct": "Llama 3.1 8B",
+  "nvidia/meta/llama-3.1-8b-instruct": "NVIDIA Llama 3.1 8B",
   "mistralai/Mistral-7B-Instruct-v0.3": "Mistral 7B v0.3",
   "google/gemma-2-9b-it": "Gemma 2 9B",
   "microsoft/Phi-4-mini-instruct": "Phi 4 Mini",
@@ -210,7 +211,7 @@ function renderResult(input, result) {
   document.querySelector("#safety-copy").textContent =
     result.safety_notes[0] || "지정한 기피 표현이 발견되지 않았습니다.";
   document.querySelector("#result-model").textContent =
-    `${shortModelNames[result.model] || result.model} · ${result.latency_ms}ms`;
+    `${shortModelNames[result.model] || result.model} · ${result.provider} · ${result.latency_ms}ms`;
 
   const hashtags = document.querySelector("#hashtags");
   hashtags.replaceChildren();
