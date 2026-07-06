@@ -197,6 +197,7 @@ node --check ..\web-ad-content\app.js
 
 ## 주요 문서
 
+- 로컬 Qwen + ComfyUI FLUX 온보딩: [docs/LOCAL_AI_PIPELINE_ONBOARDING.md](docs/LOCAL_AI_PIPELINE_ONBOARDING.md)
 - API 실행 문서: [apps/api/README.md](apps/api/README.md)
 - 브라우저 실행 문서: [apps/web-ad-content/README.md](apps/web-ad-content/README.md)
 - 광고 콘텐츠 확장 모듈: [apps/api/app/extensions/ad_content/README.md](apps/api/app/extensions/ad_content/README.md)
