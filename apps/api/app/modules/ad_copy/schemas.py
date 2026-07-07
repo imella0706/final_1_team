@@ -1,6 +1,16 @@
 from enum import StrEnum
+from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator, model_validator
+
+from app.modules.ad_copy.input_validator import (
+    BUSINESS_TYPE_MAP,
+    CHANNEL_MAP,
+    SITUATION_MAP,
+    TONE_MAP,
+    normalize_ad_copy_input,
+    normalize_target_audiences,
+)
 
 
 class AdModel(StrEnum):
@@ -65,6 +75,7 @@ class AdChannel(StrEnum):
 
 class CopyTone(StrEnum):
     EMOTIONAL = "emotional"
+    WITTY = "witty"
     FRIENDLY = "friendly"
     WARM = "warm"
     PLAYFUL = "playful"
@@ -86,13 +97,152 @@ class AdCopyRequest(BaseModel):
     required_terms: list[str] = Field(default_factory=list, max_length=10)
     prohibited_terms: list[str] = Field(default_factory=list, max_length=20)
 
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_input_values(cls, data):
+        if isinstance(data, dict):
+            return normalize_ad_copy_input(data)
+        return data
+
+    @field_validator("business_type", mode="before")
+    @classmethod
+    def normalize_business_type(cls, value):
+        return BUSINESS_TYPE_MAP.get(value, value) if isinstance(value, str) else value
+
+    @field_validator("situation", mode="before")
+    @classmethod
+    def normalize_situation(cls, value):
+        return SITUATION_MAP.get(value, value) if isinstance(value, str) else value
+
+    @field_validator("target_audiences", mode="before")
+    @classmethod
+    def normalize_targets(cls, value):
+        return normalize_target_audiences(value)
+
+    @field_validator("tone", mode="before")
+    @classmethod
+    def normalize_tone(cls, value):
+        return TONE_MAP.get(value, value) if isinstance(value, str) else value
+
+    @field_validator("channel", mode="before")
+    @classmethod
+    def normalize_channel(cls, value):
+        return CHANNEL_MAP.get(value, value) if isinstance(value, str) else value
+
+
+class BusinessSummary(BaseModel):
+    business_name: str = Field(min_length=1, max_length=100)
+    business_type_korean: str = Field(min_length=1, max_length=100)
+    situation_korean: str = Field(min_length=1, max_length=100)
+    target_audiences_korean: list[str] = Field(min_length=1, max_length=5)
+    tone_korean: str = Field(min_length=1, max_length=100)
+    channel_korean: str = Field(min_length=1, max_length=100)
+
+
+class MandatoryProduct(BaseModel):
+    product_name: str = Field(min_length=1, max_length=100)
+    role: Literal["primary", "secondary"]
+
+
+class MandatoryFeature(BaseModel):
+    feature_text: str = Field(min_length=1, max_length=300)
+    copy_usage_rule: str = Field(min_length=1, max_length=200)
+    visual_usage_rule: str = Field(min_length=1, max_length=200)
+
+
+class MarketingStrategy(BaseModel):
+    business_summary: BusinessSummary
+    mandatory_products: list[MandatoryProduct] = Field(min_length=1, max_length=10)
+    mandatory_features: list[MandatoryFeature] = Field(default_factory=list, max_length=10)
+    core_message: str = Field(min_length=1, max_length=500)
+    customer_emotion: str = Field(min_length=1, max_length=300)
+    marketing_angle: str = Field(min_length=1, max_length=500)
+    recommended_cta_direction: str = Field(min_length=1, max_length=300)
+    avoid_points: list[str] = Field(default_factory=list, max_length=10)
+
+
+class ValidationCheck(BaseModel):
+    all_products_included: bool
+    all_features_included: bool
+    prohibited_terms_used: bool
+    visual_brief_uses_enum_only: bool
+    hashtags_removed: bool
+    language_quality: str = Field(min_length=1, max_length=100)
+
+
+class ProductToShow(BaseModel):
+    product_name: str = Field(min_length=1, max_length=100)
+    visual_role: Literal["main", "supporting"]
+    must_be_visible: bool = True
+
+
+class FeatureVisualization(BaseModel):
+    feature_text: str = Field(min_length=1, max_length=300)
+    visual_translation: list[str] = Field(default_factory=list, max_length=10)
+
+
+class VisualBrief(BaseModel):
+    products_to_show: list[ProductToShow] = Field(min_length=1, max_length=10)
+    feature_visualization: list[FeatureVisualization] = Field(default_factory=list, max_length=10)
+    camera_angle: Literal[
+        "45_degree_close_up",
+        "eye_level_close_up",
+        "top_down_flat_lay",
+        "macro_detail",
+        "three_quarter_product_shot",
+    ]
+    composition: Literal[
+        "centered_product_hero",
+        "two_product_set",
+        "tray_set_composition",
+        "rule_of_thirds",
+        "poster_with_empty_space",
+    ]
+    lighting: Literal[
+        "soft_natural_window_light",
+        "warm_morning_light",
+        "warm_afternoon_light",
+        "soft_studio_light",
+        "cozy_indoor_light",
+    ]
+    background: Literal[
+        "minimal_korean_local_cafe",
+        "wooden_cafe_table",
+        "clean_bakery_counter",
+        "warm_restaurant_table",
+        "cozy_pub_table",
+    ]
+    color_palette: list[
+        Literal[
+            "warm_beige_cream",
+            "soft_pink_peach",
+            "brown_cream_gold",
+            "fresh_fruit_tones",
+            "premium_neutral_tones",
+        ]
+    ] = Field(min_length=1, max_length=10)
+    depth_of_field: Literal[
+        "shallow_depth_of_field",
+        "medium_depth_of_field",
+        "sharp_product_soft_background",
+    ]
+    empty_space: Literal[
+        "top_20_percent",
+        "right_25_percent",
+        "left_25_percent",
+        "upper_right_corner",
+        "poster_safe_margin",
+    ]
+    avoid: list[str] = Field(default_factory=list, max_length=10)
+
 
 class AdCopyContent(BaseModel):
+    marketing_strategy: MarketingStrategy
     headlines: list[str] = Field(min_length=1, max_length=5)
     body_copies: list[str] = Field(min_length=1, max_length=5)
     ctas: list[str] = Field(min_length=1, max_length=5)
-    hashtags: list[str] = Field(min_length=1, max_length=15)
-    image_prompt: str = Field(min_length=1, max_length=2000)
+    validation_check: ValidationCheck
+    visual_brief: VisualBrief
     safety_notes: list[str] = Field(default_factory=list, max_length=10)
 
 

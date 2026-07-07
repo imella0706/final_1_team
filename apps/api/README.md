@@ -1,67 +1,192 @@
-# 광고 문구 API
+# BrandMate API
 
-소상공인 입력을 선택한 LLM에 전달하고 광고 문구, CTA, 해시태그와 이미지 프롬프트를
-구조화된 JSON으로 반환하는 FastAPI 애플리케이션입니다.
+FastAPI 기반 광고 콘텐츠 생성 API입니다. 광고 문구 모델과 이미지 생성 모델을 FastAPI 프로세스 안에 직접 로드하지 않고, OpenAI-compatible endpoint, Hugging Face Router, LM Studio, Diffusers service 등 외부 모델 실행 계층을 API로 호출합니다.
+
+## 주요 Endpoint
+
+```text
+GET  /health
+
+GET  /api/v1/ad-copies/models
+POST /api/v1/ad-copies/generate
+
+GET  /api/v1/ad-content/image-models
+POST /api/v1/ad-content/generate
+
+POST /api/llm/generate
+POST /api/image/generate
+```
 
 ## 설치
 
-```powershell
-cd apps/api
+저장소 루트에서:
+
+```cmd
+cd apps\api
 python -m venv .venv
-.\.venv\Scripts\Activate.ps1
+.venv\Scripts\activate
+python -m pip install --upgrade pip
 pip install -e ".[dev]"
-Copy-Item .env.example .env
+copy .env.example .env
 ```
 
-`.env`의 `BRANDMATE_LLM_API_KEY`에 Hugging Face 토큰을 입력합니다. 토큰에는
-`Make calls to Inference Providers` 권한이 필요합니다.
+## `.env` 최소 설정
 
-```dotenv
+Hugging Face Router를 사용할 경우:
+
+```env
 BRANDMATE_LLM_BASE_URL=https://router.huggingface.co/v1
-BRANDMATE_LLM_API_KEY=hf_...
-
-# NVIDIA 모델을 선택할 때만 필요
-BRANDMATE_NVIDIA_BASE_URL=https://integrate.api.nvidia.com/v1
-BRANDMATE_NVIDIA_API_KEY=nvapi_...
+BRANDMATE_LLM_API_KEY=hf_your_token_here
+BRANDMATE_IMAGE_BASE_URL=https://router.huggingface.co/hf-inference
 ```
 
-## 실행
+LM Studio를 사용할 경우:
 
-```powershell
-uvicorn app.main:app --reload
+```env
+BRANDMATE_LOCAL_LLM_BASE_URL=http://localhost:1234/v1
+BRANDMATE_LOCAL_LLM_API_KEY=
+
+BRANDMATE_MISTRAL_MODEL=lm_studio_mistral_model_id
+BRANDMATE_GEMMA_MODEL=lm_studio_gemma_model_id
+BRANDMATE_PHI_MODEL=lm_studio_phi_model_id
+BRANDMATE_SOLAR_MODEL=lm_studio_solar_model_id
 ```
 
-- API 문서: `http://localhost:8000/docs`
-- 상태 확인: `GET http://localhost:8000/health`
-- 모델 목록: `GET http://localhost:8000/api/v1/ad-copies/models`
-- 광고 생성: `POST http://localhost:8000/api/v1/ad-copies/generate`
+LM Studio 모델 ID 확인:
 
-## 모델 실행 방식
-
-기본값은 Hugging Face의 OpenAI 호환 Router입니다. `BRANDMATE_LLM_BASE_URL`과
-`BRANDMATE_LLM_API_KEY`를 바꾸면 vLLM 등 다른 OpenAI 호환 서버도 사용할 수 있습니다.
-
-주의사항:
-
-- Llama는 Hugging Face 계정에서 Meta 모델 접근 동의가 필요합니다.
-- Qwen과 Llama는 HF Router가 Provider를 자동 선택합니다.
-- `NVIDIA · Llama 3.1 8B`는 NVIDIA NIM 무료 시험용 Endpoint와 별도 키를 사용합니다.
-- Mistral, Gemma, Phi, SOLAR는 모델 ID에 `:featherless-ai`를 자동으로 붙여
-  기존 Hugging Face 토큰으로 Featherless AI에 라우팅합니다.
-- Gemma는 Hugging Face에서 Google 사용 조건에 먼저 동의해야 합니다.
-- SOLAR 10.7B Instruct v1.0은 CC BY-NC 4.0이므로 상업 서비스에 사용할 수 없습니다.
-- 모델 또는 Provider가 JSON Schema를 거부하면 일반 JSON 출력 요청으로 한 번 재시도합니다.
-
-전체 모델의 동일 입력 호출시간은 API 서버 실행 후 다음 명령으로 비교할 수 있습니다.
-
-```powershell
-python scripts/benchmark_models.py
+```cmd
+curl http://localhost:1234/v1/models
 ```
 
-품질·성공률·지연시간 분포를 포함한 평가 보고서는 다음 명령으로 생성합니다.
+이미지 모델 설정:
 
-```powershell
-python -m scripts.evaluate_models --repeats 3 --concurrency 1
+```env
+BRANDMATE_FLUX_MODEL=black-forest-labs/FLUX.1-schnell
+BRANDMATE_SDXL_MODEL=stabilityai/stable-diffusion-xl-base-1.0
+BRANDMATE_OPENJOURNEY_MODEL=prompthero/openjourney
 ```
 
-상세한 지표 정의와 부하 테스트 방법은 `docs/EVALUATION.md`를 참고합니다.
+Product Visual Database는 선택 기능입니다.
+
+```env
+BRANDMATE_REFERENCE_SEARCH_ENABLED=false
+BRANDMATE_REFERENCE_SOURCE=wikimedia
+BRANDMATE_REFERENCE_MAX_RESULTS=3
+BRANDMATE_PRODUCT_VISUAL_DB_PATH=product_visual_profiles.sqlite3
+BRANDMATE_PEXELS_API_KEY=
+BRANDMATE_UNSPLASH_ACCESS_KEY=
+```
+
+`BRANDMATE_REFERENCE_SEARCH_ENABLED=true`이면 기본값 `wikimedia`를 사용합니다. Pexels/Unsplash를 선택할 때만 각각 API 키가 필요합니다.
+
+## 서버 실행
+
+```cmd
+cd apps\api
+.venv\Scripts\python.exe -m uvicorn app.extensions.ad_content.main:app --host 127.0.0.1 --port 8000
+```
+
+상태 확인:
+
+```cmd
+curl http://127.0.0.1:8000/health
+```
+
+Swagger:
+
+```text
+http://127.0.0.1:8000/docs
+```
+
+## 광고 콘텐츠 통합 요청 예시
+
+```cmd
+curl -X POST http://127.0.0.1:8000/api/v1/ad-content/generate ^
+  -H "Content-Type: application/json" ^
+  -d "{\"copy\":{\"model\":\"Qwen/Qwen2.5-7B-Instruct\",\"business_name\":\"오후의 조각\",\"business_type\":\"cafe\",\"situation\":\"new_menu\",\"target_audiences\":[\"twenties\"],\"tone\":\"friendly\",\"product_names\":[\"수제 딸기 티라미수\",\"피치에이드\"],\"features\":[\"매일 아침 직접 만드는 디저트\",\"평일 오전 11시부터 오후 2시까지 런치 세트 운영\"],\"channel\":\"instagram\",\"promotion\":null,\"required_terms\":[],\"prohibited_terms\":[\"최고\",\"무조건\"]},\"image_model\":\"black-forest-labs/FLUX.1-schnell\",\"image_width\":1024,\"image_height\":1280}"
+```
+
+응답에는 다음 정보가 포함됩니다.
+
+```text
+copy
+ad_copy
+marketing_strategy
+visual_brief
+product_visualization
+image_prompt
+negative_prompt
+image
+validation
+models
+```
+
+## 광고 콘텐츠 파이프라인
+
+```text
+Input Validator
+-> Marketing + Copy + Visual Brief LLM
+-> Output Validator
+-> Product Visualizer
+-> Product Visual Database
+-> Prompt Normalizer
+-> Image Generation Model
+-> Image Validator
+```
+
+## 모듈 설명
+
+```text
+app/modules/ad_copy/
+  prompt.py              광고 문구/전략/비주얼 브리프 LLM prompt
+  input_validator.py     한국어 입력값 정규화
+  output_validator.py    LLM 출력 검증, 재시도, fallback
+  service.py             LLM 호출 service
+
+app/extensions/ad_content/
+  router.py              광고 문구 + 이미지 생성 통합 endpoint
+  image_service.py       이미지 모델 호출
+  image_prompt.py        최종 image prompt 및 negative prompt 생성
+  prompt_normalizer.py   Product Visualizer 출력과 visual brief 연결
+  product_visualizer.py  상품명 -> 시각 정보 JSON 변환
+  reference_search.py    Wikimedia/Pexels/Unsplash reference metadata 검색
+  reference_analyzer.py  reference metadata -> 시각 특징 추출
+  reference_store.py     SQLite Product Visual DB
+  image_validator.py     이미지 검증 hook
+```
+
+## 기준 브랜치와의 차이
+
+기준 브랜치:
+
+```text
+origin/feature/ad-copy-model-integration
+```
+
+현재 브랜치에는 광고 문구 생성 기능 외에 이미지 생성 모델 통합, Product Visualizer, Product Visual DB, 브라우저 통합 화면, 모델 런타임 문서가 추가되었습니다.
+
+상세 문서:
+
+```text
+app/modules/model_runtime/docs/CHANGES_FROM_AD_COPY_MODEL_BRANCH.md
+```
+
+## 테스트
+
+```cmd
+cd apps\api
+.venv\Scripts\python.exe -m pytest
+.venv\Scripts\python.exe -m ruff check app tests
+```
+
+## 관련 README
+
+- 광고 콘텐츠 확장 모듈: `app/extensions/ad_content/README.md`
+- 광고 문구 모듈: `app/modules/ad_copy/README.md`
+- 모델 런타임 구조: `app/modules/model_runtime/README.md`
+- LLM 실행 방식: `app/modules/model_runtime/llm/README.md`
+- 이미지 실행 방식: `app/modules/model_runtime/image/README.md`
+- 광고 콘텐츠 파이프라인: `app/modules/model_runtime/docs/AD_CONTENT_PIPELINE_README.md`
+- 프롬프트 전략: `app/modules/model_runtime/docs/PROMPT_STRATEGY.md`
+- 실패 원인 분석: `app/modules/model_runtime/docs/FAILURE_ANALYSIS.md`
+- 배포 개선 방향: `app/modules/model_runtime/docs/DEPLOYMENT_NOTES.md`

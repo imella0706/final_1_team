@@ -15,6 +15,13 @@ dev = [
   "pytest>=8.0",
   "ruff>=0.8",
 ]
+image = [
+  "accelerate>=0.33",
+  "diffusers>=0.30",
+  "safetensors>=0.4",
+  "torch>=2.3",
+  "transformers>=4.43",
+]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]

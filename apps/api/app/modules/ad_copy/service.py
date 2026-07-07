@@ -8,7 +8,16 @@ from pydantic import ValidationError
 from app.core.config import settings
 from app.modules.ad_copy.models import get_model_spec
 from app.modules.ad_copy.prompt import PROMPT_VERSION, build_prompt
+from app.modules.ad_copy.output_validator import build_fallback_copy, validate_copy_output
 from app.modules.ad_copy.schemas import AdCopyContent, AdCopyRequest, AdCopyResponse
+from app.modules.model_runtime.llm.registry import (
+    get_text_model_config,
+    infer_provider,
+    resolve_api_key,
+    resolve_base_url,
+    resolve_model_name,
+)
+from app.modules.model_runtime.schemas import TextRuntimeProvider
 
 
 class ModelNotConfiguredError(RuntimeError):
@@ -26,41 +35,23 @@ class InvalidModelOutputError(RuntimeError):
 def _request_payload(
     request: AdCopyRequest,
     *,
+    provider_model_name: str,
     structured: bool,
-    invalid_content: str | None = None,
 ) -> dict[str, Any]:
-    model_spec = get_model_spec(request.model)
-    system_prompt = (
-        "당신은 한국 소상공인을 위한 광고 카피라이터입니다. "
-        "입력에 없는 사실을 만들지 말고 JSON 객체만 출력하세요."
-    )
-    user_prompt = build_prompt(request)
-    if invalid_content is not None:
-        user_prompt += f"""
-
-[형식 수정 요청]
-직전 응답은 필수 키가 빠졌거나 JSON 형식이 잘못되었습니다.
-아래 직전 응답의 내용을 보존하면서 반드시 모든 필수 키를 채운 JSON 객체로 다시 작성하세요.
-필수 키: headlines, body_copies, ctas, hashtags, image_prompt, safety_notes
-각 목록 필드는 JSON 배열이어야 하며, safety_notes가 없으면 빈 배열([])을 사용하세요.
-설명이나 마크다운 코드 블록을 덧붙이지 마세요.
-
-직전 응답:
-{invalid_content[:6000]}
-"""
-    messages = (
-        [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt},
-        ]
-        if model_spec.supports_system_role
-        else [{"role": "user", "content": f"{system_prompt}\n\n{user_prompt}"}]
-    )
     payload: dict[str, Any] = {
-        "model": model_spec.routed_model,
-        "messages": messages,
-        "temperature": 0.2 if invalid_content is not None else 0.75,
-        "max_tokens": 1200,
+        "model": provider_model_name,
+        "messages": [
+            {
+                "role": "system",
+                "content": (
+                    "당신은 한국 소상공인을 위한 광고 카피라이터입니다. "
+                    "입력에 없는 사실을 만들지 말고 JSON 객체만 출력하세요."
+                ),
+            },
+            {"role": "user", "content": build_prompt(request)},
+        ],
+        "temperature": 0.75,
+        "max_tokens": 2000,
     }
     if structured:
         payload["response_format"] = {
@@ -90,7 +81,16 @@ def _parse_content(content: str) -> AdCopyContent:
 
     try:
         data, _ = json.JSONDecoder().raw_decode(cleaned)
-        for field in ("headlines", "body_copies", "ctas", "hashtags", "safety_notes"):
+        data.pop("hashtags", None)
+        validation_check = data.get("validation_check")
+        if isinstance(validation_check, dict):
+            if "all_features_included_verbatim" in validation_check:
+                validation_check["all_features_included"] = validation_check.pop(
+                    "all_features_included_verbatim"
+                )
+            validation_check.setdefault("visual_brief_uses_enum_only", True)
+            validation_check.setdefault("hashtags_removed", True)
+        for field in ("headlines", "body_copies", "ctas", "safety_notes"):
             if isinstance(data.get(field), str):
                 data[field] = [data[field]]
         return AdCopyContent.model_validate(data)
@@ -100,31 +100,26 @@ def _parse_content(content: str) -> AdCopyContent:
         ) from error
 
 
-async def _call_model(
-    request: AdCopyRequest,
-    *,
-    invalid_content: str | None = None,
-) -> str:
-    model_spec = get_model_spec(request.model)
-    if model_spec.provider == "nvidia":
-        base_url = settings.nvidia_base_url
-        api_key = settings.nvidia_api_key
-        api_key_name = "BRANDMATE_NVIDIA_API_KEY"
-    else:
-        base_url = settings.llm_base_url
-        api_key = settings.llm_api_key
-        api_key_name = "BRANDMATE_LLM_API_KEY"
+async def _call_model(request: AdCopyRequest) -> str:
+    try:
+        config = get_text_model_config(request.model.value)
+    except KeyError as error:
+        raise ModelNotConfiguredError(str(error)) from error
 
-    if api_key is None or not api_key.get_secret_value().strip():
+    base_url = resolve_base_url(config)
+    provider_model_name = resolve_model_name(config)
+    api_key = resolve_api_key(config)
+    provider = infer_provider(base_url, config.provider)
+
+    if provider == TextRuntimeProvider.HUGGING_FACE_ROUTER and not api_key:
         raise ModelNotConfiguredError(
             f"{api_key_name}가 없습니다. API 서버의 .env를 설정해주세요."
         )
 
     endpoint = f"{base_url.rstrip('/')}/chat/completions"
-    headers = {
-        "Authorization": f"Bearer {api_key.get_secret_value()}",
-        "Content-Type": "application/json",
-    }
+    headers = {"Content-Type": "application/json"}
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
 
     try:
         async with httpx.AsyncClient(timeout=settings.llm_timeout_seconds) as client:
@@ -133,8 +128,8 @@ async def _call_model(
                 headers=headers,
                 json=_request_payload(
                     request,
-                    structured=model_spec.supports_structured_output,
-                    invalid_content=invalid_content,
+                    provider_model_name=provider_model_name,
+                    structured=True,
                 ),
             )
 
@@ -147,8 +142,8 @@ async def _call_model(
                     headers=headers,
                     json=_request_payload(
                         request,
+                        provider_model_name=provider_model_name,
                         structured=False,
-                        invalid_content=invalid_content,
                     ),
                 )
 
@@ -160,7 +155,7 @@ async def _call_model(
         ) from error
     except httpx.HTTPError as error:
         raise ModelProviderError(
-            f"모델 서버에 연결할 수 없습니다: {type(error).__name__}"
+            f"모델 서버에 연결할 수 없습니다: {base_url} ({type(error).__name__})"
         ) from error
 
     return _extract_content(response)
@@ -170,9 +165,7 @@ def _add_prohibited_term_warnings(
     content: AdCopyContent,
     prohibited_terms: list[str],
 ) -> AdCopyContent:
-    generated_text = " ".join(
-        content.headlines + content.body_copies + content.ctas + content.hashtags
-    )
+    generated_text = " ".join(content.headlines + content.body_copies + content.ctas)
     found_terms = [term for term in prohibited_terms if term in generated_text]
     if not found_terms:
         return content
@@ -189,17 +182,30 @@ def _add_prohibited_term_warnings(
 
 async def generate_ad_copy(request: AdCopyRequest) -> AdCopyResponse:
     started_at = perf_counter()
-    model_spec = get_model_spec(request.model)
-    raw_content = await _call_model(request)
-    attempts = 1
-    output_repaired = False
-    try:
-        content = _parse_content(raw_content)
-    except InvalidModelOutputError:
-        attempts = 2
-        output_repaired = True
-        repaired_content = await _call_model(request, invalid_content=raw_content)
-        content = _parse_content(repaired_content)
+    warnings: list[str] = []
+    content: AdCopyContent | None = None
+    last_error: Exception | None = None
+
+    for attempt in range(3):
+        try:
+            raw_content = await _call_model(request)
+            candidate = _parse_content(raw_content)
+            validation = validate_copy_output(candidate, request)
+            if validation.valid:
+                content = candidate
+                break
+            warnings = validation.warnings
+            last_error = InvalidModelOutputError("; ".join(validation.warnings))
+        except InvalidModelOutputError as error:
+            last_error = error
+            warnings = [str(error)]
+
+        if attempt == 2:
+            content = build_fallback_copy(request, warnings)
+
+    if content is None:
+        raise InvalidModelOutputError(str(last_error)) from last_error
+
     content = _add_prohibited_term_warnings(content, request.prohibited_terms)
     latency_ms = round((perf_counter() - started_at) * 1000)
 
