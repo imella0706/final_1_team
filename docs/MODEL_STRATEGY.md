@@ -2,9 +2,11 @@
 
 ## 연결 방식
 
-API는 OpenAI 호환 `/chat/completions` 규격으로 모델을 호출합니다. 기본 서버는
-Hugging Face Inference Providers Router이며 환경변수로 로컬 vLLM 서버를 사용할 수
-있습니다. 모델 출력은 JSON Schema로 요청하고 Pydantic으로 다시 검증합니다.
+API는 OpenAI 호환 `/chat/completions` 규격으로 모델을 호출합니다. Hugging Face
+Inference Providers Router와 NVIDIA NIM Endpoint를 모델별로 선택합니다. Qwen과
+Llama는 HF 자동 Provider를 사용하고, 일부 비교 모델은 기존 HF 토큰으로 Featherless
+AI를 명시해 호출합니다. NVIDIA 모델은 별도 NVIDIA API 키를 사용합니다. 모델 출력은
+Pydantic으로 다시 검증합니다.
 
 ## 비교 모델
 
@@ -12,10 +14,11 @@ Hugging Face Inference Providers Router이며 환경변수로 로컬 vLLM 서버
 | --- | --- | --- |
 | Qwen 2.5 7B Instruct | HF Provider, 실측 성공 | 한국어 광고 문구 기본 모델 |
 | Llama 3.1 8B Instruct | HF Provider, 실측 성공 | Meta 접근 동의 필요 |
-| Mistral 7B Instruct v0.3 | 로컬 서버 | 현재 HF 호스팅 Provider 없음 |
-| Gemma 2 9B Instruct | 로컬/별도 Endpoint | 현재 기본 HF Router 미지원 |
-| Phi 4 Mini Instruct | 로컬/별도 Endpoint | 현재 기본 HF Router 미지원 |
-| SOLAR 10.7B Instruct | 로컬/별도 Endpoint, 연구 전용 | Router 미지원, CC BY-NC 4.0 |
+| NVIDIA · Llama 3.1 8B Instruct | NVIDIA NIM 무료 시험용 Endpoint | HF 버전과 속도·품질 비교 |
+| Mistral 7B Instruct v0.3 | Featherless AI | 채팅 호환 `mistral-community` 변환본 사용 |
+| Gemma 2 9B Instruct | Featherless AI | Google 사용 조건 동의 필요 |
+| Phi 4 Mini Instruct | Featherless AI | HF 모델 ID에 Provider 접미사 자동 추가 |
+| SOLAR 10.7B Instruct | Featherless AI, 연구 전용 | CC BY-NC 4.0 |
 
 테스트 페이지에서는 같은 입력과 프롬프트 계약으로 모델을 바꿔 결과를 비교합니다.
 Provider, 접근권한 또는 라이선스 차이를 모델 품질 차이와 혼동하지 않도록 실행 실패도

@@ -1,0 +1,98 @@
+[
+  {
+    "id": "cafe_new_menu_emotional",
+    "request": {
+      "business_name": "오후의 조각",
+      "business_type": "cafe",
+      "situation": "new_menu",
+      "target_audiences": ["twenties", "office_workers"],
+      "tone": "emotional",
+      "product_names": ["수제 딸기 티라미수", "런치세트"],
+      "features": ["매일 아침 직접 만드는 디저트", "생딸기 사용"],
+      "channel": "instagram",
+      "promotion": null,
+      "required_terms": ["생딸기"],
+      "prohibited_terms": ["최고", "무조건", "인생 맛집"]
+    }
+  },
+  {
+    "id": "bakery_discount_friendly",
+    "request": {
+      "business_name": "동네밀 베이커리",
+      "business_type": "bakery",
+      "situation": "discount",
+      "target_audiences": ["office_workers", "families"],
+      "tone": "friendly",
+      "product_names": ["소금빵 세트"],
+      "features": ["매장에서 당일 생산", "오후 6시 이후 방문 포장"],
+      "channel": "store_poster",
+      "promotion": "평일 오후 6시 이후 10% 할인",
+      "required_terms": ["평일"],
+      "prohibited_terms": ["전국 1위", "무조건"]
+    }
+  },
+  {
+    "id": "restaurant_delivery_family",
+    "request": {
+      "business_name": "정담식탁",
+      "business_type": "restaurant",
+      "situation": "delivery",
+      "target_audiences": ["families"],
+      "tone": "warm",
+      "product_names": ["제육볶음 가족세트"],
+      "features": ["2~3인 구성", "공깃밥 포함"],
+      "channel": "delivery_app",
+      "promotion": null,
+      "required_terms": ["가족세트"],
+      "prohibited_terms": ["건강식", "최저가"]
+    }
+  },
+  {
+    "id": "pub_event_playful",
+    "request": {
+      "business_name": "달빛잔",
+      "business_type": "pub",
+      "situation": "event",
+      "target_audiences": ["twenties", "couples"],
+      "tone": "playful",
+      "product_names": ["하이볼 페어링 세트"],
+      "features": ["하이볼 2잔", "감자튀김 포함"],
+      "channel": "instagram",
+      "promotion": "금요일 오후 7시부터 9시까지 제공",
+      "required_terms": ["금요일"],
+      "prohibited_terms": ["취한다", "무제한"]
+    }
+  },
+  {
+    "id": "dessert_visit_premium",
+    "request": {
+      "business_name": "몽드슈",
+      "business_type": "dessert",
+      "situation": "visit",
+      "target_audiences": ["couples"],
+      "tone": "premium",
+      "product_names": ["바닐라 밀푀유"],
+      "features": ["주문 후 크림을 채워 제공", "한정 수량"],
+      "channel": "naver_blog",
+      "promotion": null,
+      "required_terms": ["한정 수량"],
+      "prohibited_terms": ["명품", "완벽"]
+    }
+  },
+  {
+    "id": "cafe_takeout_teens",
+    "request": {
+      "business_name": "컵앤데이",
+      "business_type": "cafe",
+      "situation": "takeout",
+      "target_audiences": ["teens"],
+      "tone": "friendly",
+      "product_names": ["초코 크림 라테"],
+      "features": ["테이크아웃 가능", "휘핑크림 선택 가능"],
+      "channel": "store_poster",
+      "promotion": null,
+      "required_terms": ["테이크아웃"],
+      "prohibited_terms": ["살 안 찌는", "중독"]
+    }
+  }
+]

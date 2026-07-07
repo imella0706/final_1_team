@@ -6,6 +6,7 @@ import httpx
 from pydantic import ValidationError
 
 from app.core.config import settings
+from app.modules.ad_copy.models import get_model_spec
 from app.modules.ad_copy.prompt import PROMPT_VERSION, build_prompt
 from app.modules.ad_copy.output_validator import build_fallback_copy, validate_copy_output
 from app.modules.ad_copy.schemas import AdCopyContent, AdCopyRequest, AdCopyResponse
@@ -112,7 +113,7 @@ async def _call_model(request: AdCopyRequest) -> str:
 
     if provider == TextRuntimeProvider.HUGGING_FACE_ROUTER and not api_key:
         raise ModelNotConfiguredError(
-            "BRANDMATE_LLM_API_KEY가 없습니다. API 서버의 .env를 설정해주세요."
+            f"{api_key_name}가 없습니다. API 서버의 .env를 설정해주세요."
         )
 
     endpoint = f"{base_url.rstrip('/')}/chat/completions"
@@ -132,7 +133,10 @@ async def _call_model(request: AdCopyRequest) -> str:
                 ),
             )
 
-            if response.status_code in {400, 422}:
+            if model_spec.supports_structured_output and response.status_code in {
+                400,
+                422,
+            }:
                 response = await client.post(
                     endpoint,
                     headers=headers,
@@ -208,6 +212,10 @@ async def generate_ad_copy(request: AdCopyRequest) -> AdCopyResponse:
     return AdCopyResponse(
         **content.model_dump(),
         model=request.model.value,
+        routed_model=model_spec.routed_model,
+        provider=model_spec.provider,
         prompt_version=PROMPT_VERSION,
         latency_ms=latency_ms,
+        attempts=attempts,
+        output_repaired=output_repaired,
     )
