@@ -13,6 +13,7 @@ __pycache__/
 .mypy_cache/
 .venv/
 *.egg-info/
+*.log
 
 # Next.js
 .next/

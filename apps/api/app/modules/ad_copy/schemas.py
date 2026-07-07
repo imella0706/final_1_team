@@ -16,6 +16,7 @@ from app.modules.ad_copy.input_validator import (
 class AdModel(StrEnum):
     QWEN_2_5_7B = "Qwen/Qwen2.5-7B-Instruct"
     LLAMA_3_1_8B = "meta-llama/Llama-3.1-8B-Instruct"
+    NVIDIA_LLAMA_3_1_8B = "nvidia/meta/llama-3.1-8b-instruct"
     MISTRAL_7B_V03 = "mistralai/Mistral-7B-Instruct-v0.3"
     GEMMA_2_9B = "google/gemma-2-9b-it"
     PHI_4_MINI = "microsoft/Phi-4-mini-instruct"
@@ -33,6 +34,7 @@ class ModelOption(BaseModel):
     id: AdModel
     name: str
     size: str
+    provider: str
     availability: ModelAvailability
     note: str
     recommended: bool = False
@@ -246,5 +248,9 @@ class AdCopyContent(BaseModel):
 
 class AdCopyResponse(AdCopyContent):
     model: str
+    routed_model: str
+    provider: str
     prompt_version: str
     latency_ms: int
+    attempts: int = 1
+    output_repaired: bool = False
