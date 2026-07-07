@@ -37,9 +37,27 @@ LLM 평가 결과는 Git에 포함되지 않는 `outputs/evaluations`에 JSON과
 
 이미지 모델 평가는 LLM 평가 runner에 섞지 않고 별도 runner로 실행합니다.
 
+> 이 runner는 운영 요청 중 실행하는 코드가 아니라 모델 선택과 실험 재현을 위한
+> 오프라인 평가 파이프라인입니다. 웹 UI 또는 FastAPI 수동 테스트를 해도
+> `report.json`, `report.md`, 평가용 이미지 폴더는 자동 생성되지 않습니다.
+
 ```powershell
 # [Design Intent] 기존 LLM 평가 케이스에서 image prompt를 생성한 뒤 이미지 CLIP Score를 계산한다.
 .\.venv\Scripts\python -m scripts.evaluate_vision_models --repeats 3 --concurrency 1
+```
+
+WSL/Linux 터미널에서는 `apps/api`에서 아래처럼 실행합니다.
+
+```bash
+# [Design Intent] 로컬 FLUX/ComfyUI 평가 전에 가장 작은 조건으로 연결 상태를 검증한다.
+conda activate ssakda
+cd ~/personal/final_1_team/apps/api
+
+python -m scripts.evaluate_vision_models \
+  --case-limit 1 \
+  --repeats 1 \
+  --concurrency 1 \
+  --image-models black-forest-labs/FLUX.1-schnell
 ```
 
 로컬 ComfyUI FLUX만 빠르게 스모크 테스트할 때는 케이스 수를 제한합니다.
@@ -70,6 +88,25 @@ copy-to-image 파이프라인 품질 점수입니다.
 `report.json`의 trial과 이미지 요청에 함께 기록합니다.
 비전 평가 결과는 run 단위로 `outputs/evaluations/vision/{YYYYMMDD}/{HHMMSS}/`에 저장합니다.
 각 run 폴더는 `report.json`, `report.md`, `images/{model_name}/` 구조를 가집니다.
+
+`report.json`에서 시간 지표를 읽는 기준은 다음과 같습니다.
+
+| 필드 | 의미 |
+| --- | --- |
+| `trials[].copy_latency_ms` | 광고 문구 생성에 걸린 시간 |
+| `trials[].image_latency_ms` | 이미지 1장 생성에 걸린 시간 |
+| `trials[].wall_latency_ms` | 카피 생성부터 이미지 저장, metric 계산 시도까지 포함한 전체 trial 시간 |
+| `model_summaries[].serving_quality.mean_image_latency_ms` | 성공한 이미지 생성 요청들의 평균 이미지 생성 시간 |
+| `model_summaries[].serving_quality.mean_latency_ms` | 성공한 trial들의 평균 End-to-End 시간 |
+
+CLIP 의존성이 설치되지 않아 `metric_error_type`이 기록되어도, 이미지 생성이 성공했다면
+Serving Quality의 성공률과 latency는 별도로 집계합니다. CLIP Score까지 계산하려면
+`apps/api`에서 GPU image dependency를 설치합니다.
+
+```bash
+# [Design Intent] 로컬과 GPU 서버를 같은 CUDA 12.1 PyTorch wheel 기준으로 고정한다.
+pip install -r requirements-image-gpu-prod.txt --extra-index-url https://download.pytorch.org/whl/cu121
+```
 
 ## 현재 자동 측정 지표
 

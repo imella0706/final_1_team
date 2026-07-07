@@ -337,6 +337,9 @@ async def evaluate_trial(
             record.update(
                 {
                     "image_payload_valid": True,
+                    "image_path": str(
+                        Path("images") / image_path.relative_to(image_output_dir)
+                    ),
                     "metric_error_type": type(error).__name__,
                     "metric_error": str(error),
                     "wall_latency_ms": round((perf_counter() - started_at) * 1000, 2),
@@ -344,15 +347,15 @@ async def evaluate_trial(
             )
             return record
 
-            record.update(
-                {
-                    "image_payload_valid": True,
-                    "image_path": str(
-                        Path("images") / image_path.relative_to(image_output_dir)
-                    ),
-                    "clip_score": clip_result["score"],
-                    "clip_model": clip_result["model_name"],
-                    "wall_latency_ms": round((perf_counter() - started_at) * 1000, 2),
+        record.update(
+            {
+                "image_payload_valid": True,
+                "image_path": str(
+                    Path("images") / image_path.relative_to(image_output_dir)
+                ),
+                "clip_score": clip_result["score"],
+                "clip_model": clip_result["model_name"],
+                "wall_latency_ms": round((perf_counter() - started_at) * 1000, 2),
             }
         )
 
@@ -420,6 +423,10 @@ def standard_deviation(values: list[float]) -> float | None:
     return round(stdev(values), 6) if len(values) > 1 else 0.0
 
 
+def display_metric(value: Any, fallback: str = "Not measured") -> Any:
+    return fallback if value is None else value
+
+
 def summarize_model(
     copy_model: AdModel,
     image_model: ImageModel,
@@ -464,6 +471,11 @@ def summarize_model(
             or record["image_payload_valid"] is False
         )
     ]
+    metric_failures = [
+        record
+        for record in records
+        if record.get("metric_error_type") or record.get("judge_error_type")
+    ]
     queue_waits = [float(record["queue_wait_ms"]) for record in records]
 
     return {
@@ -474,13 +486,17 @@ def summarize_model(
             "clip_score_mean": average(clip_scores),
             "clip_score_std": standard_deviation(clip_scores),
             "clip_score_samples": len(clip_scores),
+            "clip_score_success_rate_percent": percent(len(clip_scores), len(records)),
             "vision_judge_overall_mean": average(judge_scores),
             "vision_judge_overall_std": standard_deviation(judge_scores),
             "vision_judge_samples": len(judge_scores),
+            "vision_judge_success_rate_percent": percent(len(judge_scores), len(records)),
+            "metric_failure_rate_percent": percent(len(metric_failures), len(records)),
             "failure_rate_percent": percent(len(image_failures), len(records)),
         },
         "serving_quality": {
             "task_success_rate_percent": percent(len(successes), len(records)),
+            "image_generation_success_rate_percent": percent(len(successes), len(records)),
             "mean_latency_ms": round(mean(latencies), 2) if latencies else None,
             "p50_latency_ms": percentile(latencies, 0.50),
             "p95_latency_ms": percentile(latencies, 0.95),
@@ -554,6 +570,7 @@ async def evaluate_model(
 
 
 def markdown_report(report: dict[str, Any]) -> str:
+    vision_judge_enabled = report["metadata"]["vision_judge_model"] is not None
     lines = [
         "# BrandMate 비전 모델 평가 보고서",
         "",
@@ -567,17 +584,22 @@ def markdown_report(report: dict[str, Any]) -> str:
         "",
         "## Vision Model Quality",
         "",
-        "| Copy 모델 | Image 모델 | 요청 수 | CLIP Mean | CLIP Std | Judge Mean | "
-        "Judge Samples | Failure Rate |",
-        "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |",
+        "| Copy 모델 | Image 모델 | 요청 수 | CLIP Mean | CLIP Std | CLIP Samples | "
+        "Judge Mean | Judge Samples | Metric Failure | Image Failure |",
+        "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
     ]
     for summary in report["model_summaries"]:
         quality = summary["vision_quality"]
+        judge_fallback = "Disabled" if not vision_judge_enabled else "Not measured"
         lines.append(
             f"| {summary['copy_model']} | {summary['image_model']} | {summary['requests']} | "
-            f"{quality['clip_score_mean']} | {quality['clip_score_std']} | "
-            f"{quality['vision_judge_overall_mean']} | "
-            f"{quality['vision_judge_samples']} | {quality['failure_rate_percent']}% |"
+            f"{display_metric(quality['clip_score_mean'])} | "
+            f"{display_metric(quality['clip_score_std'])} | "
+            f"{quality['clip_score_samples']} | "
+            f"{display_metric(quality['vision_judge_overall_mean'], judge_fallback)} | "
+            f"{quality['vision_judge_samples']} | "
+            f"{quality['metric_failure_rate_percent']}% | "
+            f"{quality['failure_rate_percent']}% |"
         )
 
     lines.extend(
@@ -585,7 +607,7 @@ def markdown_report(report: dict[str, Any]) -> str:
             "",
             "## Serving Quality",
             "",
-            "| Image 모델 | 성공률 | Pipeline Mean | P50 | P95 | P99 | Image Mean | "
+            "| Image 모델 | 이미지 생성 성공률 | Pipeline Mean | P50 | P95 | P99 | Image Mean | "
             "Image P95 | Queue Mean | Queue P95 | 처리량(req/s) |",
             "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
         ]
@@ -593,7 +615,8 @@ def markdown_report(report: dict[str, Any]) -> str:
     for summary in report["model_summaries"]:
         serving = summary["serving_quality"]
         lines.append(
-            f"| {summary['image_model']} | {serving['task_success_rate_percent']}% | "
+            f"| {summary['image_model']} | "
+            f"{serving['image_generation_success_rate_percent']}% | "
             f"{serving['mean_latency_ms']}ms | "
             f"{serving['p50_latency_ms']}ms | {serving['p95_latency_ms']}ms | "
             f"{serving['p99_latency_ms']}ms | "
