@@ -107,6 +107,12 @@ Serving Quality의 성공률과 latency는 별도로 집계합니다. CLIP Score
 # [Design Intent] 로컬과 GPU 서버를 같은 CUDA 12.1 PyTorch wheel 기준으로 고정한다.
 pip install -r requirements-image-gpu-prod.txt --extra-index-url https://download.pytorch.org/whl/cu121
 ```
+torch<2.6 환경에서는 .bin weight 로드가 보안 정책상 차단될 수 있어 safetensors weight를 사용합니다.
+
+```bash
+# [Design Intent] torch.load 기반 .bin 대신 safetensors weight로 공개 CLIP 모델을 로드한다.
+python -c "from transformers import CLIPModel, CLIPProcessor; CLIPProcessor.from_pretrained('openai/clip-vit-base-patch32'); CLIPModel.from_pretrained('openai/clip-vit-base-patch32', use_safetensors=True); print('clip ok')"
+```
 
 ## 현재 자동 측정 지표
 

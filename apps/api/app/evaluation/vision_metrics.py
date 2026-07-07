@@ -45,7 +45,10 @@ def _load_clip_model(model_name: str) -> tuple[Any, Any, Any]:
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
     processor = CLIPProcessor.from_pretrained(model_name)
-    model = CLIPModel.from_pretrained(model_name)
+    # [Design Intent] torch<2.6 환경에서는 CVE-2025-32434 대응으로 .bin weight 로드가
+    # 차단될 수 있다. 공개 CLIP 모델의 safetensors weight를 우선 사용해 torch 업그레이드
+    # 없이도 평가 runner가 동작하게 한다.
+    model = CLIPModel.from_pretrained(model_name, use_safetensors=True)
     model.to(device)
     model.eval()
     return processor, model, torch
