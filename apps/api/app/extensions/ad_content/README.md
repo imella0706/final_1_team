@@ -98,8 +98,9 @@ image_validator.py
 ## 환경 변수
 
 ```env
-BRANDMATE_IMAGE_BASE_URL=https://router.huggingface.co/hf-inference
-BRANDMATE_IMAGE_PROVIDER=huggingface
+# [Design Intent] 이미지 생성은 외부 유료 API가 아니라 자체 GPU VM의 ComfyUI를 기본 경로로 사용한다.
+BRANDMATE_IMAGE_PROVIDER=comfyui
+BRANDMATE_COMFYUI_BASE_URL=http://127.0.0.1:8188
 BRANDMATE_IMAGE_PROMPT_TEMPLATE=generic
 
 BRANDMATE_REFERENCE_SEARCH_ENABLED=false
@@ -113,23 +114,24 @@ BRANDMATE_IMAGE_VALIDATION_ENABLED=false
 BRANDMATE_IMAGE_VALIDATOR_MODEL_NAME=
 ```
 
-기존 웹 테스트 방식은 그대로 사용할 수 있습니다. Hugging Face API로 이미지를 생성하려면
-`BRANDMATE_IMAGE_PROVIDER`를 비우거나 `huggingface`로 설정합니다.
+기존 웹 테스트 방식은 그대로 사용할 수 있습니다. 이미지 생성은 FastAPI가 ComfyUI
+HTTP API를 호출하는 방식입니다. 현재 기본 경로는 FLUX.1 Schnell GGUF workflow입니다.
 
 ```env
-# [Design Intent] 기존 API 키 기반 이미지 생성 경로를 기본값으로 유지한다.
+# [Design Intent] FastAPI와 ComfyUI가 같은 VM에서 실행되면 내부 localhost 주소를 사용한다.
+BRANDMATE_IMAGE_PROVIDER=comfyui
+BRANDMATE_COMFYUI_BASE_URL=http://127.0.0.1:8188
+```
+
+Hugging Face Router는 외부 유료 API 경로이므로 현재 운영 기본값에서 제외합니다.
+임시 API 테스트가 필요할 때만 별도 `.env`에서 `BRANDMATE_IMAGE_PROVIDER=huggingface`로
+바꿔 사용합니다.
+
+```env
+# [Design Intent] 외부 API 테스트는 운영 기본값이 아니라 임시 우회 경로로만 둔다.
 BRANDMATE_IMAGE_PROVIDER=huggingface
 BRANDMATE_IMAGE_BASE_URL=https://router.huggingface.co/hf-inference
 BRANDMATE_LLM_API_KEY=...
-```
-
-로컬 FLUX를 테스트할 때만 `BRANDMATE_IMAGE_PROVIDER=comfyui`로 바꾸고 ComfyUI를
-실행합니다. 현재 로컬 ComfyUI 경로는 FLUX.1 Schnell만 지원하며 다른 모델을 추가할 예정입니다.
-
-```env
-# 로컬 ComfyUI 서버가 떠 있을 때만 FLUX workflow를 사용
-BRANDMATE_IMAGE_PROVIDER=comfyui
-BRANDMATE_COMFYUI_BASE_URL=http://127.0.0.1:8188
 ```
 
 현재 비전 모델 평가코드는 터미널 생성 기준이며, 웹요청 중 자동으로 실행되지 않습니다. 평가지표, `report.json`, `report.md`, 평가용 이미지 저장은 터미널에서 `scriptsevaluate_vision_models`를 실행했을 때만 생성됩니다. 웹 UI에는 기존처럼 광고 문구 생성 시간과 이미지 생성 시간만 표시됩니다.
