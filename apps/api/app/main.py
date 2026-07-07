@@ -1,8 +1,11 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.router import api_router
 from app.core.config import settings
+from app.core.routing import register_router
+from app.extensions.ad_content.router import router as ad_content_router
+from app.modules.ad_copy.router import router as ad_copy_router
+from app.modules.model_runtime.router import router as model_runtime_router
 
 
 def create_app() -> FastAPI:
@@ -14,7 +17,9 @@ def create_app() -> FastAPI:
         allow_methods=["GET", "POST"],
         allow_headers=["Content-Type"],
     )
-    app.include_router(api_router, prefix=settings.api_prefix)
+    register_router(app, ad_copy_router, prefix=settings.api_prefix)
+    register_router(app, model_runtime_router, prefix=settings.api_prefix)
+    register_router(app, ad_content_router, prefix=settings.api_prefix)
 
     @app.get("/health", tags=["health"])
     async def health() -> dict[str, str]:

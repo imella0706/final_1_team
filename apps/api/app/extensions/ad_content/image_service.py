@@ -1,12 +1,18 @@
 import base64
+import copy
+import json
 import os
+import random
+import time
+from pathlib import Path
 from time import perf_counter
 from typing import Any
+from urllib.parse import urlencode
 
 import httpx
 
 from app.core.config import settings
-from app.extensions.ad_content.schemas import AdImageRequest, AdImageResponse
+from app.extensions.ad_content.schemas import AdImageRequest, AdImageResponse, ImageModel
 
 
 class ImageModelNotConfiguredError(RuntimeError):
@@ -18,6 +24,17 @@ class ImageModelProviderError(RuntimeError):
 
 
 DEFAULT_IMAGE_BASE_URL = "https://router.huggingface.co/hf-inference"
+DEFAULT_COMFYUI_WORKFLOW_PATH = (
+    Path(__file__).resolve().parent / "workflows" / "flux_schnell_gguf_api.json"
+)
+
+PROMPT_NODE_ID = "5"
+FLUX_GUIDANCE_NODE_ID = "6"
+NEGATIVE_PROMPT_NODE_ID = "7"
+LATENT_NODE_ID = "8"
+SAMPLING_MODEL_NODE_ID = "2"
+KSAMPLER_NODE_ID = "9"
+SAVE_IMAGE_NODE_ID = "11"
 
 
 def _build_payload(request: AdImageRequest) -> dict:
@@ -31,6 +48,8 @@ def _build_payload(request: AdImageRequest) -> dict:
         },
         "options": {"wait_for_model": True},
     }
+    if request.seed is not None:
+        payload["parameters"]["seed"] = request.seed
     if request.negative_prompt:
         payload["parameters"]["negative_prompt"] = request.negative_prompt
     return payload
@@ -87,7 +106,158 @@ async def _extract_image(response: httpx.Response) -> tuple[bytes, str]:
     )
 
 
+def _workflow_template_path() -> Path:
+    if settings.comfyui_workflow_path:
+        return Path(settings.comfyui_workflow_path)
+    return DEFAULT_COMFYUI_WORKFLOW_PATH
+
+
+def _load_comfyui_workflow_template() -> dict[str, Any]:
+    path = _workflow_template_path()
+    try:
+        with path.open("r", encoding="utf-8") as file:
+            workflow = json.load(file)
+    except OSError as error:
+        raise ImageModelNotConfiguredError(
+            f"ComfyUI workflow template not found: {path}"
+        ) from error
+    except json.JSONDecodeError as error:
+        raise ImageModelNotConfiguredError(
+            f"ComfyUI workflow template is invalid JSON: {path}"
+        ) from error
+
+    if not isinstance(workflow, dict):
+        raise ImageModelNotConfiguredError("ComfyUI workflow template must be a JSON object.")
+    return workflow
+
+
+def _build_comfyui_workflow(request: AdImageRequest) -> dict[str, Any]:
+    # [Design Intent]
+    # The LLM only controls safe runtime fields. The ComfyUI graph, model names,
+    # and node wiring stay fixed so a malformed LLM response cannot rewrite the pipeline.
+    workflow = copy.deepcopy(_load_comfyui_workflow_template())
+
+    try:
+        workflow[PROMPT_NODE_ID]["inputs"]["text"] = request.prompt
+        workflow[NEGATIVE_PROMPT_NODE_ID]["inputs"]["text"] = request.negative_prompt or ""
+        workflow[LATENT_NODE_ID]["inputs"]["width"] = request.width
+        workflow[LATENT_NODE_ID]["inputs"]["height"] = request.height
+        workflow[SAMPLING_MODEL_NODE_ID]["inputs"]["width"] = request.width
+        workflow[SAMPLING_MODEL_NODE_ID]["inputs"]["height"] = request.height
+        workflow[KSAMPLER_NODE_ID]["inputs"]["steps"] = request.num_inference_steps
+        workflow[FLUX_GUIDANCE_NODE_ID]["inputs"]["guidance"] = request.guidance_scale
+        workflow[KSAMPLER_NODE_ID]["inputs"]["cfg"] = 1.0
+        workflow[KSAMPLER_NODE_ID]["inputs"]["seed"] = (
+            request.seed if request.seed is not None else random.randint(0, 2**32 - 1)
+        )
+        workflow[SAVE_IMAGE_NODE_ID]["inputs"]["filename_prefix"] = "brandmate_flux"
+    except KeyError as error:
+        raise ImageModelNotConfiguredError(
+            "ComfyUI workflow template does not match the expected BrandMate node ids."
+        ) from error
+
+    return workflow
+
+
+def _comfyui_url(path: str) -> str:
+    return f"{settings.comfyui_base_url.rstrip('/')}/{path.lstrip('/')}"
+
+
+def _find_saved_image(history: dict[str, Any], prompt_id: str) -> dict[str, str]:
+    prompt_history = history.get(prompt_id)
+    if not isinstance(prompt_history, dict):
+        raise ImageModelProviderError(f"ComfyUI history did not contain prompt_id={prompt_id}.")
+
+    outputs = prompt_history.get("outputs")
+    if not isinstance(outputs, dict):
+        raise ImageModelProviderError("ComfyUI history response did not contain outputs.")
+
+    for output in outputs.values():
+        if not isinstance(output, dict):
+            continue
+        images = output.get("images")
+        if isinstance(images, list) and images:
+            image = images[0]
+            if isinstance(image, dict):
+                filename = image.get("filename")
+                subfolder = image.get("subfolder", "")
+                image_type = image.get("type", "output")
+                if isinstance(filename, str):
+                    return {
+                        "filename": filename,
+                        "subfolder": subfolder if isinstance(subfolder, str) else "",
+                        "type": image_type if isinstance(image_type, str) else "output",
+                    }
+
+    raise ImageModelProviderError("ComfyUI completed but no saved image was found.")
+
+
+async def _download_comfyui_image(client: httpx.AsyncClient, image: dict[str, str]) -> bytes:
+    query = urlencode(image)
+    response = await client.get(_comfyui_url(f"/view?{query}"))
+    response.raise_for_status()
+    return response.content
+
+
+async def _generate_ad_image_comfyui(request: AdImageRequest) -> AdImageResponse:
+    if request.model != ImageModel.FLUX_SCHNELL:
+        raise ImageModelNotConfiguredError(
+            "Local ComfyUI generation currently supports only FLUX.1 Schnell."
+        )
+
+    started_at = perf_counter()
+    workflow = _build_comfyui_workflow(request)
+    timeout = settings.comfyui_timeout_seconds
+    deadline = time.monotonic() + timeout
+
+    try:
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            prompt_response = await client.post(
+                _comfyui_url("/prompt"),
+                json={"prompt": workflow},
+            )
+            prompt_response.raise_for_status()
+            prompt_id = prompt_response.json()["prompt_id"]
+
+            while time.monotonic() < deadline:
+                history_response = await client.get(_comfyui_url(f"/history/{prompt_id}"))
+                history_response.raise_for_status()
+                history = history_response.json()
+                if history:
+                    image = _find_saved_image(history, prompt_id)
+                    image_bytes = await _download_comfyui_image(client, image)
+                    return AdImageResponse(
+                        model=request.model.value,
+                        prompt=request.prompt,
+                        image_base64=base64.b64encode(image_bytes).decode("ascii"),
+                        media_type="image/png",
+                        latency_ms=round((perf_counter() - started_at) * 1000),
+                    )
+                await _sleep(settings.comfyui_poll_interval_seconds)
+    except KeyError as error:
+        raise ImageModelProviderError("ComfyUI /prompt response did not include prompt_id.") from error
+    except httpx.HTTPStatusError as error:
+        detail = _provider_detail(error.response)
+        raise ImageModelProviderError(f"ComfyUI image generation failed: {detail}") from error
+    except httpx.HTTPError as error:
+        raise ImageModelProviderError(
+            f"Could not connect to ComfyUI at {settings.comfyui_base_url}. "
+            "Check that ComfyUI is running and reachable."
+        ) from error
+
+    raise ImageModelProviderError(f"ComfyUI image generation timed out after {timeout} seconds.")
+
+
+async def _sleep(seconds: float) -> None:
+    import asyncio
+
+    await asyncio.sleep(seconds)
+
+
 async def generate_ad_image(request: AdImageRequest) -> AdImageResponse:
+    if settings.image_provider.lower() == "comfyui":
+        return await _generate_ad_image_comfyui(request)
+
     if settings.llm_api_key is None:
         raise ImageModelNotConfiguredError(
             "BRANDMATE_LLM_API_KEY is required for Hugging Face image generation."

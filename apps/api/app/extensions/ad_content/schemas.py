@@ -33,6 +33,7 @@ class AdImageRequest(BaseModel):
     height: int = Field(default=1280, ge=512, le=1536)
     guidance_scale: float = Field(default=3.5, ge=1, le=20)
     num_inference_steps: int = Field(default=28, ge=1, le=60)
+    seed: int | None = Field(default=None, ge=0, le=2**32 - 1)
 
 
 class AdImageResponse(BaseModel):
