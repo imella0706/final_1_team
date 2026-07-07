@@ -64,6 +64,8 @@
 - 입력에 없는 주장과 유해 표현 비율
 - CTA, 해시태그, 영문 이미지 프롬프트 품질
 - Mean, P50, P95, P99 지연시간과 처리량
+- 이미지 생성 연결 후 CLIP Score, Aesthetic Score, Failure Rate, Diversity Score 평가지표 자동화
+- 이미지 최종 후보 검증용 GPT-4o Vision Judge, Human Preference, ImageReward
 
 동일 입력으로 모델을 바꿔 실행하며 Qwen을 한국어 기준 모델로 비교합니다. 접근권한,
 Provider 지원과 라이선스 차이는 품질 점수와 별도로 기록합니다.

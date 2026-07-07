@@ -18,6 +18,7 @@ dev = [
 image = [
   "accelerate>=0.33",
   "diffusers>=0.30",
+  "pillow>=10.0",
   "safetensors>=0.4",
   "torch>=2.3",
   "transformers>=4.43",
