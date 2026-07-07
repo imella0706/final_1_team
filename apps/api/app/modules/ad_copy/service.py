@@ -37,7 +37,20 @@ def _request_payload(
     *,
     provider_model_name: str,
     structured: bool,
+    invalid_content: str | None = None,
 ) -> dict[str, Any]:
+    user_content = build_prompt(request)
+    if invalid_content is not None:
+        user_content += f"""
+
+[Design Intent] 직전 응답이 JSON 스키마 또는 비즈니스 검증을 통과하지 못했다.
+아래 직전 응답의 의미는 유지하되, 현재 시스템이 요구하는 JSON 객체 형식으로만 다시 작성하라.
+설명, 마크다운 코드 블록, 추가 문장은 출력하지 마라.
+
+직전 응답:
+{invalid_content[:6000]}
+"""
+
     payload: dict[str, Any] = {
         "model": provider_model_name,
         "messages": [
@@ -48,9 +61,9 @@ def _request_payload(
                     "입력에 없는 사실을 만들지 말고 JSON 객체만 출력하세요."
                 ),
             },
-            {"role": "user", "content": build_prompt(request)},
+            {"role": "user", "content": user_content},
         ],
-        "temperature": 0.75,
+        "temperature": 0.2 if invalid_content is not None else 0.75,
         "max_tokens": 2000,
     }
     if structured:
@@ -100,7 +113,12 @@ def _parse_content(content: str) -> AdCopyContent:
         ) from error
 
 
-async def _call_model(request: AdCopyRequest) -> str:
+async def _call_model(
+    request: AdCopyRequest,
+    *,
+    invalid_content: str | None = None,
+) -> str:
+    model_spec = get_model_spec(request.model)
     try:
         config = get_text_model_config(request.model.value)
     except KeyError as error:
@@ -113,7 +131,7 @@ async def _call_model(request: AdCopyRequest) -> str:
 
     if provider == TextRuntimeProvider.HUGGING_FACE_ROUTER and not api_key:
         raise ModelNotConfiguredError(
-            f"{api_key_name}가 없습니다. API 서버의 .env를 설정해주세요."
+            f"{config.api_key_setting}가 없습니다. API 서버의 .env를 설정해주세요."
         )
 
     endpoint = f"{base_url.rstrip('/')}/chat/completions"
@@ -129,7 +147,8 @@ async def _call_model(request: AdCopyRequest) -> str:
                 json=_request_payload(
                     request,
                     provider_model_name=provider_model_name,
-                    structured=True,
+                    structured=model_spec.supports_structured_output,
+                    invalid_content=invalid_content,
                 ),
             )
 
@@ -144,6 +163,7 @@ async def _call_model(request: AdCopyRequest) -> str:
                         request,
                         provider_model_name=provider_model_name,
                         structured=False,
+                        invalid_content=invalid_content,
                     ),
                 )
 
@@ -182,13 +202,18 @@ def _add_prohibited_term_warnings(
 
 async def generate_ad_copy(request: AdCopyRequest) -> AdCopyResponse:
     started_at = perf_counter()
+    model_spec = get_model_spec(request.model)
     warnings: list[str] = []
     content: AdCopyContent | None = None
     last_error: Exception | None = None
+    invalid_content: str | None = None
+    attempts = 0
+    output_repaired = False
 
     for attempt in range(3):
+        attempts = attempt + 1
         try:
-            raw_content = await _call_model(request)
+            raw_content = await _call_model(request, invalid_content=invalid_content)
             candidate = _parse_content(raw_content)
             validation = validate_copy_output(candidate, request)
             if validation.valid:
@@ -196,9 +221,13 @@ async def generate_ad_copy(request: AdCopyRequest) -> AdCopyResponse:
                 break
             warnings = validation.warnings
             last_error = InvalidModelOutputError("; ".join(validation.warnings))
+            invalid_content = raw_content
+            output_repaired = True
         except InvalidModelOutputError as error:
             last_error = error
             warnings = [str(error)]
+            invalid_content = raw_content if "raw_content" in locals() else None
+            output_repaired = True
 
         if attempt == 2:
             content = build_fallback_copy(request, warnings)
