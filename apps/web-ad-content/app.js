@@ -16,6 +16,10 @@ const payloadPreview = document.querySelector("#payload-preview");
 const outputPanel = document.querySelector("#output-panel");
 const emptyState = document.querySelector("#empty-state");
 const generatedContent = document.querySelector("#generated-content");
+const artifactBox = document.querySelector("#artifact-box");
+const artifactDirectory = document.querySelector("#artifact-directory");
+const artifactJson = document.querySelector("#artifact-json");
+const artifactImage = document.querySelector("#artifact-image");
 
 let hasGeneratedAd = false;
 
@@ -198,6 +202,14 @@ function renderResult(input, result) {
   document.querySelector("#generated-image").src =
     `data:${image.media_type};base64,${image.image_base64}`;
   document.querySelector("#image-caption").textContent = result.image_prompt;
+  if (result.artifacts && result.artifacts.directory) {
+    artifactDirectory.textContent = `dir: ${result.artifacts.directory}`;
+    artifactJson.textContent = `json: ${result.artifacts.metadata_json}`;
+    artifactImage.textContent = `image: ${result.artifacts.image}`;
+    artifactBox.hidden = false;
+  } else {
+    artifactBox.hidden = true;
+  }
 
   payloadPreview.textContent = JSON.stringify(
     {
@@ -212,6 +224,7 @@ function renderResult(input, result) {
       },
       validation: result.validation,
       models: result.models,
+      artifacts: result.artifacts,
       model_2_output: {
         model: image.model,
         media_type: image.media_type,
@@ -290,6 +303,7 @@ resetButton.addEventListener("click", () => {
   runState.textContent = "대기";
   runState.className = "run-state";
   payloadPreview.textContent = "아직 생성된 데이터가 없습니다.";
+  artifactBox.hidden = true;
   showEmptyState();
   generateButton.disabled = false;
   generateButton.firstElementChild.textContent = "광고 콘텐츠 생성";

@@ -37,8 +37,13 @@ class OpenAICompatibleClient:
             "model": model_name,
             "messages": messages,
             "temperature": temperature,
-            "max_tokens": max_tokens,
         }
+        token_limit_name = (
+            "max_completion_tokens"
+            if self.provider == TextRuntimeProvider.OPENAI
+            else "max_tokens"
+        )
+        payload[token_limit_name] = max_tokens
         endpoint = f"{base_url.rstrip('/')}/chat/completions"
 
         try:
@@ -83,3 +88,13 @@ class VllmClient(OpenAICompatibleClient):
 class HuggingFaceRouterClient(OpenAICompatibleClient):
     def __init__(self) -> None:
         super().__init__(TextRuntimeProvider.HUGGING_FACE_ROUTER)
+
+
+class OpenAIClient(OpenAICompatibleClient):
+    def __init__(self) -> None:
+        super().__init__(TextRuntimeProvider.OPENAI)
+
+
+class NvidiaClient(OpenAICompatibleClient):
+    def __init__(self) -> None:
+        super().__init__(TextRuntimeProvider.NVIDIA)

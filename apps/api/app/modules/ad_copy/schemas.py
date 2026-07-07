@@ -14,6 +14,11 @@ from app.modules.ad_copy.input_validator import (
 
 
 class AdModel(StrEnum):
+    OPENAI_GPT_5_5 = "openai/gpt-5.5"
+    OPENAI_GPT_5_4 = "openai/gpt-5.4"
+    OPENAI_GPT_5_4_MINI = "openai/gpt-5.4-mini"
+    OPENAI_GPT_5_4_NANO = "openai/gpt-5.4-nano"
+    OPENAI_GPT_4_1_MINI = "openai/gpt-4.1-mini"
     QWEN_2_5_7B = "Qwen/Qwen2.5-7B-Instruct"
     LLAMA_3_1_8B = "meta-llama/Llama-3.1-8B-Instruct"
     NVIDIA_LLAMA_3_1_8B = "nvidia/meta/llama-3.1-8b-instruct"

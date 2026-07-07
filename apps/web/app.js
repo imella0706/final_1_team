@@ -54,6 +54,11 @@ const labelMaps = {
 };
 
 const shortModelNames = {
+  "openai/gpt-5.5": "OpenAI GPT-5.5",
+  "openai/gpt-5.4": "OpenAI GPT-5.4",
+  "openai/gpt-5.4-mini": "OpenAI GPT-5.4 Mini",
+  "openai/gpt-5.4-nano": "OpenAI GPT-5.4 Nano",
+  "openai/gpt-4.1-mini": "OpenAI GPT 4.1 Mini",
   "Qwen/Qwen2.5-7B-Instruct": "Qwen 2.5 7B",
   "meta-llama/Llama-3.1-8B-Instruct": "Llama 3.1 8B",
   "nvidia/meta/llama-3.1-8b-instruct": "NVIDIA Llama 3.1 8B",

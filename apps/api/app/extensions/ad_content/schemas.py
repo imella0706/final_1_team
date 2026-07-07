@@ -6,6 +6,9 @@ from app.modules.ad_copy.schemas import AdCopyRequest, AdCopyResponse
 
 
 class ImageModel(StrEnum):
+    OPENAI_GPT_IMAGE_1 = "openai/gpt-image-1"
+    OPENAI_GPT_5_2_IMAGE_TOOL = "openai-responses/gpt-5.2-2025-12-11"
+    OPENAI_GPT_5_5_IMAGE_TOOL = "openai-responses/gpt-5.5"
     FLUX_SCHNELL = "black-forest-labs/FLUX.1-schnell"
     SDXL_BASE = "stabilityai/stable-diffusion-xl-base-1.0"
     OPENJOURNEY = "prompthero/openjourney"
@@ -67,3 +70,4 @@ class AdContentResponse(BaseModel):
     image_url: str = ""
     validation: dict[str, object] = Field(default_factory=dict)
     models: dict[str, str | None] = Field(default_factory=dict)
+    artifacts: dict[str, str] = Field(default_factory=dict)

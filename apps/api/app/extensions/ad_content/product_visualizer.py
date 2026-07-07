@@ -129,9 +129,10 @@ OUTPUT JSON FORMAT
         request: AdCopyRequest,
         copy: AdCopyResponse,
         model_name: str,
+        provider: TextRuntimeProvider,
         reference_profiles: list[ProductVisual] | None = None,
     ) -> dict[str, Any]:
-        return {
+        payload: dict[str, Any] = {
             "model": model_name,
             "messages": [
                 {
@@ -147,7 +148,6 @@ OUTPUT JSON FORMAT
                 },
             ],
             "temperature": 0.2,
-            "max_tokens": 1200,
             "response_format": {
                 "type": "json_schema",
                 "json_schema": {
@@ -157,6 +157,13 @@ OUTPUT JSON FORMAT
                 },
             },
         }
+        token_limit_name = (
+            "max_completion_tokens"
+            if provider == TextRuntimeProvider.OPENAI
+            else "max_tokens"
+        )
+        payload[token_limit_name] = 1200
+        return payload
 
     def _parse(self, content: str) -> ProductVisualization:
         cleaned = content.strip()
@@ -228,13 +235,20 @@ OUTPUT JSON FORMAT
                 response = await client.post(
                     f"{base_url.rstrip('/')}/chat/completions",
                     headers=headers,
-                    json=self._payload(request, copy, model_name, reference_profiles),
+                    json=self._payload(
+                        request,
+                        copy,
+                        model_name,
+                        provider,
+                        reference_profiles,
+                    ),
                 )
                 if response.status_code in {400, 422}:
                     payload = self._payload(
                         request,
                         copy,
                         model_name,
+                        provider,
                         reference_profiles,
                     )
                     payload.pop("response_format", None)

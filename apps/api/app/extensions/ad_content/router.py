@@ -1,6 +1,7 @@
 from fastapi import APIRouter, HTTPException, status
 
 from app.core.config import settings
+from app.extensions.ad_content.artifact_store import save_ad_content_artifacts
 from app.extensions.ad_content.image_validator import validate_generated_image
 from app.extensions.ad_content.image_service import (
     ImageModelNotConfiguredError,
@@ -97,7 +98,7 @@ async def generate_content(request: AdContentRequest) -> AdContentResponse:
             detail=str(error),
         ) from error
 
-    return AdContentResponse(
+    response = AdContentResponse(
         input=request.copy_request.model_dump(mode="json"),
         ad_copy={
             "headlines": copy.headlines,
@@ -127,3 +128,5 @@ async def generate_content(request: AdContentRequest) -> AdContentResponse:
             "image_validator_model": settings.image_validator_model_name,
         },
     )
+    response.artifacts = save_ad_content_artifacts(response)
+    return response

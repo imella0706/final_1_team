@@ -20,6 +20,14 @@ class ImageModelProviderError(RuntimeError):
 DEFAULT_IMAGE_BASE_URL = "https://router.huggingface.co/hf-inference"
 
 
+def _secret_value(value) -> str | None:
+    if value is None:
+        return None
+    if hasattr(value, "get_secret_value"):
+        return value.get_secret_value() or None
+    return str(value) or None
+
+
 def _build_payload(request: AdImageRequest) -> dict:
     payload = {
         "inputs": request.prompt,
@@ -39,6 +47,30 @@ def _build_payload(request: AdImageRequest) -> dict:
 def _image_endpoint(model: str) -> str:
     base_url = os.getenv("BRANDMATE_IMAGE_BASE_URL", DEFAULT_IMAGE_BASE_URL)
     return f"{base_url.rstrip('/')}/models/{model}"
+
+
+def _is_openai_image_model(model: str) -> bool:
+    return model.startswith("openai/")
+
+
+def _is_openai_responses_image_model(model: str) -> bool:
+    return model.startswith("openai-responses/")
+
+
+def _openai_model_name(model: str) -> str:
+    return model.removeprefix("openai/")
+
+
+def _openai_responses_model_name(model: str) -> str:
+    return model.removeprefix("openai-responses/")
+
+
+def _openai_size(width: int, height: int) -> str:
+    if width == height:
+        return "1024x1024"
+    if height > width:
+        return "1024x1536"
+    return "1536x1024"
 
 
 def _provider_detail(response: httpx.Response) -> str:
@@ -88,6 +120,12 @@ async def _extract_image(response: httpx.Response) -> tuple[bytes, str]:
 
 
 async def generate_ad_image(request: AdImageRequest) -> AdImageResponse:
+    if _is_openai_responses_image_model(request.model.value):
+        return await _generate_openai_responses_image(request)
+
+    if _is_openai_image_model(request.model.value):
+        return await _generate_openai_image(request)
+
     if settings.llm_api_key is None:
         raise ImageModelNotConfiguredError(
             "BRANDMATE_LLM_API_KEY is required for Hugging Face image generation."
@@ -124,4 +162,121 @@ async def generate_ad_image(request: AdImageRequest) -> AdImageResponse:
         image_base64=base64.b64encode(image_bytes).decode("ascii"),
         media_type=media_type,
         latency_ms=round((perf_counter() - started_at) * 1000),
+    )
+
+
+async def _generate_openai_image(request: AdImageRequest) -> AdImageResponse:
+    api_key = _secret_value(settings.openai_api_key)
+    if not api_key:
+        raise ImageModelNotConfiguredError(
+            "BRANDMATE_OPENAI_API_KEY is required for OpenAI image generation."
+        )
+
+    started_at = perf_counter()
+    endpoint = f"{settings.openai_base_url.rstrip('/')}/images/generations"
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "model": settings.openai_image_model or _openai_model_name(request.model.value),
+        "prompt": request.prompt,
+        "size": _openai_size(request.width, request.height),
+        "n": 1,
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=settings.llm_timeout_seconds) as client:
+            response = await client.post(endpoint, headers=headers, json=payload)
+            response.raise_for_status()
+        image_bytes, media_type = await _extract_image(response)
+    except httpx.HTTPStatusError as error:
+        detail = _provider_detail(error.response)
+        raise ImageModelProviderError(
+            f"{request.model.value} image generation failed: {detail}"
+        ) from error
+    except httpx.HTTPError as error:
+        raise ImageModelProviderError(
+            "Could not connect to the OpenAI image provider. "
+            f"Root error: {type(error).__name__}"
+        ) from error
+
+    return AdImageResponse(
+        model=payload["model"],
+        prompt=request.prompt,
+        image_base64=base64.b64encode(image_bytes).decode("ascii"),
+        media_type=media_type,
+        latency_ms=round((perf_counter() - started_at) * 1000),
+    )
+
+
+async def _generate_openai_responses_image(request: AdImageRequest) -> AdImageResponse:
+    api_key = _secret_value(settings.openai_api_key)
+    if not api_key:
+        raise ImageModelNotConfiguredError(
+            "BRANDMATE_OPENAI_API_KEY is required for OpenAI Responses image generation."
+        )
+
+    started_at = perf_counter()
+    model_name = _openai_responses_model_name(request.model.value)
+    endpoint = f"{settings.openai_base_url.rstrip('/')}/responses"
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "model": model_name,
+        "input": request.prompt,
+        "tools": [{"type": "image_generation"}],
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=settings.llm_timeout_seconds) as client:
+            response = await client.post(endpoint, headers=headers, json=payload)
+            response.raise_for_status()
+        image_bytes = _extract_openai_responses_image(response.json())
+    except httpx.HTTPStatusError as error:
+        detail = _provider_detail(error.response)
+        raise ImageModelProviderError(
+            f"{request.model.value} image generation failed: {detail}"
+        ) from error
+    except httpx.HTTPError as error:
+        raise ImageModelProviderError(
+            "Could not connect to the OpenAI Responses image provider. "
+            f"Root error: {type(error).__name__}"
+        ) from error
+
+    return AdImageResponse(
+        model=model_name,
+        prompt=request.prompt,
+        image_base64=base64.b64encode(image_bytes).decode("ascii"),
+        media_type="image/png",
+        latency_ms=round((perf_counter() - started_at) * 1000),
+    )
+
+
+def _extract_openai_responses_image(body: dict[str, Any]) -> bytes:
+    output = body.get("output")
+    if not isinstance(output, list):
+        raise ImageModelProviderError(
+            f"OpenAI Responses returned an unsupported response format: {str(body)[:500]}"
+        )
+
+    for item in output:
+        if not isinstance(item, dict):
+            continue
+        if item.get("type") != "image_generation_call":
+            continue
+        result = item.get("result")
+        if isinstance(result, str):
+            return base64.b64decode(result)
+
+    output_types = [
+        item.get("type")
+        for item in output
+        if isinstance(item, dict) and isinstance(item.get("type"), str)
+    ]
+    raise ImageModelProviderError(
+        "OpenAI Responses did not return an image_generation_call result. "
+        f"Output types: {output_types}"
     )

@@ -76,8 +76,9 @@ Output:
         product_name: str,
         references: list[ReferenceImageResult],
         model_name: str,
+        provider: TextRuntimeProvider,
     ) -> dict[str, Any]:
-        return {
+        payload: dict[str, Any] = {
             "model": model_name,
             "messages": [
                 {
@@ -93,7 +94,6 @@ Output:
                 },
             ],
             "temperature": 0.1,
-            "max_tokens": 900,
             "response_format": {
                 "type": "json_schema",
                 "json_schema": {
@@ -103,6 +103,13 @@ Output:
                 },
             },
         }
+        token_limit_name = (
+            "max_completion_tokens"
+            if provider == TextRuntimeProvider.OPENAI
+            else "max_tokens"
+        )
+        payload[token_limit_name] = 900
+        return payload
 
     def _parse_product(self, product_name: str, content: str) -> ProductVisual | None:
         cleaned = content.strip()
@@ -139,7 +146,14 @@ Output:
                 headers["Authorization"] = f"Bearer {api_key}"
 
             endpoint = f"{base_url.rstrip('/')}/chat/completions"
-            payload = self._payload(request, copy, product_name, references, model_name)
+            payload = self._payload(
+                request,
+                copy,
+                product_name,
+                references,
+                model_name,
+                provider,
+            )
             async with httpx.AsyncClient(timeout=settings.llm_timeout_seconds) as client:
                 response = await client.post(endpoint, headers=headers, json=payload)
                 if response.status_code in {400, 422}:

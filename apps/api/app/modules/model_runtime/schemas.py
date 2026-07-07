@@ -5,6 +5,8 @@ from pydantic import BaseModel, Field
 
 class TextRuntimeProvider(StrEnum):
     HUGGING_FACE_ROUTER = "huggingface_router"
+    OPENAI = "openai"
+    NVIDIA = "nvidia"
     LM_STUDIO = "lm_studio"
     OLLAMA = "ollama"
     VLLM = "vllm"
@@ -12,6 +14,7 @@ class TextRuntimeProvider(StrEnum):
 
 class ImageRuntimeProvider(StrEnum):
     DIFFUSERS = "diffusers"
+    OPENAI = "openai"
 
 
 class LlmGenerateRequest(BaseModel):

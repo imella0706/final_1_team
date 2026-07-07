@@ -7,8 +7,8 @@ from pydantic import ValidationError
 
 from app.core.config import settings
 from app.modules.ad_copy.models import get_model_spec
-from app.modules.ad_copy.prompt import PROMPT_VERSION, build_prompt
 from app.modules.ad_copy.output_validator import build_fallback_copy, validate_copy_output
+from app.modules.ad_copy.prompt import PROMPT_VERSION, build_prompt
 from app.modules.ad_copy.schemas import AdCopyContent, AdCopyRequest, AdCopyResponse
 from app.modules.model_runtime.llm.registry import (
     get_text_model_config,
@@ -32,27 +32,51 @@ class InvalidModelOutputError(RuntimeError):
     """Raised when a model response does not satisfy the advertising-copy schema."""
 
 
+def _required_key_name(provider: TextRuntimeProvider) -> str:
+    if provider == TextRuntimeProvider.OPENAI:
+        return "BRANDMATE_OPENAI_API_KEY"
+    if provider == TextRuntimeProvider.NVIDIA:
+        return "BRANDMATE_NVIDIA_API_KEY"
+    return "BRANDMATE_LLM_API_KEY"
+
+
 def _request_payload(
     request: AdCopyRequest,
     *,
     provider_model_name: str,
     structured: bool,
+    supports_system_role: bool = True,
+    use_max_completion_tokens: bool = False,
+    invalid_content: str | None = None,
 ) -> dict[str, Any]:
+    system_prompt = (
+        "당신은 한국 소상공인을 위한 광고 카피라이터입니다. "
+        "입력에 없는 사실을 만들지 말고, 요청한 JSON 객체만 출력하세요."
+    )
+    user_prompt = build_prompt(request)
+    if invalid_content:
+        user_prompt = (
+            f"{user_prompt}\n\n"
+            "이전 응답은 JSON 스키마 또는 내부 검증에 실패했습니다. "
+            "아래 이전 응답을 참고해 같은 요구사항을 만족하는 올바른 JSON 객체만 다시 출력하세요.\n"
+            f"이전 응답:\n{invalid_content}"
+        )
+
+    if supports_system_role:
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ]
+    else:
+        messages = [{"role": "user", "content": f"{system_prompt}\n\n{user_prompt}"}]
+
     payload: dict[str, Any] = {
         "model": provider_model_name,
-        "messages": [
-            {
-                "role": "system",
-                "content": (
-                    "당신은 한국 소상공인을 위한 광고 카피라이터입니다. "
-                    "입력에 없는 사실을 만들지 말고 JSON 객체만 출력하세요."
-                ),
-            },
-            {"role": "user", "content": build_prompt(request)},
-        ],
+        "messages": messages,
         "temperature": 0.75,
-        "max_tokens": 2000,
     }
+    token_limit_name = "max_completion_tokens" if use_max_completion_tokens else "max_tokens"
+    payload[token_limit_name] = 2000
     if structured:
         payload["response_format"] = {
             "type": "json_schema",
@@ -70,7 +94,9 @@ def _extract_content(response: httpx.Response) -> str:
         body = response.json()
         return body["choices"][0]["message"]["content"]
     except (json.JSONDecodeError, KeyError, IndexError, TypeError) as error:
-        raise InvalidModelOutputError("모델 응답에서 문구 내용을 찾을 수 없습니다.") from error
+        raise InvalidModelOutputError(
+            "모델 응답에서 광고 문구 내용을 찾을 수 없습니다."
+        ) from error
 
 
 def _parse_content(content: str) -> AdCopyContent:
@@ -82,6 +108,7 @@ def _parse_content(content: str) -> AdCopyContent:
     try:
         data, _ = json.JSONDecoder().raw_decode(cleaned)
         data.pop("hashtags", None)
+        data.pop("image_prompt", None)
         validation_check = data.get("validation_check")
         if isinstance(validation_check, dict):
             if "all_features_included_verbatim" in validation_check:
@@ -96,24 +123,34 @@ def _parse_content(content: str) -> AdCopyContent:
         return AdCopyContent.model_validate(data)
     except (json.JSONDecodeError, ValidationError, AttributeError) as error:
         raise InvalidModelOutputError(
-            "모델이 약속된 JSON 형식을 지키지 않았습니다. 같은 입력으로 다시 시도해주세요."
+            "모델이 약속한 JSON 형식을 지키지 않았습니다. 같은 입력으로 다시 시도해주세요."
         ) from error
 
 
-async def _call_model(request: AdCopyRequest) -> str:
+async def _call_model(
+    request: AdCopyRequest,
+    *,
+    invalid_content: str | None = None,
+) -> str:
     try:
         config = get_text_model_config(request.model.value)
     except KeyError as error:
         raise ModelNotConfiguredError(str(error)) from error
 
+    model_spec = get_model_spec(request.model)
     base_url = resolve_base_url(config)
     provider_model_name = resolve_model_name(config)
     api_key = resolve_api_key(config)
     provider = infer_provider(base_url, config.provider)
 
-    if provider == TextRuntimeProvider.HUGGING_FACE_ROUTER and not api_key:
+    if provider in {
+        TextRuntimeProvider.HUGGING_FACE_ROUTER,
+        TextRuntimeProvider.OPENAI,
+        TextRuntimeProvider.NVIDIA,
+    } and not api_key:
+        key_name = _required_key_name(provider)
         raise ModelNotConfiguredError(
-            f"{api_key_name}가 없습니다. API 서버의 .env를 설정해주세요."
+            f"{key_name} is missing. Add it to apps/api/.env before calling {request.model.value}."
         )
 
     endpoint = f"{base_url.rstrip('/')}/chat/completions"
@@ -129,7 +166,10 @@ async def _call_model(request: AdCopyRequest) -> str:
                 json=_request_payload(
                     request,
                     provider_model_name=provider_model_name,
-                    structured=True,
+                    structured=model_spec.supports_structured_output,
+                    supports_system_role=model_spec.supports_system_role,
+                    use_max_completion_tokens=provider == TextRuntimeProvider.OPENAI,
+                    invalid_content=invalid_content,
                 ),
             )
 
@@ -144,6 +184,9 @@ async def _call_model(request: AdCopyRequest) -> str:
                         request,
                         provider_model_name=provider_model_name,
                         structured=False,
+                        supports_system_role=model_spec.supports_system_role,
+                        use_max_completion_tokens=provider == TextRuntimeProvider.OPENAI,
+                        invalid_content=invalid_content,
                     ),
                 )
 
@@ -185,23 +228,34 @@ async def generate_ad_copy(request: AdCopyRequest) -> AdCopyResponse:
     warnings: list[str] = []
     content: AdCopyContent | None = None
     last_error: Exception | None = None
+    invalid_content: str | None = None
+    attempts = 0
+    output_repaired = False
+    model_spec = get_model_spec(request.model)
 
     for attempt in range(3):
+        attempts = attempt + 1
+        raw_content: str | None = None
         try:
-            raw_content = await _call_model(request)
+            raw_content = await _call_model(request, invalid_content=invalid_content)
             candidate = _parse_content(raw_content)
             validation = validate_copy_output(candidate, request)
             if validation.valid:
                 content = candidate
+                output_repaired = attempt > 0
                 break
             warnings = validation.warnings
             last_error = InvalidModelOutputError("; ".join(validation.warnings))
+            invalid_content = raw_content
         except InvalidModelOutputError as error:
             last_error = error
             warnings = [str(error)]
+            if raw_content:
+                invalid_content = raw_content
 
         if attempt == 2:
             content = build_fallback_copy(request, warnings)
+            output_repaired = True
 
     if content is None:
         raise InvalidModelOutputError(str(last_error)) from last_error

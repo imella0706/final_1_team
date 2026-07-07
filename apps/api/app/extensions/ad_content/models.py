@@ -19,6 +19,34 @@ class ImageModelSpec:
 
 IMAGE_MODEL_CATALOG = (
     ImageModelSpec(
+        id=ImageModel.OPENAI_GPT_IMAGE_1,
+        name="OpenAI gpt-image-1",
+        provider="OpenAI",
+        availability=ImageModelAvailability.HOSTED,
+        note="OpenAI 이미지 생성 모델. BRANDMATE_OPENAI_API_KEY가 필요합니다.",
+        recommended=True,
+    ),
+    ImageModelSpec(
+        id=ImageModel.OPENAI_GPT_5_2_IMAGE_TOOL,
+        name="GPT-5.2 + image_generation tool",
+        provider="OpenAI Responses API",
+        availability=ImageModelAvailability.HOSTED,
+        note=(
+            "GPT-5.2가 Responses API의 image_generation 도구를 호출하는 방식입니다. "
+            "이미지 생성 권한/RPM은 별도로 필요합니다."
+        ),
+    ),
+    ImageModelSpec(
+        id=ImageModel.OPENAI_GPT_5_5_IMAGE_TOOL,
+        name="GPT-5.5 + image_generation tool",
+        provider="OpenAI Responses API",
+        availability=ImageModelAvailability.HOSTED,
+        note=(
+            "GPT-5.5가 Responses API의 image_generation 도구를 호출하는 방식입니다. "
+            "이미지 생성 권한/RPM은 별도로 필요합니다."
+        ),
+    ),
+    ImageModelSpec(
         id=ImageModel.FLUX_SCHNELL,
         name="FLUX.1 Schnell",
         provider="Hugging Face Inference",
