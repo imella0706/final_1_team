@@ -443,7 +443,6 @@ def summarize_model(
             record["copy_generation_success"]
             and record["image_generation_success"]
             and record["image_payload_valid"] is True
-            and record.get("clip_score") is not None
         )
     ]
     latencies = [
