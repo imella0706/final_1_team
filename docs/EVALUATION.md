@@ -114,6 +114,15 @@ torch<2.6 환경에서는 .bin weight 로드가 보안 정책상 차단될 수 �
 python -c "from transformers import CLIPModel, CLIPProcessor; CLIPProcessor.from_pretrained('openai/clip-vit-base-patch32'); CLIPModel.from_pretrained('openai/clip-vit-base-patch32', use_safetensors=True); print('clip ok')"
 ```
 
+평가용 CLIP은 기본적으로 CPU에서 실행합니다. 로컬 ComfyUI/FLUX가 GPU VRAM을 많이
+사용하기 때문에, CLIP까지 GPU에 올리면 12GB급 GPU에서는 OOM으로 ComfyUI가 종료될 수
+있습니다. 별도 평가 GPU가 있는 서버에서만 아래처럼 명시적으로 CUDA를 켭니다.
+
+```bash
+# [Design Intent] 기본은 FLUX 생성 안정성을 위해 CPU 평가이며, 별도 GPU가 있을 때만 CUDA를 사용한다.
+BRANDMATE_VISION_METRIC_DEVICE=cuda python -m scripts.evaluate_vision_models --case-limit 1
+```
+
 ## 현재 자동 측정 지표
 
 | 구분 | 지표 | 현재 계산 방법 |
@@ -182,3 +191,4 @@ Vision 지표도 모델별 단일 샘플 점수만 보고하지 않습니다. �
 초기 데이터는 `apps/api/evals/ad_copy_cases.json`에 있습니다. 업종·상황·타겟·톤과
 금칙어 조합을 포함한 6개 스모크 케이스이며, 모델 선정 전에는 최소 30개 이상으로
 확장합니다.
+

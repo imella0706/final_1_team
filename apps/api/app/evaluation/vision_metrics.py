@@ -2,6 +2,7 @@
 
 import base64
 import binascii
+import os
 from functools import lru_cache
 from io import BytesIO
 from pathlib import Path
@@ -43,7 +44,19 @@ def _load_clip_model(model_name: str) -> tuple[Any, Any, Any]:
             'Install them with `pip install -e ".[image]"`.'
         ) from error
 
-    device = "cuda" if torch.cuda.is_available() else "cpu"
+    # [Design Intent] 로컬 ComfyUI/FLUX가 GPU VRAM을 거의 전부 사용하므로,
+    # 평가용 CLIP은 기본적으로 CPU에서 실행한다. 별도 평가 GPU가 있는 서버에서만
+    # BRANDMATE_VISION_METRIC_DEVICE=cuda를 명시해 GPU 평가를 켠다.
+    requested_device = os.getenv("BRANDMATE_VISION_METRIC_DEVICE", "cpu").lower()
+    if requested_device not in {"cpu", "cuda"}:
+        raise VisionMetricDependencyError(
+            "BRANDMATE_VISION_METRIC_DEVICE must be either 'cpu' or 'cuda'."
+        )
+    if requested_device == "cuda" and not torch.cuda.is_available():
+        raise VisionMetricDependencyError(
+            "BRANDMATE_VISION_METRIC_DEVICE=cuda was set, but CUDA is not available."
+        )
+    device = requested_device
     processor = CLIPProcessor.from_pretrained(model_name)
     # [Design Intent] torch<2.6 환경에서는 CVE-2025-32434 대응으로 .bin weight 로드가
     # 차단될 수 있다. 공개 CLIP 모델의 safetensors weight를 우선 사용해 torch 업그레이드
