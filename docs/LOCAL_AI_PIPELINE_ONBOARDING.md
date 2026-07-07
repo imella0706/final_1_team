@@ -93,6 +93,10 @@ smoke test는 `batch_size=1`, `concurrency=1`부터 시작한다. 로컬 12GB GP
    python -m pip install -r requirements-image-gpu-prod.txt --extra-index-url https://download.pytorch.org/whl/cu121
    ```
 
+   - 실제 GCP 이미지 생성/CLIP 평가 환경 설치는 `apps/api/requirements-image-gpu-prod.txt`를 기준으로 한다.
+   - `requirements-image-gpu-prod.txt`는 `torch==2.5.1+cu121`, `torchvision==0.20.1+cu121`, `-e .[image]`를 포함하므로 GPU 서버 설치 기준이다.
+   - `requirements-freeze.txt`는 로컬 실험 당시 버전 비교용 스냅샷이다.참고하면 좋다. 
+
    GCP VM에 Conda가 없으면 Miniconda/Anaconda를 먼저 설치한다. OS 기본 Python에
    직접 설치하지 않는다.
 
