@@ -20,6 +20,7 @@ const artifactBox = document.querySelector("#artifact-box");
 const artifactDirectory = document.querySelector("#artifact-directory");
 const artifactJson = document.querySelector("#artifact-json");
 const artifactImage = document.querySelector("#artifact-image");
+const artifactPrompt = document.querySelector("#artifact-prompt");
 
 let hasGeneratedAd = false;
 
@@ -50,6 +51,14 @@ function commaList(value) {
     .split(",")
     .map((item) => item.trim())
     .filter(Boolean);
+}
+
+function formatLatencySeconds(latencyMs) {
+  if (typeof latencyMs !== "number" || Number.isNaN(latencyMs)) {
+    return "미집계";
+  }
+  const seconds = latencyMs / 1000;
+  return `${seconds.toFixed(seconds >= 10 ? 0 : 1)}초`;
 }
 
 function setStage(index, state, label) {
@@ -196,16 +205,18 @@ function renderResult(input, result) {
   document.querySelector("#cta").textContent = copy.ctas[0];
   document.querySelector("#safety-copy").textContent =
     copy.safety_notes[0] || "금지 표현이 발견되지 않았습니다.";
-  document.querySelector("#result-copy-model").textContent = `${copy.model} · ${copy.latency_ms}ms`;
+  document.querySelector("#result-copy-model").textContent =
+    `${copy.model} · ${formatLatencySeconds(copy.latency_ms)}`;
   document.querySelector("#result-image-model").textContent =
-    `${image.model} · ${image.latency_ms}ms`;
+    `${image.model} · ${formatLatencySeconds(image.latency_ms)}`;
   document.querySelector("#generated-image").src =
     `data:${image.media_type};base64,${image.image_base64}`;
   document.querySelector("#image-caption").textContent = result.image_prompt;
   if (result.artifacts && result.artifacts.directory) {
-    artifactDirectory.textContent = `dir: ${result.artifacts.directory}`;
-    artifactJson.textContent = `json: ${result.artifacts.metadata_json}`;
-    artifactImage.textContent = `image: ${result.artifacts.image}`;
+    artifactDirectory.textContent = `저장 폴더: ${result.artifacts.directory}`;
+    artifactJson.textContent = `메타데이터 JSON: ${result.artifacts.metadata_json}`;
+    artifactImage.textContent = `이미지 파일: ${result.artifacts.image}`;
+    artifactPrompt.textContent = `이미지 프롬프트 텍스트: ${result.artifacts.image_prompt}`;
     artifactBox.hidden = false;
   } else {
     artifactBox.hidden = true;
@@ -273,10 +284,12 @@ async function runPipeline(input) {
     return;
   }
 
-  setStage(1, "complete", `${result.copy.latency_ms}ms`);
+  setStage(1, "complete", `${formatLatencySeconds(result.copy.latency_ms)} · 완료`);
   setStage(2, "complete", "프롬프트 변환 완료");
-  setStage(3, "complete", `${result.image.latency_ms}ms`);
-  runState.textContent = "완료";
+  setStage(3, "complete", `${formatLatencySeconds(result.image.latency_ms)} · 완료`);
+  runState.textContent = `완료 · ${formatLatencySeconds(
+    (result.copy.latency_ms || 0) + (result.image.latency_ms || 0),
+  )}`;
   runState.className = "run-state complete";
   generateButton.disabled = false;
   generateButton.firstElementChild.textContent = "다른 광고 생성";

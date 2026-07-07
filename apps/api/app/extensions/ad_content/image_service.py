@@ -179,7 +179,7 @@ async def _generate_openai_image(request: AdImageRequest) -> AdImageResponse:
         "Content-Type": "application/json",
     }
     payload = {
-        "model": settings.openai_image_model or _openai_model_name(request.model.value),
+        "model": _openai_model_name(request.model.value),
         "prompt": request.prompt,
         "size": _openai_size(request.width, request.height),
         "n": 1,

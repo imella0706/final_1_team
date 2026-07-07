@@ -19,12 +19,31 @@ class ImageModelSpec:
 
 IMAGE_MODEL_CATALOG = (
     ImageModelSpec(
+        id=ImageModel.OPENAI_GPT_IMAGE_1_MINI,
+        name="OpenAI gpt-image-1-mini",
+        provider="OpenAI",
+        availability=ImageModelAvailability.HOSTED,
+        note=(
+            "현재 프로젝트 API 키로 호출 성공을 확인한 OpenAI 이미지 생성 모델입니다. "
+            "저비용/일반 이미지 생성용으로 우선 사용합니다."
+        ),
+        recommended=True,
+    ),
+    ImageModelSpec(
         id=ImageModel.OPENAI_GPT_IMAGE_1,
         name="OpenAI gpt-image-1",
         provider="OpenAI",
         availability=ImageModelAvailability.HOSTED,
-        note="OpenAI 이미지 생성 모델. BRANDMATE_OPENAI_API_KEY가 필요합니다.",
-        recommended=True,
+        note="OpenAI 이미지 생성 모델입니다. 계정/프로젝트 권한과 RPM 제한을 확인해야 합니다.",
+    ),
+    ImageModelSpec(
+        id=ImageModel.OPENAI_GPT_IMAGE_2,
+        name="OpenAI gpt-image-2",
+        provider="OpenAI",
+        availability=ImageModelAvailability.HOSTED,
+        note=(
+            "고성능 OpenAI 이미지 생성 모델입니다. 현재 테스트한 키에서는 RPM Limit 0으로 호출이 막혔습니다."
+        ),
     ),
     ImageModelSpec(
         id=ImageModel.OPENAI_GPT_5_2_IMAGE_TOOL,

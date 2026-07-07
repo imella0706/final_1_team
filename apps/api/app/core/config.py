@@ -15,7 +15,7 @@ class Settings(BaseSettings):
     openai_api_key: SecretStr | None = None
     openai_chat_model: str = "gpt-5.5"
     openai_vision_model: str = "gpt-5.4-mini"
-    openai_image_model: str = "gpt-image-1"
+    openai_image_model: str = "gpt-image-1-mini"
     openai_gpt_5_5_model: str = "gpt-5.5"
     openai_gpt_5_4_model: str = "gpt-5.4"
     openai_gpt_5_4_mini_model: str = "gpt-5.4-mini"

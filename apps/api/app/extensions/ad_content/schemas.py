@@ -6,7 +6,9 @@ from app.modules.ad_copy.schemas import AdCopyRequest, AdCopyResponse
 
 
 class ImageModel(StrEnum):
+    OPENAI_GPT_IMAGE_1_MINI = "openai/gpt-image-1-mini"
     OPENAI_GPT_IMAGE_1 = "openai/gpt-image-1"
+    OPENAI_GPT_IMAGE_2 = "openai/gpt-image-2"
     OPENAI_GPT_5_2_IMAGE_TOOL = "openai-responses/gpt-5.2-2025-12-11"
     OPENAI_GPT_5_5_IMAGE_TOOL = "openai-responses/gpt-5.5"
     FLUX_SCHNELL = "black-forest-labs/FLUX.1-schnell"
@@ -29,7 +31,7 @@ class ImageModelOption(BaseModel):
 
 
 class AdImageRequest(BaseModel):
-    model: ImageModel = ImageModel.FLUX_SCHNELL
+    model: ImageModel = ImageModel.OPENAI_GPT_IMAGE_1_MINI
     prompt: str = Field(min_length=1, max_length=4000)
     negative_prompt: str | None = Field(default=None, max_length=2000)
     width: int = Field(default=1024, ge=512, le=1536)
@@ -50,7 +52,7 @@ class AdContentRequest(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     copy_request: AdCopyRequest = Field(alias="copy")
-    image_model: ImageModel = ImageModel.FLUX_SCHNELL
+    image_model: ImageModel = ImageModel.OPENAI_GPT_IMAGE_1_MINI
     image_width: int = Field(default=1024, ge=512, le=1536)
     image_height: int = Field(default=1280, ge=512, le=1536)
 

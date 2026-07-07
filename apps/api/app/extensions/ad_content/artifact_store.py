@@ -1,16 +1,16 @@
 import base64
 import json
 import re
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
-from zoneinfo import ZoneInfo
 
 from app.extensions.ad_content.schemas import AdContentResponse
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[5]
 ARTIFACT_ROOT = PROJECT_ROOT / "outputs" / "ad-content"
+KST = timezone(timedelta(hours=9))
 
 
 def _safe_name(value: str | None) -> str:
@@ -39,7 +39,8 @@ def _relative(path: Path) -> str:
 def save_ad_content_artifacts(response: AdContentResponse) -> dict[str, str]:
     """Persist generated copy JSON and generated image under outputs/ad-content."""
 
-    timestamp = datetime.now(ZoneInfo("Asia/Seoul")).strftime("%Y%m%d-%H%M%S")
+    saved_at = datetime.now(KST)
+    timestamp = saved_at.strftime("%Y%m%d-%H%M%S")
     copy_model = _safe_name(response.models.get("copy_model") or response.copy_result.model)
     image_model = _safe_name(response.models.get("image_model") or response.image.model)
     run_name = f"{timestamp}-{copy_model}-{image_model}"
@@ -54,6 +55,12 @@ def save_ad_content_artifacts(response: AdContentResponse) -> dict[str, str]:
 
     metadata: dict[str, Any] = response.model_dump(mode="json", by_alias=True)
     metadata["image"]["image_base64"] = "[saved_to_image_file]"
+    metadata["saved_at"] = saved_at.isoformat()
+    metadata["generated_at"] = saved_at.isoformat()
+    metadata["total_latency_ms"] = (
+        int(getattr(response.copy_result, "latency_ms", 0) or 0)
+        + int(getattr(response.image, "latency_ms", 0) or 0)
+    )
 
     metadata_path.write_text(
         json.dumps(metadata, ensure_ascii=False, indent=2),
