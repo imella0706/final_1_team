@@ -24,6 +24,12 @@ image = [
   "transformers>=4.43",
 ]
 
+notebook = [
+  "jupyterlab>=4.0",
+  "ipykernel>=6.0",
+  "ipywidgets>=8.0",  
+]
+
 [tool.pytest.ini_options]
 pythonpath = ["."]
 testpaths = ["tests"]
