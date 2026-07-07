@@ -2,8 +2,10 @@
 
 import argparse
 import asyncio
+import hashlib
 import json
 import os
+import subprocess
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
@@ -101,6 +103,26 @@ def save_generated_image(
     path = model_dir / filename
     path.write_bytes(decode_image_base64(image_base64))
     return path
+
+
+def deterministic_seed(case_id: str, image_model: ImageModel, repeat: int) -> int:
+    seed_source = f"{case_id}|{image_model.value}|{repeat}"
+    digest = hashlib.sha256(seed_source.encode("utf-8")).hexdigest()
+    return int(digest[:8], 16)
+
+
+def git_commit() -> str | None:
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=PROJECT_ROOT,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except (OSError, subprocess.CalledProcessError):
+        return None
+    return result.stdout.strip()
 
 
 def parse_json_object(content: str) -> dict[str, Any]:
@@ -251,15 +273,21 @@ async def evaluate_trial(
         )
 
         try:
+            seed = deterministic_seed(case["id"], image_model, repeat)
+            width = case.get("image_width", 1024)
+            height = case.get("image_height", 1280)
+            guidance_scale = case.get("guidance_scale", 3.5)
+            num_inference_steps = case.get("num_inference_steps", 28)
             image = await generate_ad_image(
                 AdImageRequest(
                     model=image_model,
                     prompt=image_prompt,
                     negative_prompt=negative_prompt,
-                    width=case.get("image_width", 1024),
-                    height=case.get("image_height", 1280),
-                    guidance_scale=case.get("guidance_scale", 3.5),
-                    num_inference_steps=case.get("num_inference_steps", 28),
+                    width=width,
+                    height=height,
+                    guidance_scale=guidance_scale,
+                    num_inference_steps=num_inference_steps,
+                    seed=seed,
                 )
             )
         except (ImageModelProviderError, ImageModelNotConfiguredError) as error:
@@ -277,6 +305,11 @@ async def evaluate_trial(
                 "image_generation_success": True,
                 "image_latency_ms": image.latency_ms,
                 "media_type": image.media_type,
+                "width": width,
+                "height": height,
+                "guidance_scale": guidance_scale,
+                "num_inference_steps": num_inference_steps,
+                "seed": seed,
             }
         )
 
@@ -311,13 +344,15 @@ async def evaluate_trial(
             )
             return record
 
-        record.update(
-            {
-                "image_payload_valid": True,
-                "image_path": str(image_path),
-                "clip_score": clip_result["score"],
-                "clip_model": clip_result["model_name"],
-                "wall_latency_ms": round((perf_counter() - started_at) * 1000, 2),
+            record.update(
+                {
+                    "image_payload_valid": True,
+                    "image_path": str(
+                        Path("images") / image_path.relative_to(image_output_dir)
+                    ),
+                    "clip_score": clip_result["score"],
+                    "clip_model": clip_result["model_name"],
+                    "wall_latency_ms": round((perf_counter() - started_at) * 1000, 2),
             }
         )
 
@@ -605,8 +640,12 @@ async def main() -> None:
         if args.vision_judge_model
         else None
     )
-    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    image_output_dir = args.output_dir / f"vision-images-{timestamp}"
+    run_started_at = datetime.now()
+    run_date = run_started_at.strftime("%Y%m%d")
+    run_time = run_started_at.strftime("%H%M%S")
+    run_id = f"{run_date}-{run_time}"
+    run_dir = args.output_dir / "vision" / run_date / run_time
+    image_output_dir = run_dir / "images"
     all_records: list[dict[str, Any]] = []
     summaries = []
 
@@ -633,26 +672,31 @@ async def main() -> None:
 
     report = {
         "metadata": {
+            "run_id": run_id,
+            "run_date": run_date,
+            "run_time": run_time,
             "generated_at": datetime.now(UTC).isoformat(),
+            "git_commit": git_commit(),
             "dataset": str(args.dataset),
             "case_count": len(cases),
             "repeats": args.repeats,
             "concurrency": args.concurrency,
             "copy_model": copy_model.value,
+            "image_models": [model.value for model in selected_image_models],
             "clip_model": args.clip_model,
             "vision_judge_model": args.vision_judge_model,
             "vision_judge_base_url": (
                 args.vision_judge_base_url if args.vision_judge_model else None
             ),
-            "image_output_dir": str(image_output_dir),
+            "image_output_dir": "images",
         },
         "model_summaries": summaries,
         "trials": all_records,
     }
 
-    args.output_dir.mkdir(parents=True, exist_ok=True)
-    json_path = args.output_dir / f"vision-evaluation-{timestamp}.json"
-    markdown_path = args.output_dir / f"vision-evaluation-{timestamp}.md"
+    run_dir.mkdir(parents=True, exist_ok=True)
+    json_path = run_dir / "report.json"
+    markdown_path = run_dir / "report.md"
     json_path.write_text(
         json.dumps(report, ensure_ascii=False, indent=2),
         encoding="utf-8",

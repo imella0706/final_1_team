@@ -48,6 +48,8 @@ def _build_payload(request: AdImageRequest) -> dict:
         },
         "options": {"wait_for_model": True},
     }
+    if request.seed is not None:
+        payload["parameters"]["seed"] = request.seed
     if request.negative_prompt:
         payload["parameters"]["negative_prompt"] = request.negative_prompt
     return payload
@@ -145,7 +147,9 @@ def _build_comfyui_workflow(request: AdImageRequest) -> dict[str, Any]:
         workflow[KSAMPLER_NODE_ID]["inputs"]["steps"] = request.num_inference_steps
         workflow[FLUX_GUIDANCE_NODE_ID]["inputs"]["guidance"] = request.guidance_scale
         workflow[KSAMPLER_NODE_ID]["inputs"]["cfg"] = 1.0
-        workflow[KSAMPLER_NODE_ID]["inputs"]["seed"] = random.randint(0, 2**32 - 1)
+        workflow[KSAMPLER_NODE_ID]["inputs"]["seed"] = (
+            request.seed if request.seed is not None else random.randint(0, 2**32 - 1)
+        )
         workflow[SAVE_IMAGE_NODE_ID]["inputs"]["filename_prefix"] = "brandmate_flux"
     except KeyError as error:
         raise ImageModelNotConfiguredError(

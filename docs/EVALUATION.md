@@ -30,7 +30,7 @@ BrandMate의 광고 문구 모델과 추후 연결할 이미지 모델을 동일
   --concurrency 50
 ```
 
-결과는 Git에 포함되지 않는 `outputs/evaluations`에 JSON과 Markdown 두 형식으로
+LLM 평가 결과는 Git에 포함되지 않는 `outputs/evaluations`에 JSON과 Markdown 두 형식으로
 생성됩니다. JSON에는 개별 요청·출력·오류가, Markdown에는 모델별 요약표가 기록됩니다.
 
 ## Vision 평가 실행
@@ -66,6 +66,10 @@ $env:OPENAI_API_KEY="..."
 `LLM 광고 문구 생성 -> Product Visualizer -> Prompt Normalizer -> 이미지 생성 -> CLIP Score`
 입니다. 따라서 이 보고서는 이미지 모델 단독 점수가 아니라 BrandMate의
 copy-to-image 파이프라인 품질 점수입니다.
+이미지 생성 seed는 케이스 ID, 이미지 모델, 반복 번호를 기준으로 고정 생성해
+`report.json`의 trial과 이미지 요청에 함께 기록합니다.
+비전 평가 결과는 run 단위로 `outputs/evaluations/vision/{YYYYMMDD}/{HHMMSS}/`에 저장합니다.
+각 run 폴더는 `report.json`, `report.md`, `images/{model_name}/` 구조를 가집니다.
 
 ## 현재 자동 측정 지표
 
