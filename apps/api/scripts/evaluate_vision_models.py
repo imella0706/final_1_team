@@ -15,11 +15,13 @@ from typing import Any
 
 import httpx
 
+from app.core.config import settings
 from app.evaluation.metrics import percentile
 from app.evaluation.vision_metrics import (
     InvalidImagePayloadError,
     VisionMetricDependencyError,
-    calculate_clip_score_from_response,
+    _load_clip_model,
+    calculate_clip_score,
     decode_image_base64,
 )
 from app.extensions.ad_content.image_service import (
@@ -27,6 +29,7 @@ from app.extensions.ad_content.image_service import (
     ImageModelProviderError,
     generate_ad_image,
 )
+from app.extensions.ad_content.image_prompt import build_clip_eval_prompt
 from app.extensions.ad_content.product_visualizer import visualize_products
 from app.extensions.ad_content.prompt_normalizer import normalize_image_prompt
 from app.extensions.ad_content.schemas import AdImageRequest, ImageModel
@@ -37,6 +40,11 @@ from app.modules.ad_copy.service import (
     ModelNotConfiguredError,
     ModelProviderError,
     generate_ad_copy,
+)
+from app.modules.model_runtime.llm.registry import (
+    get_text_model_config,
+    resolve_api_key,
+    resolve_base_url,
 )
 
 
@@ -56,6 +64,15 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--concurrency", type=int, default=1)
     parser.add_argument("--case-limit", type=int)
     parser.add_argument("--clip-model", default="openai/clip-vit-base-patch32")
+    parser.add_argument(
+        "--skip-clip",
+        action="store_true",
+        help="Skip CLIP Score calculation for fast local smoke tests.",
+    )
+    parser.add_argument("--image-width", type=int)
+    parser.add_argument("--image-height", type=int)
+    parser.add_argument("--guidance-scale", type=float)
+    parser.add_argument("--num-inference-steps", type=int)
     parser.add_argument("--vision-judge-model")
     parser.add_argument("--vision-judge-base-url", default="https://api.openai.com/v1")
     parser.add_argument("--vision-judge-api-key-env", default="OPENAI_API_KEY")
@@ -123,6 +140,87 @@ def git_commit() -> str | None:
     except (OSError, subprocess.CalledProcessError):
         return None
     return result.stdout.strip()
+
+
+async def preflight_environment(
+    copy_model: AdModel,
+    image_models: list[ImageModel],
+    clip_model: str,
+    skip_clip: bool,
+) -> None:
+    errors: list[str] = []
+
+    try:
+        config = get_text_model_config(copy_model.value)
+        base_url = resolve_base_url(config).rstrip("/")
+        api_key = resolve_api_key(config)
+        headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
+        async with httpx.AsyncClient(timeout=10) as client:
+            response = await client.get(f"{base_url}/models", headers=headers)
+            response.raise_for_status()
+    except Exception as error:
+        errors.append(
+            "LLM 서버 확인 실패: "
+            f"{copy_model.value} endpoint에 연결할 수 없습니다. "
+            "Ollama/LM Studio/Hugging Face 설정을 확인하세요. "
+            f"원인={type(error).__name__}: {error}"
+        )
+
+    image_provider = settings.image_provider.lower()
+    if image_provider == "comfyui":
+        unsupported_models = [
+            model.value for model in image_models if model != ImageModel.FLUX_SCHNELL
+        ]
+        if unsupported_models:
+            errors.append(
+                "ComfyUI 로컬 provider는 현재 FLUX.1 Schnell만 지원합니다: "
+                + ", ".join(unsupported_models)
+            )
+        try:
+            async with httpx.AsyncClient(timeout=10) as client:
+                response = await client.get(
+                    f"{settings.comfyui_base_url.rstrip('/')}/system_stats"
+                )
+                response.raise_for_status()
+        except Exception as error:
+            errors.append(
+                "ComfyUI 확인 실패: "
+                f"{settings.comfyui_base_url}에 연결할 수 없습니다. "
+                "ComfyUI를 --lowvram으로 실행했는지 확인하세요. "
+                f"원인={type(error).__name__}: {error}"
+            )
+    elif image_provider == "huggingface":
+        if settings.llm_api_key is None:
+            errors.append(
+                "Hugging Face 이미지 생성에는 BRANDMATE_LLM_API_KEY가 필요합니다."
+            )
+    else:
+        errors.append(
+            "지원하지 않는 BRANDMATE_IMAGE_PROVIDER입니다: "
+            f"{settings.image_provider}. comfyui 또는 huggingface를 사용하세요."
+        )
+
+    if not skip_clip:
+        try:
+            # [Design Intent] 이미지 생성까지 끝낸 뒤 CLIP 로딩에서 실패하면 반쪽짜리 run이
+            # 남는다. 평가 시작 전에 CLIP 모델을 먼저 로드해 dependency/cache 문제를 조기 차단한다.
+            _load_clip_model(clip_model)
+        except VisionMetricDependencyError as error:
+            errors.append(f"CLIP 의존성 확인 실패: {error}")
+        except Exception as error:
+            errors.append(
+                "CLIP 모델 로드 실패: "
+                f"{clip_model}을 로드할 수 없습니다. "
+                "safetensors 캐시 또는 Hugging Face 네트워크 상태를 확인하세요. "
+                f"원인={type(error).__name__}: {error}"
+            )
+
+    if errors:
+        message = "\n".join(f"- {error}" for error in errors)
+        raise SystemExit(
+            "비전 평가 사전 점검 실패. run 폴더를 만들지 않고 종료합니다.\n"
+            f"{message}"
+        )
 
 
 def parse_json_object(content: str) -> dict[str, Any]:
@@ -222,6 +320,11 @@ async def evaluate_trial(
     vision_judge_api_key: str | None,
     vision_judge_timeout_seconds: float,
     image_output_dir: Path,
+    image_width: int | None,
+    image_height: int | None,
+    guidance_scale_override: float | None,
+    num_inference_steps_override: int | None,
+    skip_clip: bool,
     semaphore: asyncio.Semaphore,
 ) -> dict[str, Any]:
     queued_at = perf_counter()
@@ -253,6 +356,11 @@ async def evaluate_trial(
                 copy_request,
                 product_visualization,
             )
+            clip_eval_prompt = build_clip_eval_prompt(
+                copy,
+                copy_request,
+                product_visualization,
+            )
         except (ModelProviderError, ModelNotConfiguredError, InvalidModelOutputError) as error:
             record.update(
                 {
@@ -268,16 +376,25 @@ async def evaluate_trial(
                 "copy_generation_success": True,
                 "copy_latency_ms": copy.latency_ms,
                 "image_prompt": image_prompt,
+                "clip_eval_prompt": clip_eval_prompt,
                 "negative_prompt": negative_prompt,
             }
         )
 
         try:
             seed = deterministic_seed(case["id"], image_model, repeat)
-            width = case.get("image_width", 1024)
-            height = case.get("image_height", 1280)
-            guidance_scale = case.get("guidance_scale", 3.5)
-            num_inference_steps = case.get("num_inference_steps", 28)
+            width = image_width if image_width is not None else case.get("image_width", 1024)
+            height = image_height if image_height is not None else case.get("image_height", 1280)
+            guidance_scale = (
+                guidance_scale_override
+                if guidance_scale_override is not None
+                else case.get("guidance_scale", 3.5)
+            )
+            num_inference_steps = (
+                num_inference_steps_override
+                if num_inference_steps_override is not None
+                else case.get("num_inference_steps", 28)
+            )
             image = await generate_ad_image(
                 AdImageRequest(
                     model=image_model,
@@ -322,7 +439,14 @@ async def evaluate_trial(
                 image_model=image_model,
                 repeat=repeat,
             )
-            clip_result = calculate_clip_score_from_response(image, model_name=clip_model)
+            image_bytes = decode_image_base64(image.image_base64)
+            clip_result = None
+            if not skip_clip:
+                clip_result = calculate_clip_score(
+                    prompt=clip_eval_prompt,
+                    image_bytes=image_bytes,
+                    model_name=clip_model,
+                )
         except InvalidImagePayloadError as error:
             record.update(
                 {
@@ -346,6 +470,19 @@ async def evaluate_trial(
                 }
             )
             return record
+        except (RuntimeError, ValueError) as error:
+            record.update(
+                {
+                    "image_payload_valid": True,
+                    "image_path": str(
+                        Path("images") / image_path.relative_to(image_output_dir)
+                    ),
+                    "metric_error_type": type(error).__name__,
+                    "metric_error": str(error),
+                    "wall_latency_ms": round((perf_counter() - started_at) * 1000, 2),
+                }
+            )
+            return record
 
         record.update(
             {
@@ -353,11 +490,18 @@ async def evaluate_trial(
                 "image_path": str(
                     Path("images") / image_path.relative_to(image_output_dir)
                 ),
-                "clip_score": clip_result["score"],
-                "clip_model": clip_result["model_name"],
                 "wall_latency_ms": round((perf_counter() - started_at) * 1000, 2),
             }
         )
+        if clip_result is not None:
+            record.update(
+                {
+                    "clip_score": clip_result["score"],
+                    "clip_model": clip_result["model_name"],
+                }
+            )
+        else:
+            record["metric_skipped"] = "clip_score"
 
         if vision_judge_model:
             if not vision_judge_api_key:
@@ -545,6 +689,11 @@ async def evaluate_model(
     vision_judge_api_key: str | None,
     vision_judge_timeout_seconds: float,
     image_output_dir: Path,
+    image_width: int | None,
+    image_height: int | None,
+    guidance_scale: float | None,
+    num_inference_steps: int | None,
+    skip_clip: bool,
 ) -> tuple[list[dict[str, Any]], float]:
     semaphore = asyncio.Semaphore(concurrency)
     started_at = perf_counter()
@@ -560,6 +709,11 @@ async def evaluate_model(
             vision_judge_api_key,
             vision_judge_timeout_seconds,
             image_output_dir,
+            image_width,
+            image_height,
+            guidance_scale,
+            num_inference_steps,
+            skip_clip,
             semaphore,
         )
         for case in cases
@@ -649,6 +803,12 @@ async def main() -> None:
     args = parse_args()
     if args.repeats < 1 or args.concurrency < 1:
         raise SystemExit("repeats와 concurrency는 1 이상이어야 합니다.")
+    if args.image_width is not None and args.image_width < 64:
+        raise SystemExit("image-width는 64 이상이어야 합니다.")
+    if args.image_height is not None and args.image_height < 64:
+        raise SystemExit("image-height는 64 이상이어야 합니다.")
+    if args.num_inference_steps is not None and args.num_inference_steps < 1:
+        raise SystemExit("num-inference-steps는 1 이상이어야 합니다.")
 
     cases = load_cases(args.dataset, args.case_limit)
     copy_model = AdModel(args.copy_model) if args.copy_model else AdModel.QWEN_2_5_7B
@@ -662,6 +822,14 @@ async def main() -> None:
         if args.vision_judge_model
         else None
     )
+
+    await preflight_environment(
+        copy_model,
+        selected_image_models,
+        args.clip_model,
+        args.skip_clip,
+    )
+
     run_started_at = datetime.now()
     run_date = run_started_at.strftime("%Y%m%d")
     run_time = run_started_at.strftime("%H%M%S")
@@ -688,6 +856,11 @@ async def main() -> None:
             vision_judge_api_key,
             args.vision_judge_timeout_seconds,
             image_output_dir,
+            args.image_width,
+            args.image_height,
+            args.guidance_scale,
+            args.num_inference_steps,
+            args.skip_clip,
         )
         all_records.extend(records)
         summaries.append(summarize_model(copy_model, image_model, records, duration))
@@ -706,6 +879,11 @@ async def main() -> None:
             "copy_model": copy_model.value,
             "image_models": [model.value for model in selected_image_models],
             "clip_model": args.clip_model,
+            "clip_enabled": not args.skip_clip,
+            "image_width_override": args.image_width,
+            "image_height_override": args.image_height,
+            "guidance_scale_override": args.guidance_scale,
+            "num_inference_steps_override": args.num_inference_steps,
             "vision_judge_model": args.vision_judge_model,
             "vision_judge_base_url": (
                 args.vision_judge_base_url if args.vision_judge_model else None
@@ -725,9 +903,20 @@ async def main() -> None:
     )
     markdown_path.write_text(markdown_report(report), encoding="utf-8")
 
+    saved_images = sorted(image_output_dir.rglob("*")) if image_output_dir.exists() else []
+    saved_image_files = [
+        path
+        for path in saved_images
+        if path.is_file() and path.suffix.lower() in {".png", ".jpg", ".jpeg", ".webp"}
+    ]
+
     print(f"JSON 보고서: {json_path}")
     print(f"Markdown 보고서: {markdown_path}")
-    print(f"생성 이미지 폴더: {image_output_dir}")
+    if saved_image_files:
+        print(f"생성 이미지 폴더: {image_output_dir}")
+        print(f"생성 이미지 수: {len(saved_image_files)}")
+    else:
+        print("생성 이미지 없음: 이미지 생성 실패 또는 저장 가능한 이미지가 없습니다.")
 
 
 if __name__ == "__main__":

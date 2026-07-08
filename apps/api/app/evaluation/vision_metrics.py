@@ -177,18 +177,29 @@ def calculate_clip_score(
     # 모델이 올라간 CPU/GPU 장치와 입력 tensor 장치를 맞춘다.
     processor, model, torch = _load_clip_model(model_name)
     image = _image_from_bytes(image_bytes)
-    inputs = processor(text=[prompt], images=[image], return_tensors="pt", padding=True)
+    # [Design Intent] CLIP text encoder는 보통 77 token 제한이 있다. 이미지 생성용
+    # 프롬프트는 수백 token까지 길어질 수 있으므로, 평가에서는 모델 한계에 맞춰 잘라낸다.
+    inputs = processor(
+        text=[prompt],
+        images=[image],
+        return_tensors="pt",
+        padding=True,
+        truncation=True,
+    )
     device = next(model.parameters()).device
     inputs = {key: value.to(device) for key, value in inputs.items()}
 
     with torch.no_grad():
-        text_features = model.get_text_features(
+        outputs = model(
             input_ids=inputs["input_ids"],
             attention_mask=inputs.get("attention_mask"),
-        )
-        image_features = model.get_image_features(
             pixel_values=inputs["pixel_values"],
         )
+        # [Design Intent] transformers 버전에 따라 get_text_features()의 반환 타입이
+        # Tensor가 아닐 수 있다. CLIPModel forward의 projected embedding을 사용하면
+        # text/image embedding 타입이 안정적으로 맞아 cosine similarity 계산이 깨지지 않는다.
+        text_features = outputs.text_embeds
+        image_features = outputs.image_embeds
         text_features = torch.nn.functional.normalize(text_features, dim=-1)
         image_features = torch.nn.functional.normalize(image_features, dim=-1)
         score = (text_features * image_features).sum(dim=-1).item()
