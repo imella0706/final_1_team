@@ -1,5 +1,8 @@
-const API_BASE_URL = "http://34.55.162.157:7660/api/v1";
-// const API_BASE_URL = "http://localhost:8000/api/v1"; 로컬에서 실행할 때 
+// [Design Intent] 정적 HTML 테스트 환경에서는 빌드 타임 env가 없으므로
+// 실행 대상에 맞는 API URL 한 줄만 활성화한다.
+// const API_BASE_URL = "http://34.55.162.157:7660/api/v1"; // GCP 서버 테스트용
+const API_BASE_URL = "http://127.0.0.1:7660/api/v1"; // 로컬 FastAPI 테스트용
+// const API_BASE_URL = "http://127.0.0.1:8000/api/v1"; // 로컬 FastAPI를 8000번으로 띄운 경우
 
 const form = document.querySelector("#ad-form");
 const copyModelSelect = document.querySelector("#copy-model");

@@ -77,7 +77,7 @@ Output:
         references: list[ReferenceImageResult],
         model_name: str,
     ) -> dict[str, Any]:
-        return {
+        payload: dict[str, Any] = {
             "model": model_name,
             "messages": [
                 {
@@ -93,7 +93,6 @@ Output:
                 },
             ],
             "temperature": 0.1,
-            "max_tokens": 900,
             "response_format": {
                 "type": "json_schema",
                 "json_schema": {
@@ -103,6 +102,13 @@ Output:
                 },
             },
         }
+        token_limit_key = (
+            "max_completion_tokens"
+            if model_name.startswith("gpt-5")
+            else "max_tokens"
+        )
+        payload[token_limit_key] = 900
+        return payload
 
     def _parse_product(self, product_name: str, content: str) -> ProductVisual | None:
         cleaned = content.strip()

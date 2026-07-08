@@ -12,10 +12,16 @@ def create_app() -> FastAPI:
     app = FastAPI(title=settings.app_name)
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=[settings.web_origin],
+        allow_origins=[
+            "http://34.55.162.157:5501",
+            "http://localhost:5501",
+            "http://127.0.0.1:5501",
+            "http://localhost:5502",
+            "http://127.0.0.1:5502",
+        ],
         allow_credentials=False,
-        allow_methods=["GET", "POST"],
-        allow_headers=["Content-Type"],
+        allow_methods=["*"],
+        allow_headers=["*"],
     )
     register_router(app, ad_copy_router, prefix=settings.api_prefix)
     register_router(app, model_runtime_router, prefix=settings.api_prefix)

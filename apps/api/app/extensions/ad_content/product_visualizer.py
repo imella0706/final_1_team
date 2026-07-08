@@ -131,7 +131,7 @@ OUTPUT JSON FORMAT
         model_name: str,
         reference_profiles: list[ProductVisual] | None = None,
     ) -> dict[str, Any]:
-        return {
+        payload: dict[str, Any] = {
             "model": model_name,
             "messages": [
                 {
@@ -147,7 +147,6 @@ OUTPUT JSON FORMAT
                 },
             ],
             "temperature": 0.2,
-            "max_tokens": 1200,
             "response_format": {
                 "type": "json_schema",
                 "json_schema": {
@@ -157,6 +156,13 @@ OUTPUT JSON FORMAT
                 },
             },
         }
+        token_limit_key = (
+            "max_completion_tokens"
+            if model_name.startswith("gpt-5")
+            else "max_tokens"
+        )
+        payload[token_limit_key] = 1200
+        return payload
 
     def _parse(self, content: str) -> ProductVisualization:
         cleaned = content.strip()

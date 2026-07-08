@@ -4,7 +4,9 @@ from app.modules.model_runtime.llm.clients import (
     HuggingFaceRouterClient,
     LMStudioClient,
     LlmRuntimeError,
+    NvidiaClient,
     OllamaClient,
+    OpenAIClient,
     OpenAICompatibleClient,
     VllmClient,
 )
@@ -24,6 +26,8 @@ from app.modules.model_runtime.schemas import (
 
 CLIENTS: dict[TextRuntimeProvider, OpenAICompatibleClient] = {
     TextRuntimeProvider.HUGGING_FACE_ROUTER: HuggingFaceRouterClient(),
+    TextRuntimeProvider.OPENAI: OpenAIClient(),
+    TextRuntimeProvider.NVIDIA: NvidiaClient(),
     TextRuntimeProvider.LM_STUDIO: LMStudioClient(),
     TextRuntimeProvider.OLLAMA: OllamaClient(),
     TextRuntimeProvider.VLLM: VllmClient(),

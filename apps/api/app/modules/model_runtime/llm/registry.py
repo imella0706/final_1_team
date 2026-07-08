@@ -16,38 +16,6 @@ class TextModelConfig:
 
 
 MODEL_MAP: dict[str, TextModelConfig] = {
-    "mistral-7b-instruct-v0.3": TextModelConfig(
-        display_name="Mistral 7B Instruct v0.3",
-        provider=TextRuntimeProvider.LM_STUDIO,
-        default_model="mistralai/Mistral-7B-Instruct-v0.3",
-        base_url_setting="mistral_base_url",
-        model_setting="mistral_model",
-        api_key_setting="mistral_api_key",
-    ),
-    "gemma-2-9b-instruct": TextModelConfig(
-        display_name="Gemma 2 9B Instruct",
-        provider=TextRuntimeProvider.LM_STUDIO,
-        default_model="google/gemma-2-9b-it",
-        base_url_setting="gemma_base_url",
-        model_setting="gemma_model",
-        api_key_setting="gemma_api_key",
-    ),
-    "phi-4-mini-instruct": TextModelConfig(
-        display_name="Phi 4 Mini Instruct",
-        provider=TextRuntimeProvider.LM_STUDIO,
-        default_model="microsoft/Phi-4-mini-instruct",
-        base_url_setting="phi_base_url",
-        model_setting="phi_model",
-        api_key_setting="phi_api_key",
-    ),
-    "solar-10.7b-instruct": TextModelConfig(
-        display_name="SOLAR 10.7B Instruct",
-        provider=TextRuntimeProvider.LM_STUDIO,
-        default_model="upstage/SOLAR-10.7B-Instruct-v1.0",
-        base_url_setting="solar_base_url",
-        model_setting="solar_model",
-        api_key_setting="solar_api_key",
-    ),
     "qwen-2.5-7b-instruct": TextModelConfig(
         display_name="Qwen 2.5 7B Instruct",
         provider=TextRuntimeProvider.HUGGING_FACE_ROUTER,
@@ -63,6 +31,54 @@ MODEL_MAP: dict[str, TextModelConfig] = {
         base_url_setting="llama_base_url",
         model_setting="llama_model",
         api_key_setting="llama_api_key",
+    ),
+    "nvidia/meta/llama-3.1-8b-instruct": TextModelConfig(
+        display_name="NVIDIA · Llama 3.1 8B Instruct",
+        provider=TextRuntimeProvider.NVIDIA,
+        default_model="meta/llama-3.1-8b-instruct",
+        base_url_setting="nvidia_base_url",
+        model_setting="nvidia_llama_model",
+        api_key_setting="nvidia_api_key",
+    ),
+    "gpt-5.5": TextModelConfig(
+        display_name="GPT-5.5",
+        provider=TextRuntimeProvider.OPENAI,
+        default_model="gpt-5.5",
+        base_url_setting="openai_base_url",
+        model_setting="openai_gpt_5_5_model",
+        api_key_setting="openai_api_key",
+    ),
+    "gpt-5.4": TextModelConfig(
+        display_name="GPT-5.4",
+        provider=TextRuntimeProvider.OPENAI,
+        default_model="gpt-5.4",
+        base_url_setting="openai_base_url",
+        model_setting="openai_gpt_5_4_model",
+        api_key_setting="openai_api_key",
+    ),
+    "gpt-5.4-mini": TextModelConfig(
+        display_name="GPT-5.4 Mini",
+        provider=TextRuntimeProvider.OPENAI,
+        default_model="gpt-5.4-mini",
+        base_url_setting="openai_base_url",
+        model_setting="openai_gpt_5_4_mini_model",
+        api_key_setting="openai_api_key",
+    ),
+    "gpt-5.4-nano": TextModelConfig(
+        display_name="GPT-5.4 Nano",
+        provider=TextRuntimeProvider.OPENAI,
+        default_model="gpt-5.4-nano",
+        base_url_setting="openai_base_url",
+        model_setting="openai_gpt_5_4_nano_model",
+        api_key_setting="openai_api_key",
+    ),
+    "gpt-4.1-mini": TextModelConfig(
+        display_name="GPT-4.1 Mini",
+        provider=TextRuntimeProvider.OPENAI,
+        default_model="gpt-4.1-mini",
+        base_url_setting="openai_base_url",
+        model_setting="openai_gpt_4_1_mini_model",
+        api_key_setting="openai_api_key",
     ),
 }
 
@@ -123,6 +139,10 @@ def infer_provider(base_url: str, fallback: TextRuntimeProvider) -> TextRuntimeP
     normalized = base_url.lower()
     if "router.huggingface.co" in normalized:
         return TextRuntimeProvider.HUGGING_FACE_ROUTER
+    if "api.openai.com" in normalized:
+        return TextRuntimeProvider.OPENAI
+    if "integrate.api.nvidia.com" in normalized:
+        return TextRuntimeProvider.NVIDIA
     if "localhost:1234" in normalized or "127.0.0.1:1234" in normalized:
         return TextRuntimeProvider.LM_STUDIO
     if "localhost:11434" in normalized or "127.0.0.1:11434" in normalized:
