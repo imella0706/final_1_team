@@ -1,4 +1,5 @@
-const API_BASE_URL = "http://localhost:8000/api/v1";
+const API_BASE_URL = "http://34.55.162.157:7660/api/v1";
+// const API_BASE_URL = "http://localhost:8000/api/v1"; 로컬에서 실행할 때 
 
 const form = document.querySelector("#ad-form");
 const copyModelSelect = document.querySelector("#copy-model");
