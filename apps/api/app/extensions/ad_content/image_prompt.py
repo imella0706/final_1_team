@@ -1,3 +1,7 @@
+import json
+
+import httpx
+
 from app.core.config import settings
 from app.extensions.ad_content.product_visualizer import ProductVisual, ProductVisualization
 from app.modules.ad_copy.schemas import AdCopyRequest, AdCopyResponse
@@ -83,6 +87,65 @@ EMPTY_SPACE_LABELS = {
 
 def _label(mapping: dict[str, str], value: str) -> str:
     return mapping.get(value, value.replace("_", " "))
+
+
+def _secret_value(value) -> str | None:
+    if value is None:
+        return None
+    if hasattr(value, "get_secret_value"):
+        return value.get_secret_value() or None
+    return str(value) or None
+
+
+async def describe_reference_image(
+    reference_image_data_url: str | None,
+    copy_request: AdCopyRequest,
+) -> str | None:
+    if not reference_image_data_url:
+        return None
+
+    api_key = _secret_value(settings.openai_api_key)
+    if not api_key:
+        return None
+
+    prompt = (
+        "이 참고 이미지를 보고, 광고 이미지 생성에 바로 반영할 수 있도록 핵심 시각 요소를 한국어로 짧게 요약해 주세요. "
+        "제품의 형태, 재질, 색상, 구도, 강조할 포인트, 배경 느낌을 중심으로 2~3문장으로 적어 주세요."
+    )
+    payload = {
+        "model": settings.image_validator_model_name or settings.openai_vision_model,
+        "messages": [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": prompt},
+                    {"type": "image_url", "image_url": {"url": reference_image_data_url}},
+                ],
+            }
+        ],
+        "temperature": 0,
+        "max_completion_tokens": 400,
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=settings.llm_timeout_seconds) as client:
+            response = await client.post(
+                f"{settings.openai_base_url.rstrip('/')}/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                },
+                json=payload,
+            )
+            response.raise_for_status()
+            body = response.json()
+            content = body["choices"][0]["message"]["content"]
+            if isinstance(content, str):
+                return content.strip()
+    except (httpx.HTTPError, KeyError, IndexError, TypeError, ValueError):
+        return None
+
+    return None
 
 
 def _product_visual_cues(product_name: str, copy: AdCopyResponse) -> list[str]:
@@ -186,6 +249,7 @@ def build_ad_image_prompt(
     copy: AdCopyResponse,
     request: AdCopyRequest,
     product_visualization: ProductVisualization | None = None,
+    reference_image_context: str | None = None,
 ) -> tuple[str, str]:
     brief = copy.visual_brief
     business_type = BUSINESS_TYPE_LABELS.get(request.business_type.value, request.business_type.value)
@@ -198,68 +262,81 @@ def build_ad_image_prompt(
     product_names = ", ".join(request.product_names)
     unrelated_negative = _unlisted_product_negative(product_visualization)
 
-    image_prompt = f"""A photorealistic commercial advertising image for a Korean local business.
+    reference_context_block = ""
+    if reference_image_context:
+        reference_context_block = f"""
 
-Prompt template:
+참고 이미지 분석:
+{reference_image_context}
+
+이미지 생성 지침:
+- 참고 이미지의 핵심 디테일만 반영하고, 제품의 핵심 포인트만 강조하세요.
+- 불필요한 배경이나 잡음을 줄이고, 강조할 요소만 선명하게 남기세요.
+- 제품의 형태와 색상은 정확하게 유지하고, 나머지 요소는 단순하게 처리하세요.
+"""
+
+    image_prompt = f"""전문 상업용 광고 이미지로, 한국 소규모 매장을 위한 실제 사진 같은 이미지로 생성해 주세요.
+
+프롬프트 템플릿:
 {template}
 
-Only the listed user-entered products may appear as the main subjects.
-The image must clearly show every listed product together in one scene.
-Do not replace the listed products with other food, drinks, objects, packages, or merchandise.
-If a product name is not English, infer the product visually from the original product name and visual cues without inventing a different product.
+다음 제품만 메인 주제로 사용하세요.
+모든 제품이 하나의 장면에 함께 보이도록 구성하세요.
+제품을 다른 음식, 음료, 물건, 포장지, 상품으로 바꾸지 마세요.
+제품명이 한국어이더라도, 이름에 맞는 형태와 재질을 시각적으로 자연스럽게 반영하세요.
 
-Products:
+제품:
 {product_lines}
 
-Required exact product identities:
+필수 제품 정체성:
 {product_names}
 
-Product identity lock:
-The generated image must match the exact listed product identities. Do not create a generic substitute. Do not add any main product that is not in the list.
+제품 정체성 잠금:
+사용자 입력한 제품 정보와 정확히 일치해야 합니다. 일반적인 대체품을 만들지 마세요. 목록에 없는 메인 제품을 추가하지 마세요.
 
-Business type:
+업종:
 - {business_type}
 
-Feature visual cues:
+강조할 시각 포인트:
 {feature_lines}
 
-Background:
-{_label(BACKGROUND_LABELS, brief.background)}, softly blurred where appropriate. Use a plain wall, clean tabletop, or neutral interior only.
+배경:
+{_label(BACKGROUND_LABELS, brief.background)}. 필요하면 부드럽게 흐리게 처리하세요. 평범한 벽, 깨끗한 테이블, 중립적인 실내 공간만 사용하세요.
 
-Composition:
-{composition}, vertical 4:5 Instagram advertisement layout, product-centered styling.
+구도:
+{composition}, 세로 4:5 인스타그램 광고 레이아웃, 제품이 중심이 되도록 구성하세요.
 
-Camera:
-{_label(CAMERA_LABELS, brief.camera_angle)}, {_label(DEPTH_LABELS, brief.depth_of_field)}, professional commercial food photography lens look.
+카메라:
+{_label(CAMERA_LABELS, brief.camera_angle)}, {_label(DEPTH_LABELS, brief.depth_of_field)}, 전문 상업용 식음료 촬영 느낌의 렌즈를 사용하세요.
 
-Lighting:
+조명:
 {_label(LIGHTING_LABELS, brief.lighting)}.
 
-Style:
-Professional commercial product advertising photography, realistic, clean, modern, emotional, cozy, high detail, premium but approachable local business mood. If the products are food or drinks, use appetizing food and beverage styling. If the products are objects, use clean product photography styling.
+스타일:
+전문 상업용 제품 광고 사진, 현실적이고 깔끔하며 현대적이고 따뜻하고 세밀한 디테일, 프리미엄하지만 친근한 지역 상점 분위기. 음식이나 음료라면 식욕을 자극하는 식음료 스타일로, 물건이라면 깔끔한 제품 사진 스타일로 표현하세요.
 
-Color palette:
+색상 팔레트:
 {palette}
 
-Empty space:
+여백:
 {_label(EMPTY_SPACE_LABELS, brief.empty_space)}.
 
-Advertising direction:
-Focus on the products, not people. Leave negative space for later text overlay. Do not include readable text, fake text, gibberish letters, Korean Hangul, English letters, logos, menus, signs, signboards, wall posters, labels, brand marks, or watermarks. Keep the background free of any typography.
+광고 방향:
+제품 자체를 중심으로 보여 주세요. 나중에 텍스트를 올릴 수 있도록 여백을 남기세요. 읽을 수 있는 텍스트, 가짜 텍스트, 한국어, 영어, 로고, 메뉴판, 간판, 포스터, 라벨, 브랜드 마크, 워터마크는 넣지 마세요. 배경에는 타이포그래피를 남기지 마세요.
 
-Quality:
-High-resolution, premium commercial food photography, professional social media campaign image, realistic textures, appetizing styling.
+품질:
+고해상도, 프리미엄 상업용 식음료 사진, 전문적인 SNS 캠페인 이미지, 현실적인 질감, 식욕을 자극하는 스타일.
 
-Additional avoid list from art direction:
-{avoid}
+추가 회피 요소:
+{avoid}{reference_context_block}
 """
     negative_prompt = (
-        "readable text, Korean letters, English letters, logo, watermark, brand mark, "
-        "menu board, store sign, signboard, wall poster, typography, fake text, "
-        "gibberish text, pseudo letters, malformed Hangul, random people, hands, "
-        "distorted food, melted dessert, messy table, duplicate objects, low quality, "
-        "blurry, overexposed, underexposed, cartoon, anime, illustration, plastic texture, "
-        "unnatural glass, deformed dessert, oversaturated colors, bad anatomy, artifacts, "
-        f"cropped product, {unrelated_negative}"
+        "읽을 수 있는 텍스트, 한국어 글자, 영어 글자, 로고, 워터마크, 브랜드 마크, "
+        "메뉴판, 가게 간판, 안내판, 벽 포스터, 타이포그래피, 가짜 텍스트, "
+        "의미 없는 문자열, 비정상적인 한글, 무작위 사람, 손, "
+        "왜곡된 음식, 녹아버린 디저트, 지저분한 테이블, 중복된 객체, 낮은 품질, "
+        "흐림, 과노출, 부족한 노출, 만화, 애니메이션, 일러스트, 플라스틱 느낌, "
+        "비현실적인 유리, 변형된 디저트, 과도한 채도, 잘못된 해부학, 아티팩트, "
+        f"잘린 제품, {unrelated_negative}"
     )
     return image_prompt, negative_prompt

@@ -21,6 +21,12 @@ const artifactDirectory = document.querySelector("#artifact-directory");
 const artifactJson = document.querySelector("#artifact-json");
 const artifactImage = document.querySelector("#artifact-image");
 const artifactPrompt = document.querySelector("#artifact-prompt");
+const referenceImageInput = document.querySelector("#reference-image");
+const referencePreview = document.querySelector("#reference-preview");
+const referencePreviewImage = document.querySelector("#reference-preview-image");
+const referencePreviewName = document.querySelector("#reference-preview-name");
+const referencePreviewMeta = document.querySelector("#reference-preview-meta");
+const referencePreviewClear = document.querySelector("#reference-preview-clear");
 
 let hasGeneratedAd = false;
 
@@ -34,11 +40,24 @@ const displayLabels = {
   },
   situation: {
     new_menu: "신메뉴",
-    discount: "할인",
+    discount: "세트메뉴 할인",
     event: "이벤트",
     delivery: "배달",
     takeout: "포장",
     visit: "방문 유도",
+  },
+  ageGroup: {
+    teens: "10대",
+    twenties: "20대",
+    thirties: "30대",
+    forties: "40대",
+    fifties_plus: "50대 이상",
+  },
+  target: {
+    office_workers: "직장인",
+    families: "가족",
+    couples: "커플",
+    solo: "혼자",
   },
 };
 
@@ -59,6 +78,25 @@ function formatLatencySeconds(latencyMs) {
   }
   const seconds = latencyMs / 1000;
   return `${seconds.toFixed(seconds >= 10 ? 0 : 1)}초`;
+}
+
+function formatFileSize(bytes) {
+  if (!Number.isFinite(bytes)) {
+    return "";
+  }
+  if (bytes >= 1024 * 1024) {
+    return `${(bytes / 1024 / 1024).toFixed(1)}MB`;
+  }
+  return `${Math.max(1, Math.round(bytes / 1024))}KB`;
+}
+
+function readFileAsDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(new Error("참고 이미지를 읽는 데 실패했습니다."));
+    reader.readAsDataURL(file);
+  });
 }
 
 function setStage(index, state, label) {
@@ -105,14 +143,67 @@ function normalizeContentResult(result) {
   };
 }
 
-function readForm() {
+async function readReferenceImage() {
+  const file = referenceImageInput?.files?.[0];
+  if (!file) {
+    return null;
+  }
+
+  return readFileAsDataUrl(file);
+}
+
+function clearReferencePreview() {
+  if (referenceImageInput) {
+    referenceImageInput.value = "";
+  }
+  if (!referencePreview) {
+    return;
+  }
+  referencePreview.hidden = true;
+  referencePreviewImage?.removeAttribute("src");
+  if (referencePreviewName) referencePreviewName.textContent = "";
+  if (referencePreviewMeta) referencePreviewMeta.textContent = "";
+}
+
+async function updateReferencePreview() {
+  const file = referenceImageInput?.files?.[0];
+  if (!file) {
+    clearReferencePreview();
+    return;
+  }
+
+  if (!file.type.startsWith("image/")) {
+    window.alert("이미지 파일만 선택해 주세요.");
+    clearReferencePreview();
+    return;
+  }
+
+  try {
+    if (!referencePreview || !referencePreviewImage) {
+      return;
+    }
+    referencePreviewImage.src = await readFileAsDataUrl(file);
+    if (referencePreviewName) referencePreviewName.textContent = file.name;
+    if (referencePreviewMeta) {
+      referencePreviewMeta.textContent = `${file.type || "image"} · ${formatFileSize(file.size)}`;
+    }
+    referencePreview.hidden = false;
+  } catch (error) {
+    window.alert(error.message);
+    clearReferencePreview();
+  }
+}
+
+async function readForm() {
   const data = new FormData(form);
+  const referenceImageDataUrl = await readReferenceImage();
   return {
     copy: {
       model: data.get("copyModel"),
       business_name: data.get("businessName").trim(),
       business_type: data.get("businessType"),
       situation: data.get("situation"),
+      age_groups: data.getAll("ageGroup"),
       target_audiences: data.getAll("target"),
       tone: data.get("tone"),
       product_names: commaList(data.get("products")),
@@ -129,6 +220,7 @@ function readForm() {
     image_model: data.get("imageModel"),
     image_width: 1024,
     image_height: 1280,
+    reference_image_data_url: referenceImageDataUrl,
   };
 }
 
@@ -197,12 +289,25 @@ function renderResult(input, result) {
   const { copy, image } = result;
   const businessType = displayLabels.businessType[input.copy.business_type] || input.copy.business_type;
   const situation = displayLabels.situation[input.copy.situation] || input.copy.situation;
+  const ageGroups = input.copy.age_groups
+    .map((age) => displayLabels.ageGroup[age] || age)
+    .join(", ");
+  const targets = input.copy.target_audiences
+    .map((target) => displayLabels.target[target] || target)
+    .join(", ");
 
   document.querySelector("#context-line").textContent =
-    `${businessType} · ${situation} · ${input.copy.target_audiences.join(", ")}`;
+    `${businessType} · ${situation} · ${ageGroups} · ${targets}`;
   document.querySelector("#headline").textContent = copy.headlines[0];
   document.querySelector("#body-copy").textContent = copy.body_copies[0];
   document.querySelector("#cta").textContent = copy.ctas[0];
+  const hashtags = copy.hashtags?.length ? copy.hashtags.join(" ") : "#광고 #이벤트";
+  document.querySelector("#hashtags").textContent = hashtags;
+  document.querySelector("#poster-business").textContent = input.copy.business_name;
+  document.querySelector("#poster-headline").textContent = copy.headlines[0];
+  document.querySelector("#poster-body").textContent = copy.body_copies[0];
+  document.querySelector("#poster-cta").textContent = copy.ctas[0];
+  document.querySelector("#poster-hashtags").textContent = hashtags;
   document.querySelector("#safety-copy").textContent =
     copy.safety_notes[0] || "금지 표현이 발견되지 않았습니다.";
   document.querySelector("#result-copy-model").textContent =
@@ -298,7 +403,11 @@ async function runPipeline(input) {
 
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
-  const input = readForm();
+  const input = await readForm();
+  if (input.copy.age_groups.length === 0) {
+    window.alert("나이대를 하나 이상 선택해 주세요.");
+    return;
+  }
   if (input.copy.target_audiences.length === 0) {
     window.alert("타겟을 하나 이상 선택해 주세요.");
     return;
@@ -308,9 +417,12 @@ form.addEventListener("submit", async (event) => {
 
 copyModelSelect.addEventListener("change", updateModelHelp);
 imageModelSelect.addEventListener("change", updateModelHelp);
+referenceImageInput?.addEventListener("change", updateReferencePreview);
+referencePreviewClear?.addEventListener("click", clearReferencePreview);
 
 resetButton.addEventListener("click", () => {
   form.reset();
+  clearReferencePreview();
   resetPipeline();
   updateModelHelp();
   runState.textContent = "대기";

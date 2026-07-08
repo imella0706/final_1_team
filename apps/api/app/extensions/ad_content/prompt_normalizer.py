@@ -17,8 +17,14 @@ def normalize_image_prompt(
     copy: AdCopyResponse,
     request: AdCopyRequest,
     product_visualization: ProductVisualization | None = None,
+    reference_image_context: str | None = None,
 ) -> tuple[str, str]:
-    prompt, negative_prompt = build_ad_image_prompt(copy, request, product_visualization)
+    prompt, negative_prompt = build_ad_image_prompt(
+        copy,
+        request,
+        product_visualization,
+        reference_image_context,
+    )
     return (
         _limit_prompt(prompt, MAX_IMAGE_PROMPT_CHARS),
         _limit_prompt(negative_prompt, MAX_NEGATIVE_PROMPT_CHARS),

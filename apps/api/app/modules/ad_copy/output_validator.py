@@ -25,7 +25,7 @@ def _contains_any(text: str, terms: list[str]) -> list[str]:
 
 def validate_copy_output(content: AdCopyContent, request: AdCopyRequest) -> CopyValidationResult:
     warnings: list[str] = []
-    copy_text = " ".join(content.headlines + content.body_copies + content.ctas)
+    copy_text = " ".join(content.headlines + content.body_copies + content.ctas + content.hashtags)
     body_text = " ".join(content.body_copies)
     visual_text = str(content.visual_brief.model_dump())
 
@@ -80,6 +80,11 @@ def build_fallback_copy(request: AdCopyRequest, warnings: list[str]) -> AdCopyCo
     cta = remove_prohibited_terms(
         f"{request.business_name}에서 확인해보세요.", request.prohibited_terms
     )
+    hashtags = [
+        f"#{remove_prohibited_terms(product, request.prohibited_terms).replace(' ', '')}"
+        for product in request.product_names[:3]
+    ]
+    hashtags.append(f"#{request.business_type.value}")
     product_items = [
         MandatoryProduct(product_name=product, role="primary" if index == 0 else "secondary")
         for index, product in enumerate(request.product_names)
@@ -111,6 +116,7 @@ def build_fallback_copy(request: AdCopyRequest, warnings: list[str]) -> AdCopyCo
                 "business_name": request.business_name,
                 "business_type_korean": request.business_type.value,
                 "situation_korean": request.situation.value,
+                "age_groups_korean": [age.value for age in request.age_groups],
                 "target_audiences_korean": [target.value for target in request.target_audiences],
                 "tone_korean": request.tone.value,
                 "channel_korean": request.channel.value,
@@ -126,12 +132,13 @@ def build_fallback_copy(request: AdCopyRequest, warnings: list[str]) -> AdCopyCo
         headlines=[headline],
         body_copies=[body],
         ctas=[cta],
+        hashtags=hashtags,
         validation_check=ValidationCheck(
             all_products_included=True,
             all_features_included=True,
             prohibited_terms_used=False,
             visual_brief_uses_enum_only=True,
-            hashtags_removed=True,
+            hashtags_removed=False,
             language_quality="fallback Korean",
         ),
         visual_brief=VisualBrief(

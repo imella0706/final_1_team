@@ -107,7 +107,6 @@ def _parse_content(content: str) -> AdCopyContent:
 
     try:
         data, _ = json.JSONDecoder().raw_decode(cleaned)
-        data.pop("hashtags", None)
         data.pop("image_prompt", None)
         validation_check = data.get("validation_check")
         if isinstance(validation_check, dict):
@@ -117,7 +116,7 @@ def _parse_content(content: str) -> AdCopyContent:
                 )
             validation_check.setdefault("visual_brief_uses_enum_only", True)
             validation_check.setdefault("hashtags_removed", True)
-        for field in ("headlines", "body_copies", "ctas", "safety_notes"):
+        for field in ("headlines", "body_copies", "ctas", "hashtags", "safety_notes"):
             if isinstance(data.get(field), str):
                 data[field] = [data[field]]
         return AdCopyContent.model_validate(data)

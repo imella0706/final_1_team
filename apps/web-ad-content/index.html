@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content="BrandMate 광고 문구와 이미지 생성 모델 통합 화면" />
     <title>BrandMate Ad Content Studio</title>
-    <link rel="stylesheet" href="./styles.css" />
+    <link rel="stylesheet" href="./styles.css?v=poster-20260708" />
   </head>
   <body>
     <header class="topbar">
@@ -48,6 +48,20 @@
           </div>
 
           <form id="ad-form">
+            <div class="field">
+              <label for="reference-image">참고 이미지(선택)</label>
+              <input id="reference-image" name="referenceImage" type="file" accept="image/*" />
+              <small>사진을 올리면 이미지 생성 프롬프트에 핵심 시각 요소로 반영됩니다.</small>
+              <div class="reference-preview" id="reference-preview" hidden>
+                <img id="reference-preview-image" alt="선택한 참고 이미지 미리보기" />
+                <div>
+                  <strong id="reference-preview-name"></strong>
+                  <small id="reference-preview-meta"></small>
+                  <button class="text-button" id="reference-preview-clear" type="button">사진 제거</button>
+                </div>
+              </div>
+            </div>
+
             <div class="model-grid">
               <div class="model-field">
                 <label for="copy-model">광고 문구 모델 <b>필수</b></label>
@@ -76,7 +90,7 @@
               <legend>상황</legend>
               <div class="choice-grid three">
                 <label><input type="radio" name="situation" value="new_menu" checked /><span>신메뉴</span></label>
-                <label><input type="radio" name="situation" value="discount" /><span>할인</span></label>
+                <label><input type="radio" name="situation" value="discount" /><span>세트메뉴 할인</span></label>
                 <label><input type="radio" name="situation" value="event" /><span>이벤트</span></label>
                 <label><input type="radio" name="situation" value="delivery" /><span>배달</span></label>
                 <label><input type="radio" name="situation" value="takeout" /><span>포장</span></label>
@@ -85,13 +99,23 @@
             </fieldset>
 
             <fieldset>
-              <legend>타겟</legend>
+              <legend>나이대</legend>
               <div class="choice-grid five">
-                <label><input type="checkbox" name="target" value="teens" /><span>10대</span></label>
-                <label><input type="checkbox" name="target" value="twenties" checked /><span>20대</span></label>
+                <label><input type="checkbox" name="ageGroup" value="teens" /><span>10대</span></label>
+                <label><input type="checkbox" name="ageGroup" value="twenties" checked /><span>20대</span></label>
+                <label><input type="checkbox" name="ageGroup" value="thirties" /><span>30대</span></label>
+                <label><input type="checkbox" name="ageGroup" value="forties" /><span>40대</span></label>
+                <label><input type="checkbox" name="ageGroup" value="fifties_plus" /><span>50대 이상</span></label>
+              </div>
+            </fieldset>
+
+            <fieldset>
+              <legend>타겟</legend>
+              <div class="choice-grid four">
                 <label><input type="checkbox" name="target" value="office_workers" checked /><span>직장인</span></label>
                 <label><input type="checkbox" name="target" value="families" /><span>가족</span></label>
                 <label><input type="checkbox" name="target" value="couples" /><span>커플</span></label>
+                <label><input type="checkbox" name="target" value="solo" /><span>혼자</span></label>
               </div>
             </fieldset>
 
@@ -198,6 +222,10 @@
                     <small>CTA</small>
                     <strong id="cta"></strong>
                   </div>
+                  <div class="result-block">
+                    <small>HASHTAGS</small>
+                    <p class="hashtag-list" id="hashtags"></p>
+                  </div>
                   <div class="safety-check">
                     <span>✓</span>
                     <div><strong>금지어 검토 결과</strong><small id="safety-copy"></small></div>
@@ -206,8 +234,15 @@
 
                 <article class="image-result">
                   <div class="result-label">광고 이미지 <span id="result-image-model"></span></div>
-                  <figure class="generated-image-frame">
+                  <figure class="generated-image-frame poster-preview">
                     <img id="generated-image" alt="생성된 광고 이미지" />
+                    <figcaption class="poster-copy">
+                      <small id="poster-business"></small>
+                      <strong id="poster-headline"></strong>
+                      <span id="poster-body"></span>
+                      <b id="poster-cta"></b>
+                      <em id="poster-hashtags"></em>
+                    </figcaption>
                   </figure>
                   <p class="image-caption" id="image-caption"></p>
                   <div class="artifact-box" id="artifact-box" hidden>
@@ -225,6 +260,6 @@
       </div>
     </main>
 
-    <script src="./app.js"></script>
+    <script src="./app.js?v=poster-20260708"></script>
   </body>
 </html>

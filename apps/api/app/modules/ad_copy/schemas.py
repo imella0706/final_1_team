@@ -9,6 +9,7 @@ from app.modules.ad_copy.input_validator import (
     SITUATION_MAP,
     TONE_MAP,
     normalize_ad_copy_input,
+    normalize_age_groups,
     normalize_target_audiences,
 )
 
@@ -63,11 +64,18 @@ class AdSituation(StrEnum):
 
 
 class TargetAudience(StrEnum):
-    TEENS = "teens"
-    TWENTIES = "twenties"
     OFFICE_WORKERS = "office_workers"
     FAMILIES = "families"
     COUPLES = "couples"
+    SOLO = "solo"
+
+
+class AgeGroup(StrEnum):
+    TEENS = "teens"
+    TWENTIES = "twenties"
+    THIRTIES = "thirties"
+    FORTIES = "forties"
+    FIFTIES_PLUS = "fifties_plus"
 
 
 class AdChannel(StrEnum):
@@ -93,7 +101,8 @@ class AdCopyRequest(BaseModel):
     business_name: str = Field(min_length=1, max_length=100)
     business_type: BusinessType
     situation: AdSituation
-    target_audiences: list[TargetAudience] = Field(min_length=1, max_length=5)
+    age_groups: list[AgeGroup] = Field(default_factory=list, max_length=5)
+    target_audiences: list[TargetAudience] = Field(default_factory=list, max_length=6)
     tone: CopyTone
     product_names: list[str] = Field(min_length=1, max_length=10)
     features: list[str] = Field(default_factory=list, max_length=10)
@@ -124,6 +133,11 @@ class AdCopyRequest(BaseModel):
     def normalize_targets(cls, value):
         return normalize_target_audiences(value)
 
+    @field_validator("age_groups", mode="before")
+    @classmethod
+    def normalize_ages(cls, value):
+        return normalize_age_groups(value)
+
     @field_validator("tone", mode="before")
     @classmethod
     def normalize_tone(cls, value):
@@ -139,7 +153,8 @@ class BusinessSummary(BaseModel):
     business_name: str = Field(min_length=1, max_length=100)
     business_type_korean: str = Field(min_length=1, max_length=100)
     situation_korean: str = Field(min_length=1, max_length=100)
-    target_audiences_korean: list[str] = Field(min_length=1, max_length=5)
+    age_groups_korean: list[str] = Field(default_factory=list, max_length=5)
+    target_audiences_korean: list[str] = Field(default_factory=list, max_length=6)
     tone_korean: str = Field(min_length=1, max_length=100)
     channel_korean: str = Field(min_length=1, max_length=100)
 
@@ -246,6 +261,7 @@ class AdCopyContent(BaseModel):
     headlines: list[str] = Field(min_length=1, max_length=5)
     body_copies: list[str] = Field(min_length=1, max_length=5)
     ctas: list[str] = Field(min_length=1, max_length=5)
+    hashtags: list[str] = Field(default_factory=list, max_length=10)
     validation_check: ValidationCheck
     visual_brief: VisualBrief
     safety_notes: list[str] = Field(default_factory=list, max_length=10)
@@ -253,9 +269,9 @@ class AdCopyContent(BaseModel):
 
 class AdCopyResponse(AdCopyContent):
     model: str
-    routed_model: str
-    provider: str
-    prompt_version: str
-    latency_ms: int
+    routed_model: str = ""
+    provider: str = ""
+    prompt_version: str = ""
+    latency_ms: int = 0
     attempts: int = 1
     output_repaired: bool = False

@@ -8,6 +8,7 @@ from app.extensions.ad_content.image_service import (
     ImageModelProviderError,
     generate_ad_image,
 )
+from app.extensions.ad_content.image_prompt import describe_reference_image
 from app.extensions.ad_content.models import list_image_model_options
 from app.extensions.ad_content.product_visualizer import visualize_products
 from app.extensions.ad_content.prompt_normalizer import normalize_image_prompt
@@ -54,16 +55,22 @@ async def generate_content(request: AdContentRequest) -> AdContentResponse:
     try:
         copy = await generate_ad_copy(request.copy_request)
         product_visualization = await visualize_products(request.copy_request, copy)
+        reference_image_context = await describe_reference_image(
+            request.reference_image_data_url,
+            request.copy_request,
+        )
         image_prompt, negative_prompt = normalize_image_prompt(
             copy,
             request.copy_request,
             product_visualization,
+            reference_image_context,
         )
         image = await generate_ad_image(
             AdImageRequest(
                 model=request.image_model,
                 prompt=image_prompt,
                 negative_prompt=negative_prompt,
+                reference_image_data_url=request.reference_image_data_url,
                 width=request.image_width,
                 height=request.image_height,
             )
@@ -78,6 +85,7 @@ async def generate_content(request: AdContentRequest) -> AdContentResponse:
                     model=request.image_model,
                     prompt=image_prompt,
                     negative_prompt=negative_prompt,
+                    reference_image_data_url=request.reference_image_data_url,
                     width=request.image_width,
                     height=request.image_height,
                 )
@@ -104,6 +112,7 @@ async def generate_content(request: AdContentRequest) -> AdContentResponse:
             "headlines": copy.headlines,
             "body_copies": copy.body_copies,
             "ctas": copy.ctas,
+            "hashtags": copy.hashtags,
         },
         copy_result=copy,
         marketing_strategy=copy.marketing_strategy.model_dump(mode="json"),

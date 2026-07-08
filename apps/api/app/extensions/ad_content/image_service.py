@@ -1,4 +1,5 @@
 import base64
+import binascii
 import os
 from time import perf_counter
 from typing import Any
@@ -71,6 +72,27 @@ def _openai_size(width: int, height: int) -> str:
     if height > width:
         return "1024x1536"
     return "1536x1024"
+
+
+def _decode_reference_image(data_url: str) -> tuple[bytes, str, str]:
+    if not data_url.startswith("data:") or ";base64," not in data_url:
+        raise ImageModelProviderError("Reference image must be a base64 data URL.")
+
+    header, encoded = data_url.split(",", 1)
+    media_type = header.removeprefix("data:").split(";", 1)[0] or "image/png"
+    extension = {
+        "image/jpeg": "jpg",
+        "image/jpg": "jpg",
+        "image/png": "png",
+        "image/webp": "webp",
+    }.get(media_type, "png")
+
+    try:
+        image_bytes = base64.b64decode(encoded, validate=True)
+    except (binascii.Error, ValueError) as error:
+        raise ImageModelProviderError("Reference image data URL is not valid base64.") from error
+
+    return image_bytes, media_type, f"reference.{extension}"
 
 
 def _provider_detail(response: httpx.Response) -> str:
@@ -172,6 +194,9 @@ async def _generate_openai_image(request: AdImageRequest) -> AdImageResponse:
             "BRANDMATE_OPENAI_API_KEY is required for OpenAI image generation."
         )
 
+    if request.reference_image_data_url:
+        return await _generate_openai_image_edit(request)
+
     started_at = perf_counter()
     endpoint = f"{settings.openai_base_url.rstrip('/')}/images/generations"
     headers = {
@@ -210,6 +235,59 @@ async def _generate_openai_image(request: AdImageRequest) -> AdImageResponse:
     )
 
 
+async def _generate_openai_image_edit(request: AdImageRequest) -> AdImageResponse:
+    api_key = _secret_value(settings.openai_api_key)
+    if not api_key:
+        raise ImageModelNotConfiguredError(
+            "BRANDMATE_OPENAI_API_KEY is required for OpenAI image editing."
+        )
+    if not request.reference_image_data_url:
+        raise ImageModelProviderError("Reference image is required for image editing.")
+
+    image_bytes, media_type, filename = _decode_reference_image(
+        request.reference_image_data_url
+    )
+    started_at = perf_counter()
+    endpoint = f"{settings.openai_base_url.rstrip('/')}/images/edits"
+    headers = {"Authorization": f"Bearer {api_key}"}
+    data = {
+        "model": _openai_model_name(request.model.value),
+        "prompt": request.prompt,
+        "size": _openai_size(request.width, request.height),
+        "n": "1",
+    }
+    files = {"image": (filename, image_bytes, media_type)}
+
+    try:
+        async with httpx.AsyncClient(timeout=settings.llm_timeout_seconds) as client:
+            response = await client.post(
+                endpoint,
+                headers=headers,
+                data=data,
+                files=files,
+            )
+            response.raise_for_status()
+        image_bytes, output_media_type = await _extract_image(response)
+    except httpx.HTTPStatusError as error:
+        detail = _provider_detail(error.response)
+        raise ImageModelProviderError(
+            f"{request.model.value} image editing failed: {detail}"
+        ) from error
+    except httpx.HTTPError as error:
+        raise ImageModelProviderError(
+            "Could not connect to the OpenAI image editing provider. "
+            f"Root error: {type(error).__name__}"
+        ) from error
+
+    return AdImageResponse(
+        model=data["model"],
+        prompt=request.prompt,
+        image_base64=base64.b64encode(image_bytes).decode("ascii"),
+        media_type=output_media_type,
+        latency_ms=round((perf_counter() - started_at) * 1000),
+    )
+
+
 async def _generate_openai_responses_image(request: AdImageRequest) -> AdImageResponse:
     api_key = _secret_value(settings.openai_api_key)
     if not api_key:
@@ -224,9 +302,25 @@ async def _generate_openai_responses_image(request: AdImageRequest) -> AdImageRe
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
     }
+    response_input: str | list[dict[str, Any]]
+    if request.reference_image_data_url:
+        response_input = [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "input_text", "text": request.prompt},
+                    {
+                        "type": "input_image",
+                        "image_url": request.reference_image_data_url,
+                    },
+                ],
+            }
+        ]
+    else:
+        response_input = request.prompt
     payload = {
         "model": model_name,
-        "input": request.prompt,
+        "input": response_input,
         "tools": [{"type": "image_generation"}],
     }
 

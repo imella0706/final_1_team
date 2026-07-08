@@ -32,14 +32,14 @@ def sample_request() -> dict[str, object]:
 def test_build_prompt_uses_business_facts_and_safety_terms() -> None:
     prompt = build_prompt(AdCopyRequest.model_validate(sample_request()))
 
-    assert PROMPT_VERSION == "four-stage-ad-agency-pipeline-v2"
+    assert PROMPT_VERSION == "four-stage-ad-agency-pipeline-v4-ko-audience"
     assert "동네봄 카페" in prompt
     assert "수제 딸기 티라미수, 런치세트" in prompt
     assert "매일 손질한 생딸기" in prompt
-    assert "STEP 1. MARKETING STRATEGY" in prompt
-    assert "STEP 2. COPYWRITING" in prompt
-    assert "STEP 3. VISUAL BRIEF" in prompt
-    assert "STEP 4. PROMPT NORMALIZER" in prompt
+    assert "STEP 1. 마케팅 전략" in prompt
+    assert "STEP 2. 광고 문구 작성" in prompt
+    assert "STEP 3. 비주얼 브리프" in prompt
+    assert "STEP 4. 프롬프트 정규화 준비" in prompt
     assert "20대" in prompt
     assert '"products_to_show"' in prompt
 

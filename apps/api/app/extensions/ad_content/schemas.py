@@ -34,6 +34,7 @@ class AdImageRequest(BaseModel):
     model: ImageModel = ImageModel.OPENAI_GPT_IMAGE_1_MINI
     prompt: str = Field(min_length=1, max_length=4000)
     negative_prompt: str | None = Field(default=None, max_length=2000)
+    reference_image_data_url: str | None = Field(default=None, max_length=4_000_000)
     width: int = Field(default=1024, ge=512, le=1536)
     height: int = Field(default=1280, ge=512, le=1536)
     guidance_scale: float = Field(default=3.5, ge=1, le=20)
@@ -55,6 +56,7 @@ class AdContentRequest(BaseModel):
     image_model: ImageModel = ImageModel.OPENAI_GPT_IMAGE_1_MINI
     image_width: int = Field(default=1024, ge=512, le=1536)
     image_height: int = Field(default=1280, ge=512, le=1536)
+    reference_image_data_url: str | None = Field(default=None, max_length=4_000_000)
 
 
 class AdContentResponse(BaseModel):

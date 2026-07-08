@@ -19,6 +19,13 @@ class ImageModelSpec:
 
 IMAGE_MODEL_CATALOG = (
     ImageModelSpec(
+        id=ImageModel.FLUX_SCHNELL,
+        name="FLUX.1 Schnell",
+        provider="Hugging Face Inference",
+        availability=ImageModelAvailability.HOSTED,
+        note="Fast prompt-following model for polished ad visual drafts.",
+    ),
+    ImageModelSpec(
         id=ImageModel.OPENAI_GPT_IMAGE_1_MINI,
         name="OpenAI gpt-image-1-mini",
         provider="OpenAI",
@@ -64,13 +71,6 @@ IMAGE_MODEL_CATALOG = (
             "GPT-5.5가 Responses API의 image_generation 도구를 호출하는 방식입니다. "
             "이미지 생성 권한/RPM은 별도로 필요합니다."
         ),
-    ),
-    ImageModelSpec(
-        id=ImageModel.FLUX_SCHNELL,
-        name="FLUX.1 Schnell",
-        provider="Hugging Face Inference",
-        availability=ImageModelAvailability.HOSTED,
-        note="Fast prompt-following model for polished ad visual drafts.",
     ),
     ImageModelSpec(
         id=ImageModel.SDXL_BASE,
