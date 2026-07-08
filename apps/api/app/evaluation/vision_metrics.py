@@ -2,6 +2,7 @@
 
 import base64
 import binascii
+import os
 from functools import lru_cache
 from io import BytesIO
 from pathlib import Path
@@ -43,9 +44,24 @@ def _load_clip_model(model_name: str) -> tuple[Any, Any, Any]:
             'Install them with `pip install -e ".[image]"`.'
         ) from error
 
-    device = "cuda" if torch.cuda.is_available() else "cpu"
+    # [Design Intent] 로컬 ComfyUI/FLUX가 GPU VRAM을 거의 전부 사용하므로,
+    # 평가용 CLIP은 기본적으로 CPU에서 실행한다. 별도 평가 GPU가 있는 서버에서만
+    # BRANDMATE_VISION_METRIC_DEVICE=cuda를 명시해 GPU 평가를 켠다.
+    requested_device = os.getenv("BRANDMATE_VISION_METRIC_DEVICE", "cpu").lower()
+    if requested_device not in {"cpu", "cuda"}:
+        raise VisionMetricDependencyError(
+            "BRANDMATE_VISION_METRIC_DEVICE must be either 'cpu' or 'cuda'."
+        )
+    if requested_device == "cuda" and not torch.cuda.is_available():
+        raise VisionMetricDependencyError(
+            "BRANDMATE_VISION_METRIC_DEVICE=cuda was set, but CUDA is not available."
+        )
+    device = requested_device
     processor = CLIPProcessor.from_pretrained(model_name)
-    model = CLIPModel.from_pretrained(model_name)
+    # [Design Intent] torch<2.6 환경에서는 CVE-2025-32434 대응으로 .bin weight 로드가
+    # 차단될 수 있다. 공개 CLIP 모델의 safetensors weight를 우선 사용해 torch 업그레이드
+    # 없이도 평가 runner가 동작하게 한다.
+    model = CLIPModel.from_pretrained(model_name, use_safetensors=True)
     model.to(device)
     model.eval()
     return processor, model, torch
@@ -161,18 +177,29 @@ def calculate_clip_score(
     # 모델이 올라간 CPU/GPU 장치와 입력 tensor 장치를 맞춘다.
     processor, model, torch = _load_clip_model(model_name)
     image = _image_from_bytes(image_bytes)
-    inputs = processor(text=[prompt], images=[image], return_tensors="pt", padding=True)
+    # [Design Intent] CLIP text encoder는 보통 77 token 제한이 있다. 이미지 생성용
+    # 프롬프트는 수백 token까지 길어질 수 있으므로, 평가에서는 모델 한계에 맞춰 잘라낸다.
+    inputs = processor(
+        text=[prompt],
+        images=[image],
+        return_tensors="pt",
+        padding=True,
+        truncation=True,
+    )
     device = next(model.parameters()).device
     inputs = {key: value.to(device) for key, value in inputs.items()}
 
     with torch.no_grad():
-        text_features = model.get_text_features(
+        outputs = model(
             input_ids=inputs["input_ids"],
             attention_mask=inputs.get("attention_mask"),
-        )
-        image_features = model.get_image_features(
             pixel_values=inputs["pixel_values"],
         )
+        # [Design Intent] transformers 버전에 따라 get_text_features()의 반환 타입이
+        # Tensor가 아닐 수 있다. CLIPModel forward의 projected embedding을 사용하면
+        # text/image embedding 타입이 안정적으로 맞아 cosine similarity 계산이 깨지지 않는다.
+        text_features = outputs.text_embeds
+        image_features = outputs.image_embeds
         text_features = torch.nn.functional.normalize(text_features, dim=-1)
         image_features = torch.nn.functional.normalize(image_features, dim=-1)
         score = (text_features * image_features).sum(dim=-1).item()

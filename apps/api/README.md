@@ -1,6 +1,21 @@
 # BrandMate API
 
-FastAPI 기반 광고 콘텐츠 생성 API입니다. 광고 문구 모델과 이미지 생성 모델을 FastAPI 프로세스 안에 직접 로드하지 않고, OpenAI-compatible endpoint, Hugging Face Router, LM Studio, Diffusers service 등 외부 모델 실행 계층을 API로 호출합니다.
+FastAPI 기반 광고 콘텐츠 생성 API입니다. 광고 문구 모델과 이미지 생성 모델을
+FastAPI 프로세스 안에 직접 로드하지 않고, 별도 모델 실행 계층을 API로 호출합니다.
+현재 이미지 생성 운영 기준은 외부 유료 API가 아니라 GCP GPU VM의 ComfyUI를 직접
+호출하는 방식입니다.
+
+## 로컬 AI 전체 파이프라인 세팅
+
+ComfyUI, FLUX GGUF, Ollama/Qwen, GCP GPU VM, API/eval 가상환경까지 포함한
+전체 로컬 AI 파이프라인 설치 순서는 아래 문서를 기준으로 합니다.
+
+```text
+../../docs/LOCAL_AI_PIPELINE_ONBOARDING.md
+```
+
+이 README는 `apps/api` FastAPI 서버의 구조, endpoint, 기본 실행 방법만 다룹니다.
+이미지 모델/ComfyUI/GPU 환경 세팅 내용을 중복해서 관리하지 않습니다.
 
 ## 주요 Endpoint
 
@@ -32,12 +47,12 @@ copy .env.example .env
 
 ## `.env` 최소 설정
 
-Hugging Face Router를 사용할 경우:
+이미지 생성은 외부 유료 API가 아니라 GCP GPU VM의 ComfyUI를 기본으로 사용합니다.
 
 ```env
-BRANDMATE_LLM_BASE_URL=https://router.huggingface.co/v1
-BRANDMATE_LLM_API_KEY=hf_your_token_here
-BRANDMATE_IMAGE_BASE_URL=https://router.huggingface.co/hf-inference
+# [Design Intent] 이미지 생성은 자체 GPU VM의 ComfyUI를 기본 경로로 고정한다.
+BRANDMATE_IMAGE_PROVIDER=comfyui
+BRANDMATE_COMFYUI_BASE_URL=http://127.0.0.1:8188
 ```
 
 LM Studio를 사용할 경우:
@@ -61,6 +76,7 @@ curl http://localhost:1234/v1/models
 이미지 모델 설정:
 
 ```env
+# [Design Intent] 현재 운영 기본 모델은 ComfyUI에서 실행하는 FLUX.1 Schnell이다.
 BRANDMATE_FLUX_MODEL=black-forest-labs/FLUX.1-schnell
 BRANDMATE_SDXL_MODEL=stabilityai/stable-diffusion-xl-base-1.0
 BRANDMATE_OPENJOURNEY_MODEL=prompthero/openjourney
@@ -179,13 +195,26 @@ cd apps\api
 .venv\Scripts\python.exe -m ruff check app tests
 ```
 
-## 관련 README
+## 관련 문서
+
+### 전체 실행/온보딩
+
+- 로컬 AI 전체 파이프라인 설치: `../../docs/LOCAL_AI_PIPELINE_ONBOARDING.md`
+- 평가 실행 및 리포트 해석: `../../docs/EVALUATION.md`
+
+### API 기능 문서
 
 - 광고 콘텐츠 확장 모듈: `app/extensions/ad_content/README.md`
 - 광고 문구 모듈: `app/modules/ad_copy/README.md`
 - 모델 런타임 구조: `app/modules/model_runtime/README.md`
+
+### 모델 실행 방식
+
 - LLM 실행 방식: `app/modules/model_runtime/llm/README.md`
-- 이미지 실행 방식: `app/modules/model_runtime/image/README.md`
+- 이미지 런타임 구조: `app/modules/model_runtime/image/README.md`
+
+### 설계/운영 참고
+
 - 광고 콘텐츠 파이프라인: `app/modules/model_runtime/docs/AD_CONTENT_PIPELINE_README.md`
 - 프롬프트 전략: `app/modules/model_runtime/docs/PROMPT_STRATEGY.md`
 - 실패 원인 분석: `app/modules/model_runtime/docs/FAILURE_ANALYSIS.md`

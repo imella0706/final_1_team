@@ -163,6 +163,53 @@ def _describe_features(copy: AdCopyResponse) -> str:
     return "\n".join(lines) if lines else "- No extra feature visualization required"
 
 
+def _clip_product_names(
+    request: AdCopyRequest,
+    product_visualization: ProductVisualization | None,
+) -> str:
+    if product_visualization:
+        names = [
+            product.english_name.strip()
+            for product in product_visualization.products
+            if product.english_name.strip()
+        ]
+    else:
+        names = [
+            product_name.strip()
+            for product_name in request.product_names
+            if product_name.strip()
+        ]
+
+    if not names:
+        return "the requested products"
+    if len(names) == 1:
+        return names[0]
+    if len(names) == 2:
+        return f"{names[0]} and {names[1]}"
+    return f"{', '.join(names[:-1])}, and {names[-1]}"
+
+
+def build_clip_eval_prompt(
+    copy: AdCopyResponse,
+    request: AdCopyRequest,
+    product_visualization: ProductVisualization | None = None,
+) -> str:
+    brief = copy.visual_brief
+    products = _clip_product_names(request, product_visualization)
+    background = _label(BACKGROUND_LABELS, brief.background).split(",")[0]
+
+    # [Design Intent] CLIP text encoder는 입력 길이가 짧다. 이미지 생성용 전체 prompt를
+    # 그대로 평가에 넣으면 핵심 상품명이 잘리거나 token limit 오류가 난다. 그래서 CLIP에는
+    # 케이스별 상품/구도/조명만 담은 짧은 평가 전용 prompt를 사용한다.
+    return (
+        "Commercial food advertising photo showing "
+        f"{products} together on a {background}, "
+        f"{_label(LIGHTING_LABELS, brief.lighting)}, "
+        f"{_label(CAMERA_LABELS, brief.camera_angle)}, "
+        "realistic premium product photography, no readable text."
+    )
+
+
 def _unlisted_product_negative(
     product_visualization: ProductVisualization | None,
 ) -> str:
