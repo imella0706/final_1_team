@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from app.modules.ad_copy.schemas import (
     AdCopyContent,
     AdCopyRequest,
+    ChannelRecommendation,
     FeatureVisualization,
     MarketingStrategy,
     MandatoryFeature,
@@ -109,6 +110,32 @@ def build_fallback_copy(request: AdCopyRequest, warnings: list[str]) -> AdCopyCo
         FeatureVisualization(feature_text=feature, visual_translation=[feature])
         for feature in request.features
     ]
+    channel_recommendations = {
+        "instagram": ChannelRecommendation(
+            format_name="인스타그램 피드",
+            writing_direction="짧은 첫 문장, 본문, CTA, 해시태그 순서로 게시하세요.",
+            image_direction="상품이 크게 보이는 4:5 피드 이미지로 사용하세요.",
+            placement_tip="이미지 위에는 짧은 헤드라인만 올리고 자세한 설명은 캡션에 배치하세요.",
+        ),
+        "naver_blog": ChannelRecommendation(
+            format_name="네이버 블로그 본문",
+            writing_direction="작성된 문구를 블로그 도입부와 상품 설명 문단으로 나누어 사용하세요.",
+            image_direction="대표 상품 사진을 도입부에, 상세 이미지를 본문 중간에 넣으세요.",
+            placement_tip="글과 사진을 번갈아 배치하면 정보 탐색 흐름이 자연스럽습니다.",
+        ),
+        "delivery_app": ChannelRecommendation(
+            format_name="배달앱 포스터",
+            writing_direction="상품명, 가격/혜택, CTA가 바로 보이게 짧게 사용하세요.",
+            image_direction="상품 중심의 전체 포스터 이미지로 사용하세요.",
+            placement_tip="앱 카드에서는 이미지 아래에 핵심 혜택과 주문 CTA를 붙이세요.",
+        ),
+        "store_poster": ChannelRecommendation(
+            format_name="매장 포스터",
+            writing_direction="멀리서도 읽히는 한 줄 헤드라인과 짧은 CTA로 사용하세요.",
+            image_direction="상품이 크게 보이는 세로형 포스터 이미지로 사용하세요.",
+            placement_tip="상단에는 헤드라인, 중앙에는 상품, 하단에는 CTA를 배치하세요.",
+        ),
+    }
 
     return AdCopyContent(
         marketing_strategy=MarketingStrategy(
@@ -133,6 +160,15 @@ def build_fallback_copy(request: AdCopyRequest, warnings: list[str]) -> AdCopyCo
         body_copies=[body],
         ctas=[cta],
         hashtags=hashtags,
+        channel_recommendation=channel_recommendations.get(
+            request.channel.value,
+            ChannelRecommendation(
+                format_name="디지털 광고",
+                writing_direction="본문과 CTA를 함께 사용하세요.",
+                image_direction="상품 중심 이미지로 사용하세요.",
+                placement_tip="글과 이미지를 같은 메시지로 맞춰 배치하세요.",
+            ),
+        ),
         validation_check=ValidationCheck(
             all_products_included=True,
             all_features_included=True,

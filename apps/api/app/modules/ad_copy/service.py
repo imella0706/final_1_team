@@ -49,6 +49,37 @@ def _request_payload(
     use_max_completion_tokens: bool = False,
     invalid_content: str | None = None,
 ) -> dict[str, Any]:
+    messages = build_prompt_messages(
+        request,
+        supports_system_role=supports_system_role,
+        invalid_content=invalid_content,
+    )
+
+    payload: dict[str, Any] = {
+        "model": provider_model_name,
+        "messages": messages,
+        "temperature": 0.75,
+    }
+    token_limit_name = "max_completion_tokens" if use_max_completion_tokens else "max_tokens"
+    payload[token_limit_name] = 2000
+    if structured:
+        payload["response_format"] = {
+            "type": "json_schema",
+            "json_schema": {
+                "name": "AdCopyContent",
+                "schema": AdCopyContent.model_json_schema(),
+                "strict": True,
+            },
+        }
+    return payload
+
+
+def build_prompt_messages(
+    request: AdCopyRequest,
+    *,
+    supports_system_role: bool = True,
+    invalid_content: str | None = None,
+) -> list[dict[str, str]]:
     system_prompt = (
         "당신은 한국 소상공인을 위한 광고 카피라이터입니다. "
         "입력에 없는 사실을 만들지 말고, 요청한 JSON 객체만 출력하세요."
@@ -70,23 +101,7 @@ def _request_payload(
     else:
         messages = [{"role": "user", "content": f"{system_prompt}\n\n{user_prompt}"}]
 
-    payload: dict[str, Any] = {
-        "model": provider_model_name,
-        "messages": messages,
-        "temperature": 0.75,
-    }
-    token_limit_name = "max_completion_tokens" if use_max_completion_tokens else "max_tokens"
-    payload[token_limit_name] = 2000
-    if structured:
-        payload["response_format"] = {
-            "type": "json_schema",
-            "json_schema": {
-                "name": "AdCopyContent",
-                "schema": AdCopyContent.model_json_schema(),
-                "strict": True,
-            },
-        }
-    return payload
+    return messages
 
 
 def _extract_content(response: httpx.Response) -> str:
@@ -231,6 +246,14 @@ async def generate_ad_copy(request: AdCopyRequest) -> AdCopyResponse:
     attempts = 0
     output_repaired = False
     model_spec = get_model_spec(request.model)
+    llm_prompt = {
+        "prompt_version": PROMPT_VERSION,
+        "model": request.model.value,
+        "messages": build_prompt_messages(
+            request,
+            supports_system_role=model_spec.supports_system_role,
+        ),
+    }
 
     for attempt in range(3):
         attempts = attempt + 1
@@ -268,6 +291,7 @@ async def generate_ad_copy(request: AdCopyRequest) -> AdCopyResponse:
         routed_model=model_spec.routed_model,
         provider=model_spec.provider,
         prompt_version=PROMPT_VERSION,
+        llm_prompt=llm_prompt,
         latency_ms=latency_ms,
         attempts=attempts,
         output_repaired=output_repaired,

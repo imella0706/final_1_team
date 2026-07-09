@@ -1,11 +1,12 @@
 [
   {
-    "id": "cafe_new_menu_emotional",
+    "id": "cafe_new_menu_emotional_twenties_workers",
     "request": {
       "business_name": "오후의 조각",
       "business_type": "cafe",
       "situation": "new_menu",
-      "target_audiences": ["twenties", "office_workers"],
+      "age_groups": ["twenties"],
+      "target_audiences": ["office_workers"],
       "tone": "emotional",
       "product_names": ["수제 딸기 티라미수", "런치세트"],
       "features": ["매일 아침 직접 만드는 디저트", "생딸기 사용"],
@@ -16,14 +17,15 @@
     }
   },
   {
-    "id": "bakery_discount_friendly",
+    "id": "bakery_discount_warm_families",
     "request": {
       "business_name": "동네밀 베이커리",
       "business_type": "bakery",
       "situation": "discount",
-      "target_audiences": ["office_workers", "families"],
-      "tone": "friendly",
-      "product_names": ["소금빵 세트"],
+      "age_groups": ["thirties", "forties"],
+      "target_audiences": ["families"],
+      "tone": "warm",
+      "product_names": ["소금빵 세트", "아메리카노"],
       "features": ["매장에서 당일 생산", "오후 6시 이후 방문 포장"],
       "channel": "store_poster",
       "promotion": "평일 오후 6시 이후 10% 할인",
@@ -32,28 +34,47 @@
     }
   },
   {
-    "id": "restaurant_delivery_family",
+    "id": "restaurant_delivery_friendly_solo",
     "request": {
       "business_name": "정담식탁",
       "business_type": "restaurant",
       "situation": "delivery",
-      "target_audiences": ["families"],
-      "tone": "warm",
-      "product_names": ["제육볶음 가족세트"],
-      "features": ["2~3인 구성", "공깃밥 포함"],
+      "age_groups": ["twenties", "thirties"],
+      "target_audiences": ["solo"],
+      "tone": "friendly",
+      "product_names": ["1인 제육 도시락"],
+      "features": ["혼밥에 맞춘 넉넉한 구성", "공깃밥 포함"],
       "channel": "delivery_app",
-      "promotion": null,
-      "required_terms": ["가족세트"],
+      "promotion": "첫 주문 배달비 2000원 할인",
+      "required_terms": ["1인 도시락"],
       "prohibited_terms": ["건강식", "최저가"]
     }
   },
   {
-    "id": "pub_event_playful",
+    "id": "restaurant_takeout_professional_workers",
+    "request": {
+      "business_name": "바른한끼",
+      "business_type": "restaurant",
+      "situation": "takeout",
+      "age_groups": ["thirties"],
+      "target_audiences": ["office_workers"],
+      "tone": "professional",
+      "product_names": ["직장인 런치세트"],
+      "features": ["15분 내 포장 준비", "국과 반찬 포함"],
+      "channel": "store_poster",
+      "promotion": "오전 11시까지 예약 시 음료 제공",
+      "required_terms": ["포장 예약"],
+      "prohibited_terms": ["칼로리 걱정 없는", "완벽한"]
+    }
+  },
+  {
+    "id": "pub_event_playful_couples",
     "request": {
       "business_name": "달빛잔",
       "business_type": "pub",
       "situation": "event",
-      "target_audiences": ["twenties", "couples"],
+      "age_groups": ["twenties", "thirties"],
+      "target_audiences": ["couples"],
       "tone": "playful",
       "product_names": ["하이볼 페어링 세트"],
       "features": ["하이볼 2잔", "감자튀김 포함"],
@@ -64,11 +85,12 @@
     }
   },
   {
-    "id": "dessert_visit_premium",
+    "id": "dessert_visit_premium_couples",
     "request": {
       "business_name": "몽드슈",
       "business_type": "dessert",
       "situation": "visit",
+      "age_groups": ["twenties"],
       "target_audiences": ["couples"],
       "tone": "premium",
       "product_names": ["바닐라 밀푀유"],
@@ -80,12 +102,13 @@
     }
   },
   {
-    "id": "cafe_takeout_teens",
+    "id": "cafe_takeout_friendly_teens",
     "request": {
       "business_name": "컵앤데이",
       "business_type": "cafe",
       "situation": "takeout",
-      "target_audiences": ["teens"],
+      "age_groups": ["teens"],
+      "target_audiences": [],
       "tone": "friendly",
       "product_names": ["초코 크림 라테"],
       "features": ["테이크아웃 가능", "휘핑크림 선택 가능"],
@@ -93,6 +116,23 @@
       "promotion": null,
       "required_terms": ["테이크아웃"],
       "prohibited_terms": ["살 안 찌는", "중독"]
+    }
+  },
+  {
+    "id": "dessert_new_menu_emotional_no_age",
+    "request": {
+      "business_name": "포근슈가",
+      "business_type": "dessert",
+      "situation": "new_menu",
+      "age_groups": [],
+      "target_audiences": ["families"],
+      "tone": "emotional",
+      "product_names": ["말차 크림 케이크"],
+      "features": ["쌉싸름한 말차 크림", "조각 케이크 포장 가능"],
+      "channel": "instagram",
+      "promotion": "주말 한정 판매",
+      "required_terms": ["말차 크림"],
+      "prohibited_terms": ["아이도 무조건 좋아하는", "대박"]
     }
   }
 ]

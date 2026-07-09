@@ -30,6 +30,10 @@ AGE_GROUP_MAP = {
 
 TARGET_MAP = {
     "직장인": "office_workers",
+    "학생": "students",
+    "중학생": "middle_school_students",
+    "고등학생": "high_school_students",
+    "대학생": "college_students",
     "가족": "families",
     "가족 고객": "families",
     "커플": "couples",

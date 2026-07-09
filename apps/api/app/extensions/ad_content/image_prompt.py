@@ -1,5 +1,3 @@
-import json
-
 import httpx
 
 from app.core.config import settings
@@ -84,6 +82,34 @@ EMPTY_SPACE_LABELS = {
     "poster_safe_margin": "poster-safe margin with clean negative space for later text overlay",
 }
 
+CHANNEL_IMAGE_DIRECTIONS = {
+    "instagram": {
+        "format": "Instagram feed image, vertical 4:5",
+        "placement": "hero product in the center, clean margin for one short overlay headline",
+        "intent": "scroll-stopping product photo for a social feed",
+    },
+    "naver_blog": {
+        "format": "Naver blog editorial product photo, vertical 4:5",
+        "placement": "natural representative photo that can sit at the top of a blog post or between paragraphs",
+        "intent": "informative blog image that supports written product storytelling",
+    },
+    "delivery_app": {
+        "format": "delivery app promotional poster, vertical 4:5",
+        "placement": "full poster-style layout with a large product hero and clean blank zones for price, benefit, and order CTA",
+        "intent": "app banner/poster image focused on immediate ordering",
+    },
+    "store_poster": {
+        "format": "in-store promotional poster, vertical 4:5",
+        "placement": "large product hero with poster-safe top and bottom margins",
+        "intent": "clear poster image visible at a glance",
+    },
+    "other": {
+        "format": "digital product ad image, vertical 4:5",
+        "placement": "large product hero with clean negative space",
+        "intent": "general product promotion image",
+    },
+}
+
 
 def _label(mapping: dict[str, str], value: str) -> str:
     return mapping.get(value, value.replace("_", " "))
@@ -100,25 +126,37 @@ def _secret_value(value) -> str | None:
 async def describe_reference_image(
     reference_image_data_url: str | None,
     copy_request: AdCopyRequest,
-) -> str | None:
-    if not reference_image_data_url:
-        return None
-
-    api_key = _secret_value(settings.openai_api_key)
-    if not api_key:
-        return None
-
-    prompt = (
-        "이 참고 이미지를 보고, 광고 이미지 생성에 바로 반영할 수 있도록 핵심 시각 요소를 한국어로 짧게 요약해 주세요. "
-        "제품의 형태, 재질, 색상, 구도, 강조할 포인트, 배경 느낌을 중심으로 2~3문장으로 적어 주세요."
-    )
-    payload = {
+) -> tuple[str | None, dict[str, object]]:
+    prompt_text = build_reference_image_prompt(copy_request)
+    prompt_record: dict[str, object] = {
         "model": settings.image_validator_model_name or settings.openai_vision_model,
         "messages": [
             {
                 "role": "user",
                 "content": [
-                    {"type": "text", "text": prompt},
+                    {"type": "text", "text": prompt_text},
+                    {
+                        "type": "image_url",
+                        "image_url": {"url": "[reference_image_data_url]"},
+                    },
+                ],
+            }
+        ],
+    }
+    if not reference_image_data_url:
+        return None, prompt_record
+
+    api_key = _secret_value(settings.openai_api_key)
+    if not api_key:
+        return None, prompt_record
+
+    payload = {
+        "model": prompt_record["model"],
+        "messages": [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": prompt_text},
                     {"type": "image_url", "image_url": {"url": reference_image_data_url}},
                 ],
             }
@@ -141,11 +179,26 @@ async def describe_reference_image(
             body = response.json()
             content = body["choices"][0]["message"]["content"]
             if isinstance(content, str):
-                return content.strip()
+                return content.strip(), prompt_record
     except (httpx.HTTPError, KeyError, IndexError, TypeError, ValueError):
-        return None
+        return None, prompt_record
 
-    return None
+    return None, prompt_record
+
+
+def build_reference_image_prompt(copy_request: AdCopyRequest) -> str:
+    product_names = ", ".join(copy_request.product_names)
+    channel = _channel_direction(copy_request.channel.value)
+    return (
+        "업로드된 참고 이미지를 이미지 생성 모델에 전달할 짧은 시각 지시로 정리해 주세요.\n"
+        f"사용자 입력 상품명: {product_names}\n"
+        f"사용할 채널/방향: {channel['format']} / {channel['placement']}\n\n"
+        "아래 3가지만 한국어로 짧게 답하세요.\n"
+        "1. 유지할 제품 식별 요소\n"
+        "2. 유지할 배치/구도 방향\n"
+        "3. 제거하거나 단순화할 배경 요소\n\n"
+        "사진에 없는 제품, 특징, 문구는 만들지 마세요."
+    )
 
 
 def _product_visual_cues(product_name: str, copy: AdCopyResponse) -> list[str]:
@@ -172,14 +225,22 @@ def _product_identity_description(product_name: str, copy: AdCopyResponse) -> st
 
 
 def _describe_visualized_product(product: ProductVisual) -> str:
-    visual_description = ", ".join(product.visual_description)
-    serving_style = ", ".join(product.serving_style)
-    must_show = ", ".join(product.must_show)
-    return (
-        f"- {product.original_name}: {product.english_name}, category: {product.category}, "
-        f"visual details: {visual_description}, serving style: {serving_style}, "
-        f"must show: {must_show}"
-    )
+    must_show = _bullet_lines(product.must_show)
+    must_not = _bullet_lines(product.must_not_replace_with)
+    block = [
+        f"- {product.original_name}",
+        f"  English: {product.english_name}",
+    ]
+    if must_show:
+        block.extend(["", "  Must show:", must_show])
+    if must_not:
+        block.extend(["", "  Do not:", must_not])
+    return "\n".join(block)
+
+
+def _bullet_lines(items: list[str]) -> str:
+    cleaned = [item.strip() for item in items if item and item.strip()]
+    return "\n".join(f"  - {item}" for item in dict.fromkeys(cleaned[:6]))
 
 
 def _describe_products(
@@ -189,8 +250,7 @@ def _describe_products(
 ) -> str:
     if product_visualization:
         return "\n".join(
-            _describe_visualized_product(product)
-            for product in product_visualization.products
+            _describe_visualized_product(product) for product in product_visualization.products
         )
 
     products = copy.visual_brief.products_to_show
@@ -211,19 +271,22 @@ def _describe_products(
     lines = []
     for product in products:
         role = "main product" if product.visual_role == "main" else "supporting product"
-        description = _product_identity_description(product.product_name, copy)
         lines.append(
-            f"- {description}: {role}, clearly visible in the same scene"
+            "\n".join(
+                [
+                    f"- {product.product_name}",
+                    f"  English: {product.product_name}",
+                    "",
+                    "  Must show:",
+                    f"  - {product.product_name}",
+                    f"  - {role}",
+                    "",
+                    "  Do not:",
+                    "  - Substitute with a different product",
+                ]
+            )
         )
     return "\n".join(lines)
-
-
-def _describe_features(copy: AdCopyResponse) -> str:
-    lines = []
-    for item in copy.visual_brief.feature_visualization:
-        cues = ", ".join(item.visual_translation) if item.visual_translation else "clear visual cue"
-        lines.append(f"- {item.feature_text}: {cues}")
-    return "\n".join(lines) if lines else "- No extra feature visualization required"
 
 
 def _unlisted_product_negative(
@@ -245,6 +308,19 @@ def _unlisted_product_negative(
     )
 
 
+def _reference_context_block(reference_image_context: str | None) -> str:
+    if not reference_image_context:
+        return "- No reference image analysis available."
+
+    return f"""Reference image analysis:
+{reference_image_context}
+"""
+
+
+def _channel_direction(channel: str) -> dict[str, str]:
+    return CHANNEL_IMAGE_DIRECTIONS.get(channel, CHANNEL_IMAGE_DIRECTIONS["other"])
+
+
 def build_ad_image_prompt(
     copy: AdCopyResponse,
     request: AdCopyRequest,
@@ -252,91 +328,72 @@ def build_ad_image_prompt(
     reference_image_context: str | None = None,
 ) -> tuple[str, str]:
     brief = copy.visual_brief
-    business_type = BUSINESS_TYPE_LABELS.get(request.business_type.value, request.business_type.value)
+    business_type = BUSINESS_TYPE_LABELS.get(
+        request.business_type.value, request.business_type.value
+    )
     palette = ", ".join(_label(PALETTE_LABELS, color) for color in brief.color_palette)
-    avoid = ", ".join(brief.avoid) if brief.avoid else "none"
     product_lines = _describe_products(copy, request, product_visualization)
-    feature_lines = _describe_features(copy)
     composition = _label(COMPOSITION_LABELS, brief.composition)
     template = settings.image_prompt_template or "generic"
     product_names = ", ".join(request.product_names)
-    unrelated_negative = _unlisted_product_negative(product_visualization)
+    negative_prompt = _build_negative_prompt()
+    reference_context = _reference_context_block(reference_image_context)
+    channel = _channel_direction(request.channel.value)
 
-    reference_context_block = ""
-    if reference_image_context:
-        reference_context_block = f"""
+    image_prompt = f"""Task:
+Create one realistic commercial product ad image for a Korean small business.
 
-참고 이미지 분석:
-{reference_image_context}
-
-이미지 생성 지침:
-- 참고 이미지의 핵심 디테일만 반영하고, 제품의 핵심 포인트만 강조하세요.
-- 불필요한 배경이나 잡음을 줄이고, 강조할 요소만 선명하게 남기세요.
-- 제품의 형태와 색상은 정확하게 유지하고, 나머지 요소는 단순하게 처리하세요.
-"""
-
-    image_prompt = f"""전문 상업용 광고 이미지로, 한국 소규모 매장을 위한 실제 사진 같은 이미지로 생성해 주세요.
-
-프롬프트 템플릿:
+Template:
 {template}
 
-다음 제품만 메인 주제로 사용하세요.
-모든 제품이 하나의 장면에 함께 보이도록 구성하세요.
-제품을 다른 음식, 음료, 물건, 포장지, 상품으로 바꾸지 마세요.
-제품명이 한국어이더라도, 이름에 맞는 형태와 재질을 시각적으로 자연스럽게 반영하세요.
+Reference Image:
+{reference_context}
 
-제품:
+Products:
 {product_lines}
 
-필수 제품 정체성:
+Product Identity Lock:
 {product_names}
 
-제품 정체성 잠금:
-사용자 입력한 제품 정보와 정확히 일치해야 합니다. 일반적인 대체품을 만들지 마세요. 목록에 없는 메인 제품을 추가하지 마세요.
+Composition:
+- {channel["format"]}
+- {channel["intent"]}
+- {channel["placement"]}
+- {composition}
+- {_label(EMPTY_SPACE_LABELS, brief.empty_space)}
 
-업종:
-- {business_type}
+Camera:
+- {_label(CAMERA_LABELS, brief.camera_angle)}
+- {_label(DEPTH_LABELS, brief.depth_of_field)}
 
-강조할 시각 포인트:
-{feature_lines}
+Lighting:
+- {_label(LIGHTING_LABELS, brief.lighting)}
 
-배경:
-{_label(BACKGROUND_LABELS, brief.background)}. 필요하면 부드럽게 흐리게 처리하세요. 평범한 벽, 깨끗한 테이블, 중립적인 실내 공간만 사용하세요.
+Background:
+- business context: {business_type}
+- {_label(BACKGROUND_LABELS, brief.background)}
 
-구도:
-{composition}, 세로 4:5 인스타그램 광고 레이아웃, 제품이 중심이 되도록 구성하세요.
+Style:
+- realistic product photography
+- clean SNS ad image
+- {palette}
 
-카메라:
-{_label(CAMERA_LABELS, brief.camera_angle)}, {_label(DEPTH_LABELS, brief.depth_of_field)}, 전문 상업용 식음료 촬영 느낌의 렌즈를 사용하세요.
+Negative prompt:
+{negative_prompt}
 
-조명:
-{_label(LIGHTING_LABELS, brief.lighting)}.
-
-스타일:
-전문 상업용 제품 광고 사진, 현실적이고 깔끔하며 현대적이고 따뜻하고 세밀한 디테일, 프리미엄하지만 친근한 지역 상점 분위기. 음식이나 음료라면 식욕을 자극하는 식음료 스타일로, 물건이라면 깔끔한 제품 사진 스타일로 표현하세요.
-
-색상 팔레트:
-{palette}
-
-여백:
-{_label(EMPTY_SPACE_LABELS, brief.empty_space)}.
-
-광고 방향:
-제품 자체를 중심으로 보여 주세요. 나중에 텍스트를 올릴 수 있도록 여백을 남기세요. 읽을 수 있는 텍스트, 가짜 텍스트, 한국어, 영어, 로고, 메뉴판, 간판, 포스터, 라벨, 브랜드 마크, 워터마크는 넣지 마세요. 배경에는 타이포그래피를 남기지 마세요.
-
-품질:
-고해상도, 프리미엄 상업용 식음료 사진, 전문적인 SNS 캠페인 이미지, 현실적인 질감, 식욕을 자극하는 스타일.
-
-추가 회피 요소:
-{avoid}{reference_context_block}
+Priority:
+1. Preserve the uploaded reference product identity when it matches Product Identity Lock.
+2. Do not add birthday candles, party props, text, or new toppings unless they are clearly visible in the reference image.
+3. Treat marketing features as copy strategy, not image objects.
+4. Use only the product listed in Product Identity Lock as the main product.
 """
-    negative_prompt = (
-        "읽을 수 있는 텍스트, 한국어 글자, 영어 글자, 로고, 워터마크, 브랜드 마크, "
-        "메뉴판, 가게 간판, 안내판, 벽 포스터, 타이포그래피, 가짜 텍스트, "
-        "의미 없는 문자열, 비정상적인 한글, 무작위 사람, 손, "
-        "왜곡된 음식, 녹아버린 디저트, 지저분한 테이블, 중복된 객체, 낮은 품질, "
-        "흐림, 과노출, 부족한 노출, 만화, 애니메이션, 일러스트, 플라스틱 느낌, "
-        "비현실적인 유리, 변형된 디저트, 과도한 채도, 잘못된 해부학, 아티팩트, "
-        f"잘린 제품, {unrelated_negative}"
-    )
     return image_prompt, negative_prompt
+
+
+def _build_negative_prompt() -> str:
+    return (
+        "No readable text. No logo. No watermark. No menu board. "
+        "No people. No hands. No extra food. No product substitution. "
+        "No birthday candles unless visible in the reference image. "
+        "No party props unless visible in the reference image."
+    )

@@ -66,9 +66,12 @@ class AdContentResponse(BaseModel):
     ad_copy: dict[str, list[str]] = Field(default_factory=dict)
     copy_result: AdCopyResponse = Field(alias="copy")
     marketing_strategy: dict[str, object] = Field(default_factory=dict)
+    channel_recommendation: dict[str, object] = Field(default_factory=dict)
     visual_brief: dict[str, object] = Field(default_factory=dict)
     product_visualization: dict[str, object] = Field(default_factory=dict)
     image: AdImageResponse
+    llm_prompt: dict[str, object] = Field(default_factory=dict)
+    vision_prompt: dict[str, object] = Field(default_factory=dict)
     image_prompt: str
     negative_prompt: str = ""
     image_url: str = ""

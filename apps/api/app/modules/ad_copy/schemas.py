@@ -65,6 +65,10 @@ class AdSituation(StrEnum):
 
 class TargetAudience(StrEnum):
     OFFICE_WORKERS = "office_workers"
+    STUDENTS = "students"
+    MIDDLE_SCHOOL_STUDENTS = "middle_school_students"
+    HIGH_SCHOOL_STUDENTS = "high_school_students"
+    COLLEGE_STUDENTS = "college_students"
     FAMILIES = "families"
     COUPLES = "couples"
     SOLO = "solo"
@@ -110,6 +114,13 @@ class AdCopyRequest(BaseModel):
     promotion: str | None = Field(default=None, max_length=300)
     required_terms: list[str] = Field(default_factory=list, max_length=10)
     prohibited_terms: list[str] = Field(default_factory=list, max_length=20)
+    gender: str | None = Field(default=None, max_length=40)
+    occupation_group: str | None = Field(default=None, max_length=80)
+    product_price: str | None = Field(default=None, max_length=120)
+    interests: list[str] = Field(default_factory=list, max_length=10)
+    region: str | None = Field(default=None, max_length=120)
+    trade_area: str | None = Field(default=None, max_length=160)
+    audience_detail: str | None = Field(default=None, max_length=500)
 
     @model_validator(mode="before")
     @classmethod
@@ -256,12 +267,22 @@ class VisualBrief(BaseModel):
     avoid: list[str] = Field(default_factory=list, max_length=10)
 
 
+class ChannelRecommendation(BaseModel):
+    format_name: str = Field(default="", max_length=100)
+    writing_direction: str = Field(default="", max_length=500)
+    image_direction: str = Field(default="", max_length=500)
+    placement_tip: str = Field(default="", max_length=500)
+
+
 class AdCopyContent(BaseModel):
     marketing_strategy: MarketingStrategy
     headlines: list[str] = Field(min_length=1, max_length=5)
     body_copies: list[str] = Field(min_length=1, max_length=5)
     ctas: list[str] = Field(min_length=1, max_length=5)
     hashtags: list[str] = Field(default_factory=list, max_length=10)
+    channel_recommendation: ChannelRecommendation = Field(
+        default_factory=ChannelRecommendation
+    )
     validation_check: ValidationCheck
     visual_brief: VisualBrief
     safety_notes: list[str] = Field(default_factory=list, max_length=10)
@@ -272,6 +293,7 @@ class AdCopyResponse(AdCopyContent):
     routed_model: str = ""
     provider: str = ""
     prompt_version: str = ""
+    llm_prompt: dict[str, object] = Field(default_factory=dict)
     latency_ms: int = 0
     attempts: int = 1
     output_repaired: bool = False

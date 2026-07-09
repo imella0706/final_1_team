@@ -1,34 +1,38 @@
 const API_BASE_URL = "http://localhost:8000/api/v1";
 
-const form = document.querySelector("#ad-form");
-const copyModelSelect = document.querySelector("#copy-model");
-const imageModelSelect = document.querySelector("#image-model");
-const copyModelHelp = document.querySelector("#copy-model-help");
-const imageModelHelp = document.querySelector("#image-model-help");
-const apiState = document.querySelector("#api-state");
-const resetButton = document.querySelector("#reset-button");
+const $ = (selector) => document.querySelector(selector);
+
+const form = $("#ad-form");
+const copyModelSelect = $("#copy-model");
+const imageModelSelect = $("#image-model");
+const copyModelHelp = $("#copy-model-help");
+const imageModelHelp = $("#image-model-help");
+const apiState = $("#api-state");
+const resetButton = $("#reset-button");
 const generateButton = form.querySelector(".generate-button");
-const runState = document.querySelector("#run-state");
+const runState = $("#run-state");
 const pipelineItems = [...document.querySelectorAll("#pipeline li")];
-const errorBox = document.querySelector("#error-box");
-const errorMessage = document.querySelector("#error-message");
-const payloadPreview = document.querySelector("#payload-preview");
-const outputPanel = document.querySelector("#output-panel");
-const emptyState = document.querySelector("#empty-state");
-const generatedContent = document.querySelector("#generated-content");
-const artifactBox = document.querySelector("#artifact-box");
-const artifactDirectory = document.querySelector("#artifact-directory");
-const artifactJson = document.querySelector("#artifact-json");
-const artifactImage = document.querySelector("#artifact-image");
-const artifactPrompt = document.querySelector("#artifact-prompt");
-const referenceImageInput = document.querySelector("#reference-image");
-const referencePreview = document.querySelector("#reference-preview");
-const referencePreviewImage = document.querySelector("#reference-preview-image");
-const referencePreviewName = document.querySelector("#reference-preview-name");
-const referencePreviewMeta = document.querySelector("#reference-preview-meta");
-const referencePreviewClear = document.querySelector("#reference-preview-clear");
+const errorBox = $("#error-box");
+const errorMessage = $("#error-message");
+const payloadPreview = $("#payload-preview");
+const outputPanel = $("#output-panel");
+const emptyState = $("#empty-state");
+const generatedContent = $("#generated-content");
+const artifactBox = $("#artifact-box");
+const artifactDirectory = $("#artifact-directory");
+const artifactJson = $("#artifact-json");
+const artifactImage = $("#artifact-image");
+const artifactPrompt = $("#artifact-prompt");
+const referenceImageInput = $("#reference-image");
+const referencePreview = $("#reference-preview");
+const referencePreviewImage = $("#reference-preview-image");
+const referencePreviewName = $("#reference-preview-name");
+const referencePreviewMeta = $("#reference-preview-meta");
+const referencePreviewClear = $("#reference-preview-clear");
+const referenceCutoutToggle = $("#reference-cutout");
 
 let hasGeneratedAd = false;
+let referencePreviewDataUrl = null;
 
 const displayLabels = {
   businessType: {
@@ -55,9 +59,29 @@ const displayLabels = {
   },
   target: {
     office_workers: "직장인",
+    students: "학생",
+    middle_school_students: "중학생",
+    high_school_students: "고등학생",
+    college_students: "대학생",
     families: "가족",
     couples: "커플",
     solo: "혼자",
+  },
+  gender: {
+    all: "전체",
+    female: "여성",
+    male: "남성",
+  },
+  occupationGroup: {
+    none: "해당 없음",
+    office_worker: "직장인",
+    student: "학생",
+    self_employed: "자영업",
+    freelancer: "프리랜서",
+    professional: "전문직",
+    homemaker: "주부",
+    job_seeker: "취준생",
+    other: "기타",
   },
 };
 
@@ -90,6 +114,39 @@ function formatFileSize(bytes) {
   return `${Math.max(1, Math.round(bytes / 1024))}KB`;
 }
 
+function displayValue(group, value) {
+  return displayLabels[group]?.[value] || value;
+}
+
+function displayList(group, values) {
+  return values.map((value) => displayValue(group, value)).filter(Boolean).join(", ");
+}
+
+function optionalLine(label, value) {
+  const trimmed = `${value || ""}`.trim();
+  return trimmed ? `${label}: ${trimmed}` : null;
+}
+
+function setText(selector, text) {
+  $(selector).textContent = text || "";
+}
+
+function buildContextLine(input) {
+  const parts = [
+    displayValue("businessType", input.copy.business_type),
+    displayValue("situation", input.copy.situation),
+    displayList("ageGroup", input.copy.age_groups),
+    displayValue("gender", input.audience.gender),
+    input.audience.occupation_group !== "none"
+      ? displayValue("occupationGroup", input.audience.occupation_group)
+      : "",
+    displayList("target", input.copy.target_audiences),
+    input.audience.region,
+    input.audience.trade_area,
+  ];
+  return parts.filter(Boolean).join(" · ");
+}
+
 function readFileAsDataUrl(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -97,6 +154,132 @@ function readFileAsDataUrl(file) {
     reader.onerror = () => reject(new Error("참고 이미지를 읽는 데 실패했습니다."));
     reader.readAsDataURL(file);
   });
+}
+
+function loadImage(dataUrl) {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error("이미지를 처리하는 데 실패했습니다."));
+    image.src = dataUrl;
+  });
+}
+
+function colorDistance(data, offset, color) {
+  const red = data[offset] - color.red;
+  const green = data[offset + 1] - color.green;
+  const blue = data[offset + 2] - color.blue;
+  return Math.sqrt(red * red + green * green + blue * blue);
+}
+
+function averageBackgroundColor(data, width, height) {
+  const samples = [];
+  const sampleSize = Math.min(18, Math.floor(Math.min(width, height) / 8));
+  const corners = [
+    [0, 0],
+    [width - sampleSize, 0],
+    [0, height - sampleSize],
+    [width - sampleSize, height - sampleSize],
+  ];
+
+  corners.forEach(([startX, startY]) => {
+    for (let y = startY; y < startY + sampleSize; y += 1) {
+      for (let x = startX; x < startX + sampleSize; x += 1) {
+        const offset = (y * width + x) * 4;
+        samples.push([data[offset], data[offset + 1], data[offset + 2]]);
+      }
+    }
+  });
+
+  const total = samples.reduce(
+    (sum, color) => ({
+      red: sum.red + color[0],
+      green: sum.green + color[1],
+      blue: sum.blue + color[2],
+    }),
+    { red: 0, green: 0, blue: 0 },
+  );
+
+  return {
+    red: total.red / samples.length,
+    green: total.green / samples.length,
+    blue: total.blue / samples.length,
+  };
+}
+
+function removeConnectedBackground(imageData, width, height) {
+  const data = imageData.data;
+  const background = averageBackgroundColor(data, width, height);
+  const hardTolerance = 58;
+  const softTolerance = 30;
+  const visited = new Uint8Array(width * height);
+  const queue = [];
+
+  function enqueueIfBackground(x, y) {
+    if (x < 0 || y < 0 || x >= width || y >= height) return;
+    const index = y * width + x;
+    if (visited[index]) return;
+    const offset = index * 4;
+    if (colorDistance(data, offset, background) > hardTolerance + softTolerance) return;
+    visited[index] = 1;
+    queue.push(index);
+  }
+
+  for (let x = 0; x < width; x += 1) {
+    enqueueIfBackground(x, 0);
+    enqueueIfBackground(x, height - 1);
+  }
+  for (let y = 0; y < height; y += 1) {
+    enqueueIfBackground(0, y);
+    enqueueIfBackground(width - 1, y);
+  }
+
+  for (let cursor = 0; cursor < queue.length; cursor += 1) {
+    const index = queue[cursor];
+    const x = index % width;
+    const y = Math.floor(index / width);
+    enqueueIfBackground(x + 1, y);
+    enqueueIfBackground(x - 1, y);
+    enqueueIfBackground(x, y + 1);
+    enqueueIfBackground(x, y - 1);
+  }
+
+  queue.forEach((index) => {
+    const offset = index * 4;
+    const distance = colorDistance(data, offset, background);
+    const alpha =
+      distance <= hardTolerance
+        ? 0
+        : Math.round(255 * ((distance - hardTolerance) / softTolerance));
+    data[offset + 3] = Math.min(255, Math.max(0, alpha));
+  });
+
+  return imageData;
+}
+
+async function createReferenceCutout(file) {
+  const dataUrl = await readFileAsDataUrl(file);
+  const image = await loadImage(dataUrl);
+  const maxSize = 1280;
+  const scale = Math.min(1, maxSize / Math.max(image.naturalWidth, image.naturalHeight));
+  const width = Math.max(1, Math.round(image.naturalWidth * scale));
+  const height = Math.max(1, Math.round(image.naturalHeight * scale));
+  const canvas = document.createElement("canvas");
+  const context = canvas.getContext("2d", { willReadFrequently: true });
+  canvas.width = width;
+  canvas.height = height;
+  context.drawImage(image, 0, 0, width, height);
+
+  const imageData = context.getImageData(0, 0, width, height);
+  context.putImageData(removeConnectedBackground(imageData, width, height), 0, 0);
+  return canvas.toDataURL("image/png");
+}
+
+async function buildReferenceDataUrl(file) {
+  if (!referenceCutoutToggle?.checked) {
+    return readFileAsDataUrl(file);
+  }
+  return createReferenceCutout(file);
 }
 
 function setStage(index, state, label) {
@@ -149,13 +332,17 @@ async function readReferenceImage() {
     return null;
   }
 
-  return readFileAsDataUrl(file);
+  if (referencePreviewDataUrl) {
+    return referencePreviewDataUrl;
+  }
+  return buildReferenceDataUrl(file);
 }
 
 function clearReferencePreview() {
   if (referenceImageInput) {
     referenceImageInput.value = "";
   }
+  referencePreviewDataUrl = null;
   if (!referencePreview) {
     return;
   }
@@ -182,10 +369,12 @@ async function updateReferencePreview() {
     if (!referencePreview || !referencePreviewImage) {
       return;
     }
-    referencePreviewImage.src = await readFileAsDataUrl(file);
+    referencePreviewDataUrl = await buildReferenceDataUrl(file);
+    referencePreviewImage.src = referencePreviewDataUrl;
     if (referencePreviewName) referencePreviewName.textContent = file.name;
     if (referencePreviewMeta) {
-      referencePreviewMeta.textContent = `${file.type || "image"} · ${formatFileSize(file.size)}`;
+      const mode = referenceCutoutToggle?.checked ? "제품만 추출" : "원본";
+      referencePreviewMeta.textContent = `${mode} · ${file.type || "image"} · ${formatFileSize(file.size)}`;
     }
     referencePreview.hidden = false;
   } catch (error) {
@@ -197,6 +386,34 @@ async function updateReferencePreview() {
 async function readForm() {
   const data = new FormData(form);
   const referenceImageDataUrl = await readReferenceImage();
+  const gender = data.get("gender") || "all";
+  const occupationGroup = data.get("occupationGroup") || "none";
+  const productPrice = data.get("productPrice");
+  const interests = data.get("interests");
+  const region = data.get("region");
+  const tradeArea = data.get("tradeArea");
+  const audienceDetail = data.get("audienceDetail");
+  const baseFeatures = data
+    .get("features")
+    .split("\n")
+    .map((item) => item.trim())
+    .filter(Boolean);
+  const audienceContext = [
+    optionalLine("성별 타겟", displayValue("gender", gender)),
+    occupationGroup !== "none"
+      ? optionalLine("직업군", displayValue("occupationGroup", occupationGroup))
+      : null,
+    optionalLine("타겟", displayList("target", data.getAll("target"))),
+    optionalLine("제품가격", productPrice),
+    optionalLine("관심사", interests),
+    optionalLine("지역", region),
+    optionalLine("상권", tradeArea),
+    optionalLine("세부 타겟", audienceDetail),
+  ].filter(Boolean);
+  const requiredTerms = [productPrice, region, tradeArea]
+    .map((value) => `${value || ""}`.trim())
+    .filter(Boolean);
+
   return {
     copy: {
       model: data.get("copyModel"),
@@ -207,15 +424,27 @@ async function readForm() {
       target_audiences: data.getAll("target"),
       tone: data.get("tone"),
       product_names: commaList(data.get("products")),
-      features: data
-        .get("features")
-        .split("\n")
-        .map((item) => item.trim())
-        .filter(Boolean),
+      features: [...baseFeatures, ...audienceContext].slice(0, 10),
       channel: data.get("channel"),
-      promotion: null,
-      required_terms: [],
+      promotion: audienceContext.join(" / ") || null,
+      required_terms: requiredTerms.slice(0, 10),
       prohibited_terms: commaList(data.get("prohibited")),
+      gender,
+      occupation_group: occupationGroup,
+      product_price: `${productPrice || ""}`.trim(),
+      interests: commaList(interests || ""),
+      region: `${region || ""}`.trim(),
+      trade_area: `${tradeArea || ""}`.trim(),
+      audience_detail: `${audienceDetail || ""}`.trim(),
+    },
+    audience: {
+      gender,
+      occupation_group: occupationGroup,
+      product_price: `${productPrice || ""}`.trim(),
+      interests: commaList(interests || ""),
+      region: `${region || ""}`.trim(),
+      trade_area: `${tradeArea || ""}`.trim(),
+      detail: `${audienceDetail || ""}`.trim(),
     },
     image_model: data.get("imageModel"),
     image_width: 1024,
@@ -287,36 +516,21 @@ async function generateContent(payload) {
 
 function renderResult(input, result) {
   const { copy, image } = result;
-  const businessType = displayLabels.businessType[input.copy.business_type] || input.copy.business_type;
-  const situation = displayLabels.situation[input.copy.situation] || input.copy.situation;
-  const ageGroups = input.copy.age_groups
-    .map((age) => displayLabels.ageGroup[age] || age)
-    .join(", ");
-  const targets = input.copy.target_audiences
-    .map((target) => displayLabels.target[target] || target)
-    .join(", ");
-
-  document.querySelector("#context-line").textContent =
-    `${businessType} · ${situation} · ${ageGroups} · ${targets}`;
-  document.querySelector("#headline").textContent = copy.headlines[0];
-  document.querySelector("#body-copy").textContent = copy.body_copies[0];
-  document.querySelector("#cta").textContent = copy.ctas[0];
+  const headline = copy.headlines[0] || "";
   const hashtags = copy.hashtags?.length ? copy.hashtags.join(" ") : "#광고 #이벤트";
-  document.querySelector("#hashtags").textContent = hashtags;
-  document.querySelector("#poster-business").textContent = input.copy.business_name;
-  document.querySelector("#poster-headline").textContent = copy.headlines[0];
-  document.querySelector("#poster-body").textContent = copy.body_copies[0];
-  document.querySelector("#poster-cta").textContent = copy.ctas[0];
-  document.querySelector("#poster-hashtags").textContent = hashtags;
-  document.querySelector("#safety-copy").textContent =
-    copy.safety_notes[0] || "금지 표현이 발견되지 않았습니다.";
-  document.querySelector("#result-copy-model").textContent =
-    `${copy.model} · ${formatLatencySeconds(copy.latency_ms)}`;
-  document.querySelector("#result-image-model").textContent =
-    `${image.model} · ${formatLatencySeconds(image.latency_ms)}`;
-  document.querySelector("#generated-image").src =
-    `data:${image.media_type};base64,${image.image_base64}`;
-  document.querySelector("#image-caption").textContent = result.image_prompt;
+
+  setText("#context-line", buildContextLine(input));
+  setText("#headline", headline);
+  setText("#body-copy", copy.body_copies[0]);
+  setText("#cta", copy.ctas[0]);
+  setText("#hashtags", hashtags);
+  setText("#poster-headline", headline);
+  setText("#safety-copy", copy.safety_notes[0] || "금지 표현이 발견되지 않았습니다.");
+  setText("#result-copy-model", `${copy.model} · ${formatLatencySeconds(copy.latency_ms)}`);
+  setText("#result-image-model", `${image.model} · ${formatLatencySeconds(image.latency_ms)}`);
+  setText("#image-caption", result.image_prompt);
+  $("#generated-image").src = `data:${image.media_type};base64,${image.image_base64}`;
+
   if (result.artifacts && result.artifacts.directory) {
     artifactDirectory.textContent = `저장 폴더: ${result.artifacts.directory}`;
     artifactJson.textContent = `메타데이터 JSON: ${result.artifacts.metadata_json}`;
@@ -330,6 +544,7 @@ function renderResult(input, result) {
   payloadPreview.textContent = JSON.stringify(
     {
       model_1_input: input.copy,
+      audience_detail: input.audience,
       model_1_output: copy,
       model_2_input: {
         model: input.image_model,
@@ -405,7 +620,7 @@ form.addEventListener("submit", async (event) => {
   event.preventDefault();
   const input = await readForm();
   if (input.copy.age_groups.length === 0) {
-    window.alert("나이대를 하나 이상 선택해 주세요.");
+    window.alert("나이대를 하나 선택해 주세요.");
     return;
   }
   if (input.copy.target_audiences.length === 0) {
@@ -418,6 +633,7 @@ form.addEventListener("submit", async (event) => {
 copyModelSelect.addEventListener("change", updateModelHelp);
 imageModelSelect.addEventListener("change", updateModelHelp);
 referenceImageInput?.addEventListener("change", updateReferencePreview);
+referenceCutoutToggle?.addEventListener("change", updateReferencePreview);
 referencePreviewClear?.addEventListener("click", clearReferencePreview);
 
 resetButton.addEventListener("click", () => {

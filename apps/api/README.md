@@ -81,6 +81,14 @@ BRANDMATE_UNSPLASH_ACCESS_KEY=
 
 ## 서버 실행
 
+프론트까지 한 번에 실행하려면 저장소 루트에서:
+
+```cmd
+start-brandmate.cmd
+```
+
+API만 따로 실행하려면:
+
 ```cmd
 cd apps\api
 .venv\Scripts\python.exe -m uvicorn app.extensions.ad_content.main:app --host 127.0.0.1 --port 8000

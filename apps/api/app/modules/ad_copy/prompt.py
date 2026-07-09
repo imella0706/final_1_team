@@ -1,6 +1,6 @@
 from app.modules.ad_copy.schemas import AdCopyRequest
 
-PROMPT_VERSION = "four-stage-ad-agency-pipeline-v4-ko-audience"
+PROMPT_VERSION = "four-stage-ad-agency-pipeline-v5-channel-layout"
 
 BUSINESS_TYPE_LABELS = {
     "cafe": "카페",
@@ -29,6 +29,10 @@ AGE_GROUP_LABELS = {
 
 TARGET_LABELS = {
     "office_workers": "직장인",
+    "students": "학생",
+    "middle_school_students": "중학생",
+    "high_school_students": "고등학생",
+    "college_students": "대학생",
     "families": "가족 고객",
     "couples": "커플 고객",
     "solo": "혼자 방문하는 고객",
@@ -52,9 +56,33 @@ TONE_LABELS = {
     "premium": "고급스러운",
 }
 
+GENDER_LABELS = {
+    "all": "전체",
+    "female": "여성",
+    "male": "남성",
+}
+
+OCCUPATION_GROUP_LABELS = {
+    "none": "None",
+    "office_worker": "직장인",
+    "student": "학생",
+    "self_employed": "자영업자",
+    "freelancer": "프리랜서",
+    "professional": "전문직",
+    "homemaker": "주부",
+    "job_seeker": "취업준비생",
+    "other": "기타",
+}
+
 
 def _comma(items: list[str]) -> str:
     return ", ".join(items) if items else "None"
+
+
+def _label(labels: dict[str, str], value: str | None) -> str:
+    if not value:
+        return "None"
+    return labels.get(value, value)
 
 
 def build_prompt(request: AdCopyRequest) -> str:
@@ -73,17 +101,25 @@ def build_prompt(request: AdCopyRequest) -> str:
     required_terms = _comma(request.required_terms)
     prohibited_terms = _comma(request.prohibited_terms)
     promotion = request.promotion or "None"
+    gender = _label(GENDER_LABELS, request.gender)
+    occupation_group = _label(OCCUPATION_GROUP_LABELS, request.occupation_group)
+    product_price = request.product_price or "None"
+    interests = _comma(request.interests)
+    region = request.region or "None"
+    trade_area = request.trade_area or "None"
+    audience_detail = request.audience_detail or "None"
 
     return f"""당신은 한국 소상공인을 위한 AI 광고 제작팀입니다.
 
 아래 순서로 네 가지 역할을 수행하세요.
 1. 시니어 마케팅 전략가
 2. 시니어 한국어 광고 카피라이터
-3. 상업 광고 아트 디렉터
-4. FLUX 이미지 생성을 위한 프롬프트 정규화 준비자
+3. 채널별 게시 형식 설계자
+4. 이미지 모델 전달용 비주얼 브리프 정리자
 
 전략을 먼저 세운 뒤, 그 전략을 바탕으로 광고 문구와 구조화된 visual_brief를 작성하세요.
 이 응답에서는 최종 이미지 프롬프트를 작성하지 마세요. 최종 이미지 프롬프트는 백엔드가 visual_brief를 이용해 별도로 정규화합니다.
+광고 문구와 visual_brief에서 같은 단어와 같은 설명을 반복하지 마세요. 광고 문구는 고객에게 보이는 글에 집중하고, visual_brief는 이미지 모델에 필요한 상품명, 시각 단서, 배치 방향만 담으세요.
 반드시 유효한 JSON 객체 하나만 반환하세요. Markdown, 설명, 코드블록은 절대 포함하지 마세요.
 JSON의 키 이름과 enum 값은 아래 스키마에 있는 영어 값을 정확히 그대로 사용하세요.
 광고 문구, 마케팅 전략 내용, 고객에게 보이는 문장은 자연스러운 한국어로 작성하세요.
@@ -95,10 +131,17 @@ JSON의 키 이름과 enum 값은 아래 스키마에 있는 영어 값을 정�
 상황: {situation}
 나이대: {age_groups}
 타깃 유형: {targets}
+성별 타겟: {gender}
+직업군: {occupation_group}
+관심사: {interests}
+지역: {region}
+상권: {trade_area}
+세부 타겟 메모: {audience_detail}
 톤앤매너: {tone}
 마케팅 채널: {channel}
 상호명: {request.business_name}
 상품명: {products}
+제품가격: {product_price}
 특징/판매 포인트: {features}
 프로모션: {promotion}
 반드시 포함할 표현: {required_terms}
@@ -116,6 +159,9 @@ STEP 1. 마케팅 전략
 가장 중요한 규칙:
 "features"의 모든 항목은 필수 판매 포인트입니다.
 요약하거나 삭제하거나 다른 말로 바꾸지 마세요.
+성별, 직업군, 타깃 유형, 관심사, 지역, 상권, 세부 타겟 메모는 핵심 타겟 세분화 정보입니다.
+타깃 유형에 학생/중학생/고등학생/대학생이 포함되면 예산감각, 방문 가능 시간대, 친구 동반 여부, 말투의 가벼움을 다르게 해석하세요.
+직업군이 직장인/자영업자/프리랜서/전문직/주부/취업준비생이면 생활 리듬, 구매 동기, 방문 맥락, 가격 민감도를 다르게 반영하세요.
 
 규칙:
 1. 모든 product_names는 사용자가 입력한 원문 그대로 유지하세요.
@@ -147,19 +193,34 @@ STEP 2. 광고 문구 작성
 11. 해시태그에도 prohibited_terms를 사용하지 마세요.
 
 채널별 작성 방향:
-- Instagram: 감성적이고 짧으며 스크롤을 멈추게 하는 문구
-- Naver Blog: 정보성, 스토리텔링 중심 문구
-- Delivery App: 상품 중심의 직접적인 문구
+- Instagram: 인스타 피드 캡션처럼 첫 문장은 짧게, 이어서 상품 매력과 방문/주문 유도를 자연스럽게 작성
+- Naver Blog: 블로그 본문처럼 정보성, 스토리텔링, 방문 맥락이 보이도록 문단형 문구 작성
+- Delivery App: 배달앱 상품 카드/배너처럼 상품명, 가격/혜택, 주문 유도가 빠르게 보이는 직접적인 문구 작성
 - Store Poster: 짧고 눈에 잘 띄는 문구
 
 --------------------------------------------------
-STEP 3. 비주얼 브리프
+STEP 3. 채널별 게시 형식 추천
+--------------------------------------------------
+당신은 채널별 광고 콘텐츠 편집자입니다.
+
+channel_recommendation을 작성하세요.
+고객에게 보여줄 글과 이미지를 어떤 형식으로 배치하면 좋은지 추천합니다.
+
+채널별 추천 방향:
+- Instagram: 인스타 피드 게시물 형식. 첫 화면에는 생성 이미지와 짧은 헤드라인을 두고, 캡션에는 본문/CTA/해시태그 순서로 배치하도록 추천하세요.
+- Naver Blog: 블로그 글 작성 형식. LLM이 작성한 글을 본문으로 쓰고, 사진은 도입부 대표 이미지와 상품 설명 중간 이미지로 넣으면 좋다고 추천하세요.
+- Delivery App: 배달앱 포스터/배너 형식. 상품 이미지 전체를 포스터처럼 쓰고, 앱 화면에서는 헤드라인, 가격/혜택, CTA가 바로 보이도록 추천하세요.
+- Store Poster: 매장 포스터 형식. 멀리서도 보이는 한 줄 헤드라인과 큰 상품 이미지를 추천하세요.
+
+--------------------------------------------------
+STEP 4. 비주얼 브리프
 --------------------------------------------------
 당신은 전문 광고 대행사의 상업 광고 아트 디렉터입니다.
 
 구조화된 visual_brief를 작성하세요.
 최종 이미지 프롬프트를 쓰지 마세요.
 광고 문구를 다시 쓰지 마세요.
+visual_brief는 이미지 모델에 넘길 최소 정보입니다. 상품명, 참고 이미지에서 유지할 요소, 상품 배치 방향, 사진/포스터 형식만 남기고 마케팅 문장을 반복하지 마세요.
 
 반드시 지켜야 할 규칙:
 1. 모든 상품은 이미지에 시각적으로 등장해야 합니다.
@@ -221,7 +282,7 @@ empty_space:
 - "poster_safe_margin": 포스터용 안전 여백
 
 --------------------------------------------------
-STEP 4. 프롬프트 정규화 준비
+STEP 5. 프롬프트 정규화 준비
 --------------------------------------------------
 당신은 FLUX 이미지 생성을 위한 프롬프트 정규화 준비자입니다.
 
@@ -270,6 +331,12 @@ brief 안에는 읽을 수 있는 글자, 로고, 간판, 메뉴판, 워터마�
   "body_copies": [],
   "ctas": [],
   "hashtags": [],
+  "channel_recommendation": {{
+    "format_name": "",
+    "writing_direction": "",
+    "image_direction": "",
+    "placement_tip": ""
+  }},
   "validation_check": {{
     "all_products_included": true,
     "all_features_included": true,

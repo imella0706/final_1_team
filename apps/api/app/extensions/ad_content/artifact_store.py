@@ -52,6 +52,8 @@ def save_ad_content_artifacts(response: AdContentResponse) -> dict[str, str]:
     image_extension = _media_extension(response.image.media_type)
     image_path = output_dir / f"{run_name}.{image_extension}"
     prompt_path = output_dir / f"{run_name}-image-prompt.txt"
+    llm_prompt_path = output_dir / f"{run_name}-llm-prompt.json"
+    vision_prompt_path = output_dir / f"{run_name}-vision-prompt.json"
 
     metadata: dict[str, Any] = response.model_dump(mode="json", by_alias=True)
     metadata["image"]["image_base64"] = "[saved_to_image_file]"
@@ -67,6 +69,14 @@ def save_ad_content_artifacts(response: AdContentResponse) -> dict[str, str]:
         encoding="utf-8",
     )
     prompt_path.write_text(response.image_prompt, encoding="utf-8")
+    llm_prompt_path.write_text(
+        json.dumps(response.llm_prompt, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    vision_prompt_path.write_text(
+        json.dumps(response.vision_prompt, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
     image_path.write_bytes(base64.b64decode(response.image.image_base64))
 
     return {
@@ -74,4 +84,6 @@ def save_ad_content_artifacts(response: AdContentResponse) -> dict[str, str]:
         "metadata_json": _relative(metadata_path),
         "image": _relative(image_path),
         "image_prompt": _relative(prompt_path),
+        "llm_prompt": _relative(llm_prompt_path),
+        "vision_prompt": _relative(vision_prompt_path),
     }

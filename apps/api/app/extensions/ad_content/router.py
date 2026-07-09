@@ -55,7 +55,7 @@ async def generate_content(request: AdContentRequest) -> AdContentResponse:
     try:
         copy = await generate_ad_copy(request.copy_request)
         product_visualization = await visualize_products(request.copy_request, copy)
-        reference_image_context = await describe_reference_image(
+        reference_image_context, vision_prompt = await describe_reference_image(
             request.reference_image_data_url,
             request.copy_request,
         )
@@ -116,9 +116,12 @@ async def generate_content(request: AdContentRequest) -> AdContentResponse:
         },
         copy_result=copy,
         marketing_strategy=copy.marketing_strategy.model_dump(mode="json"),
+        channel_recommendation=copy.channel_recommendation.model_dump(mode="json"),
         visual_brief=copy.visual_brief.model_dump(mode="json"),
         product_visualization=product_visualization.model_dump(mode="json"),
         image=image,
+        llm_prompt=copy.llm_prompt,
+        vision_prompt=vision_prompt,
         image_prompt=image_prompt,
         negative_prompt=negative_prompt,
         image_url="",

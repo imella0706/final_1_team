@@ -103,7 +103,8 @@ def test_openai_image_generation_sends_reference_image_as_edit(monkeypatch) -> N
     assert response.image_base64 == "aW1hZ2U="
     assert captured["url"].endswith("/images/edits")
     assert captured["data"]["model"] == "gpt-image-1-mini"
-    assert captured["data"]["prompt"] == "Make a cafe poster background"
+    assert "attached reference image as the primary visual source" in captured["data"]["prompt"]
+    assert "Make a cafe poster background" in captured["data"]["prompt"]
     assert captured["json"] is None
     assert captured["files"]["image"][0] == "reference.png"
 
@@ -256,7 +257,10 @@ def test_generate_content_orchestrates_copy_and_image_models(monkeypatch) -> Non
     assert captured_image_request["height"] == 1280
     assert "전문 상업용 광고 이미지" in captured_image_request["prompt"]
     assert "strawberry tiramisu" in captured_image_request["prompt"]
-    assert "Peach ade" in captured_image_request["prompt"] or "peach ade" in captured_image_request["prompt"]
+    assert (
+        "Peach ade" in captured_image_request["prompt"]
+        or "peach ade" in captured_image_request["prompt"]
+    )
     assert "읽을 수 있는 텍스트" in captured_image_request["negative_prompt"]
 
 
@@ -307,7 +311,13 @@ def test_image_prompt_uses_korean_and_reference_image_context() -> None:
             "language_quality": "natural Korean",
         },
         visual_brief={
-            "products_to_show": [{"product_name": "수제 딸기 티라미수", "visual_role": "main", "must_be_visible": True}],
+            "products_to_show": [
+                {
+                    "product_name": "수제 딸기 티라미수",
+                    "visual_role": "main",
+                    "must_be_visible": True,
+                }
+            ],
             "feature_visualization": [],
             "camera_angle": "45_degree_close_up",
             "composition": "centered_product_hero",
@@ -332,7 +342,8 @@ def test_image_prompt_uses_korean_and_reference_image_context() -> None:
     )
 
     assert "전문 상업용 광고 이미지" in prompt
-    assert "참고 이미지" in prompt
+    assert "업로드 참고 이미지 기반 구성" in prompt
+    assert "주요 시각 기준" in prompt
     assert "딸기 크림층" in prompt
     assert "photorealistic" not in prompt.lower()
     assert "읽을 수 있는 텍스트" in negative_prompt

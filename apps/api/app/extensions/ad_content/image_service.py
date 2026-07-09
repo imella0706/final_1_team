@@ -19,6 +19,13 @@ class ImageModelProviderError(RuntimeError):
 
 
 DEFAULT_IMAGE_BASE_URL = "https://router.huggingface.co/hf-inference"
+DATA_URL_BASE64_MARKER = ";base64,"
+REFERENCE_IMAGE_EXTENSIONS = {
+    "image/jpeg": "jpg",
+    "image/jpg": "jpg",
+    "image/png": "png",
+    "image/webp": "webp",
+}
 
 
 def _secret_value(value) -> str | None:
@@ -75,17 +82,12 @@ def _openai_size(width: int, height: int) -> str:
 
 
 def _decode_reference_image(data_url: str) -> tuple[bytes, str, str]:
-    if not data_url.startswith("data:") or ";base64," not in data_url:
+    if not data_url.startswith("data:") or DATA_URL_BASE64_MARKER not in data_url:
         raise ImageModelProviderError("Reference image must be a base64 data URL.")
 
     header, encoded = data_url.split(",", 1)
     media_type = header.removeprefix("data:").split(";", 1)[0] or "image/png"
-    extension = {
-        "image/jpeg": "jpg",
-        "image/jpg": "jpg",
-        "image/png": "png",
-        "image/webp": "webp",
-    }.get(media_type, "png")
+    extension = REFERENCE_IMAGE_EXTENSIONS.get(media_type, "png")
 
     try:
         image_bytes = base64.b64decode(encoded, validate=True)
@@ -93,6 +95,17 @@ def _decode_reference_image(data_url: str) -> tuple[bytes, str, str]:
         raise ImageModelProviderError("Reference image data URL is not valid base64.") from error
 
     return image_bytes, media_type, f"reference.{extension}"
+
+
+def _reference_guided_prompt(prompt: str) -> str:
+    return (
+        "Use the attached reference image as the primary visual source. "
+        "Preserve the visible product identity, shape, color, material, arrangement, "
+        "camera angle, and overall mood from the reference image whenever they match "
+        "the requested products. Recompose it as a clean commercial advertising poster "
+        "background with space for text overlay. Do not introduce unrelated main products.\n\n"
+        f"{prompt}"
+    )
 
 
 def _provider_detail(response: httpx.Response) -> str:
@@ -133,7 +146,9 @@ async def _extract_image(response: httpx.Response) -> tuple[bytes, str]:
             async with httpx.AsyncClient(timeout=settings.llm_timeout_seconds) as client:
                 image_response = await client.get(output[0])
                 image_response.raise_for_status()
-            output_media_type = image_response.headers.get("content-type", "image/png").split(";")[0]
+            output_media_type = image_response.headers.get("content-type", "image/png").split(";")[
+                0
+            ]
             return image_response.content, output_media_type
 
     raise ImageModelProviderError(
@@ -222,8 +237,7 @@ async def _generate_openai_image(request: AdImageRequest) -> AdImageResponse:
         ) from error
     except httpx.HTTPError as error:
         raise ImageModelProviderError(
-            "Could not connect to the OpenAI image provider. "
-            f"Root error: {type(error).__name__}"
+            f"Could not connect to the OpenAI image provider. Root error: {type(error).__name__}"
         ) from error
 
     return AdImageResponse(
@@ -244,15 +258,13 @@ async def _generate_openai_image_edit(request: AdImageRequest) -> AdImageRespons
     if not request.reference_image_data_url:
         raise ImageModelProviderError("Reference image is required for image editing.")
 
-    image_bytes, media_type, filename = _decode_reference_image(
-        request.reference_image_data_url
-    )
+    image_bytes, media_type, filename = _decode_reference_image(request.reference_image_data_url)
     started_at = perf_counter()
     endpoint = f"{settings.openai_base_url.rstrip('/')}/images/edits"
     headers = {"Authorization": f"Bearer {api_key}"}
     data = {
         "model": _openai_model_name(request.model.value),
-        "prompt": request.prompt,
+        "prompt": _reference_guided_prompt(request.prompt),
         "size": _openai_size(request.width, request.height),
         "n": "1",
     }
@@ -308,7 +320,7 @@ async def _generate_openai_responses_image(request: AdImageRequest) -> AdImageRe
             {
                 "role": "user",
                 "content": [
-                    {"type": "input_text", "text": request.prompt},
+                    {"type": "input_text", "text": _reference_guided_prompt(request.prompt)},
                     {
                         "type": "input_image",
                         "image_url": request.reference_image_data_url,
