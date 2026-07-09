@@ -35,6 +35,7 @@ class InvalidModelOutputError(RuntimeError):
 def _request_payload(
     request: AdCopyRequest,
     *,
+    provider: TextRuntimeProvider,
     provider_model_name: str,
     structured: bool,
     invalid_content: str | None = None,
@@ -64,8 +65,14 @@ def _request_payload(
             {"role": "user", "content": user_content},
         ],
         "temperature": 0.2 if invalid_content is not None else 0.75,
-        "max_tokens": 2000,
     }
+    token_limit_key = (
+        "max_completion_tokens"
+        if provider == TextRuntimeProvider.OPENAI
+        and provider_model_name.startswith("gpt-5")
+        else "max_tokens"
+    )
+    payload[token_limit_key] = 2000
     if structured:
         payload["response_format"] = {
             "type": "json_schema",
@@ -129,7 +136,11 @@ async def _call_model(
     api_key = resolve_api_key(config)
     provider = infer_provider(base_url, config.provider)
 
-    if provider == TextRuntimeProvider.HUGGING_FACE_ROUTER and not api_key:
+    if provider in {
+        TextRuntimeProvider.HUGGING_FACE_ROUTER,
+        TextRuntimeProvider.OPENAI,
+        TextRuntimeProvider.NVIDIA,
+    } and not api_key:
         raise ModelNotConfiguredError(
             f"{config.api_key_setting}가 없습니다. API 서버의 .env를 설정해주세요."
         )
@@ -146,6 +157,7 @@ async def _call_model(
                 headers=headers,
                 json=_request_payload(
                     request,
+                    provider=provider,
                     provider_model_name=provider_model_name,
                     structured=model_spec.supports_structured_output,
                     invalid_content=invalid_content,
@@ -161,6 +173,7 @@ async def _call_model(
                     headers=headers,
                     json=_request_payload(
                         request,
+                        provider=provider,
                         provider_model_name=provider_model_name,
                         structured=False,
                         invalid_content=invalid_content,
