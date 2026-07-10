@@ -3,6 +3,7 @@ import httpx
 from app.core.config import settings
 from app.extensions.ad_content.product_visualizer import ProductVisual, ProductVisualization
 from app.modules.ad_copy.schemas import AdCopyRequest, AdCopyResponse
+from app.extensions.ad_content.schemas import BlogImageInput
 
 
 BUSINESS_TYPE_LABELS = {
@@ -184,6 +185,71 @@ async def describe_reference_image(
         return None, prompt_record
 
     return None, prompt_record
+
+
+async def describe_blog_images(
+    blog_images: list[BlogImageInput],
+    copy_request: AdCopyRequest,
+) -> tuple[list[str], dict[str, object]]:
+    product_names = ", ".join(copy_request.product_names)
+    prompt_text = (
+        "업로드된 여러 사진을 네이버 블로그 글 작성용 자료로 분석해 주세요.\n"
+        f"상호명: {copy_request.business_name}\n"
+        f"상품명: {product_names}\n"
+        f"블로그 글 목적: {copy_request.blog_purpose or 'None'}\n"
+        f"강조할 내용: {', '.join(copy_request.blog_emphasis) or 'None'}\n"
+        f"글 스타일: {copy_request.blog_style or 'None'}\n"
+        f"SEO 키워드: {', '.join(copy_request.seo_keywords) or 'None'}\n"
+        f"글 길이: {copy_request.blog_length or 'None'}\n\n"
+        "각 사진마다 아래 형식으로 한 줄씩만 답하세요.\n"
+        "사진 번호/파일명: 추정 유형(외관/실내/메뉴판/대표 메뉴/디저트/기타), 핵심 시각 요소, 블로그에서 어울리는 위치, 썸네일 적합도 1~5\n"
+        "사진에 없는 정보는 만들지 마세요."
+    )
+    content: list[dict[str, object]] = [{"type": "text", "text": prompt_text}]
+    redacted_content: list[dict[str, object]] = [{"type": "text", "text": prompt_text}]
+    for image in blog_images[:8]:
+        label = f"{image.id}: {image.name or 'uploaded image'}"
+        content.append({"type": "text", "text": label})
+        content.append({"type": "image_url", "image_url": {"url": image.data_url}})
+        redacted_content.append({"type": "text", "text": label})
+        redacted_content.append({"type": "image_url", "image_url": {"url": "[blog_image_data_url]"}})
+
+    prompt_record: dict[str, object] = {
+        "model": settings.image_validator_model_name or settings.openai_vision_model,
+        "messages": [{"role": "user", "content": redacted_content}],
+    }
+    if not blog_images:
+        return [], prompt_record
+
+    api_key = _secret_value(settings.openai_api_key)
+    if not api_key:
+        return [], prompt_record
+
+    try:
+        async with httpx.AsyncClient(timeout=settings.llm_timeout_seconds) as client:
+            response = await client.post(
+                f"{settings.openai_base_url.rstrip('/')}/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": prompt_record["model"],
+                    "messages": [{"role": "user", "content": content}],
+                    "temperature": 0,
+                    "max_completion_tokens": 700,
+                },
+            )
+            response.raise_for_status()
+            body = response.json()
+            result = body["choices"][0]["message"]["content"]
+            if isinstance(result, str):
+                notes = [line.strip("- ").strip() for line in result.splitlines() if line.strip()]
+                return notes[:10], prompt_record
+    except (httpx.HTTPError, KeyError, IndexError, TypeError, ValueError):
+        return [], prompt_record
+
+    return [], prompt_record
 
 
 def build_reference_image_prompt(copy_request: AdCopyRequest) -> str:

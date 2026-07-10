@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content="BrandMate 광고 문구와 이미지 생성 모델 통합 화면" />
     <title>BrandMate Ad Content Studio</title>
-    <link rel="stylesheet" href="./styles.css?v=channel-layout-20260709" />
+    <link rel="stylesheet" href="./styles.css?v=blog-options-20260710" />
   </head>
   <body>
     <header class="topbar">
@@ -49,8 +49,8 @@
 
           <form id="ad-form">
             <div class="field">
-              <label for="reference-image">참고 이미지(선택)</label>
-              <input id="reference-image" name="referenceImage" type="file" accept="image/*" />
+              <label for="reference-image" id="reference-image-label">참고 이미지(선택)</label>
+              <input id="reference-image" name="referenceImage" type="file" accept="image/*" multiple />
               <label class="inline-toggle">
                 <input id="reference-cutout" name="referenceCutout" type="checkbox" checked />
                 <span>제품만 추출</span>
@@ -77,6 +77,17 @@
                 <small id="image-model-help">모델 정보를 불러오는 중입니다.</small>
               </div>
             </div>
+
+            <fieldset class="channel-first">
+              <legend>채널</legend>
+              <select id="channel-select" name="channel">
+                <option value="instagram">인스타그램</option>
+                <option value="naver_blog">네이버 블로그</option>
+                <option value="delivery_app">배달앱</option>
+                <option value="store_poster">매장 포스터</option>
+              </select>
+              <small>선택한 채널에 따라 입력 항목과 모델 프롬프트 구성이 달라집니다.</small>
+            </fieldset>
 
             <fieldset>
               <legend>업종</legend>
@@ -150,25 +161,75 @@
               </div>
             </fieldset>
 
-            <div class="two-columns">
+            <fieldset>
+              <legend>톤</legend>
+              <select name="tone">
+                <option value="emotional">감성적</option>
+                <option value="friendly">친근한</option>
+                <option value="playful">재치있는</option>
+                <option value="premium">고급스러운</option>
+              </select>
+            </fieldset>
+
+            <div class="channel-blog-options" id="blog-options" hidden>
               <fieldset>
-                <legend>톤</legend>
-                <select name="tone">
-                  <option value="emotional">감성적</option>
-                  <option value="friendly">친근한</option>
-                  <option value="playful">재치있는</option>
-                  <option value="premium">고급스러운</option>
-                </select>
+                <legend>블로그 글 목적</legend>
+                <div class="choice-grid three">
+                  <label><input type="radio" name="blogPurpose" value="가게 소개" checked /><span>가게 소개</span></label>
+                  <label><input type="radio" name="blogPurpose" value="대표 메뉴 소개" /><span>대표 메뉴</span></label>
+                  <label><input type="radio" name="blogPurpose" value="신메뉴 소개" /><span>신메뉴</span></label>
+                  <label><input type="radio" name="blogPurpose" value="이벤트 홍보" /><span>이벤트</span></label>
+                  <label><input type="radio" name="blogPurpose" value="계절 메뉴 소개" /><span>계절 메뉴</span></label>
+                  <label><input type="radio" name="blogPurpose" value="방문 후기 스타일" /><span>방문 후기</span></label>
+                  <label><input type="radio" name="blogPurpose" value="브랜드 이야기" /><span>브랜드 이야기</span></label>
+                  <label><input type="radio" name="blogPurpose" value="오픈 안내" /><span>오픈 안내</span></label>
+                  <label><input type="radio" name="blogPurpose" value="재방문 유도" /><span>재방문 유도</span></label>
+                </div>
               </fieldset>
               <fieldset>
-                <legend>채널</legend>
-                <select name="channel">
-                  <option value="instagram">인스타그램</option>
-                  <option value="naver_blog">네이버 블로그</option>
-                  <option value="delivery_app">배달앱</option>
-                  <option value="store_poster">매장 포스터</option>
-                </select>
+                <legend>강조할 내용</legend>
+                <div class="choice-grid five">
+                  <label><input type="checkbox" name="blogEmphasis" value="맛" checked /><span>맛</span></label>
+                  <label><input type="checkbox" name="blogEmphasis" value="가격" /><span>가격</span></label>
+                  <label><input type="checkbox" name="blogEmphasis" value="분위기" checked /><span>분위기</span></label>
+                  <label><input type="checkbox" name="blogEmphasis" value="위치" /><span>위치</span></label>
+                  <label><input type="checkbox" name="blogEmphasis" value="접근성" /><span>접근성</span></label>
+                  <label><input type="checkbox" name="blogEmphasis" value="신메뉴" /><span>신메뉴</span></label>
+                  <label><input type="checkbox" name="blogEmphasis" value="이벤트" /><span>이벤트</span></label>
+                  <label><input type="checkbox" name="blogEmphasis" value="가성비" /><span>가성비</span></label>
+                  <label><input type="checkbox" name="blogEmphasis" value="디저트" /><span>디저트</span></label>
+                  <label><input type="checkbox" name="blogEmphasis" value="커피" /><span>커피</span></label>
+                </div>
               </fieldset>
+              <fieldset>
+                <legend>글 스타일</legend>
+                <div class="choice-grid four">
+                  <label><input type="radio" name="blogStyle" value="정보형" checked /><span>정보형</span></label>
+                  <label><input type="radio" name="blogStyle" value="후기형" /><span>후기형</span></label>
+                  <label><input type="radio" name="blogStyle" value="감성형" /><span>감성형</span></label>
+                  <label><input type="radio" name="blogStyle" value="전문가형" /><span>전문가형</span></label>
+                  <label><input type="radio" name="blogStyle" value="친근한 말투" /><span>친근한 말투</span></label>
+                  <label><input type="radio" name="blogStyle" value="부모님 대상" /><span>부모님 대상</span></label>
+                  <label><input type="radio" name="blogStyle" value="20대 대상" /><span>20대 대상</span></label>
+                </div>
+              </fieldset>
+              <div class="field">
+                <label for="seo-keywords">검색 키워드</label>
+                <input id="seo-keywords" name="seoKeywords" value="연남동 카페, 연남동 디저트, 크림빵 맛집" maxlength="200" />
+                <small>쉼표로 구분하세요. 비워두면 지역과 상품명 중심으로 작성합니다.</small>
+              </div>
+              <fieldset>
+                <legend>글 길이</legend>
+                <div class="choice-grid three">
+                  <label><input type="radio" name="blogLength" value="짧게" /><span>짧게</span></label>
+                  <label><input type="radio" name="blogLength" value="보통" checked /><span>보통</span></label>
+                  <label><input type="radio" name="blogLength" value="길게" /><span>길게</span></label>
+                </div>
+              </fieldset>
+              <div class="field">
+                <label for="additional-request">추가 요청</label>
+                <textarea id="additional-request" name="additionalRequest" rows="3" placeholder="예: 예약 가능합니다. 주차 가능합니다. 매일 직접 만듭니다."></textarea>
+              </div>
             </div>
 
             <div class="field">
@@ -177,14 +238,19 @@
             </div>
 
             <div class="field">
-              <label for="products">상품 <b>필수</b></label>
-              <input id="products" name="products" value="수제 딸기 티라미수, 피치에이드" required />
-              <small>쉼표로 여러 상품을 구분할 수 있습니다.</small>
-            </div>
-
-            <div class="field">
-              <label for="product-price">제품가격</label>
-              <input id="product-price" name="productPrice" value="티라미수 6,500원, 피치에이드 5,000원" maxlength="120" />
+              <label>상품과 가격 <b>필수</b></label>
+              <div class="product-list" id="product-list">
+                <div class="product-row">
+                  <input name="productName" value="수제 딸기 티라미수" placeholder="상품명" required />
+                  <input name="productPrice" value="6,500원" placeholder="가격" maxlength="80" />
+                </div>
+                <div class="product-row">
+                  <input name="productName" value="피치에이드" placeholder="상품명" />
+                  <input name="productPrice" value="5,000원" placeholder="가격" maxlength="80" />
+                </div>
+              </div>
+              <button class="text-button add-product-button" id="add-product-button" type="button">상품 추가</button>
+              <small>각 상품 옆에 가격을 입력하면 모델에는 상품명과 가격 정보가 함께 전달됩니다.</small>
             </div>
 
             <div class="field">
@@ -286,10 +352,30 @@
                   </div>
                   <div class="channel-recommendation">
                     <small id="channel-format"></small>
+                    <strong>채널 게시물</strong>
+                    <div class="publish-package">
+                      <span>이미지 제목</span>
+                      <h4 id="overlay-headline"></h4>
+                      <span>인스타 캡션</span>
+                      <p id="instagram-caption"></p>
+                      <span>CTA</span>
+                      <p id="publish-cta"></p>
+                      <span>해시태그</span>
+                      <p class="hashtag-list" id="publish-hashtags"></p>
+                      <span>게시 제목</span>
+                      <h4 id="publish-title"></h4>
+                      <span>완성 게시 본문</span>
+                      <p id="publish-body"></p>
+                      <span>홍보 양식</span>
+                      <pre id="promotion-template"></pre>
+                      <span id="blog-layout-label">블로그 구성</span>
+                      <pre id="blog-layout"></pre>
+                    </div>
                     <strong>글과 사진 배치 추천</strong>
                     <p id="channel-writing"></p>
                     <p id="channel-image"></p>
                     <p id="channel-placement"></p>
+                    <p id="image-insert-guide"></p>
                   </div>
                   <div class="safety-check">
                     <span>✓</span>
@@ -305,14 +391,15 @@
                       <strong id="poster-headline"></strong>
                     </figcaption>
                   </figure>
-                  <p class="image-caption" id="image-caption"></p>
-                  <div class="artifact-box" id="artifact-box" hidden>
-                    <strong>저장된 결과물</strong>
-                    <small id="artifact-directory"></small>
-                    <small id="artifact-json"></small>
-                    <small id="artifact-image"></small>
-                    <small id="artifact-prompt"></small>
+                  <div class="image-actions">
+                    <button class="text-button" id="download-poster-button" type="button">
+                      이미지+글자 저장
+                    </button>
+                    <button class="text-button" id="copy-poster-button" type="button">
+                      이미지+글자 복사
+                    </button>
                   </div>
+                  <p class="image-caption" id="image-caption"></p>
                 </article>
               </div>
             </div>
@@ -321,6 +408,6 @@
       </div>
     </main>
 
-    <script src="./app.js?v=cors-open-20260709"></script>
+    <script src="./app.js?v=blog-options-20260710"></script>
   </body>
 </html>

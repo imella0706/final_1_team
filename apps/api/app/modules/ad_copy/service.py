@@ -61,7 +61,7 @@ def _request_payload(
         "temperature": 0.75,
     }
     token_limit_name = "max_completion_tokens" if use_max_completion_tokens else "max_tokens"
-    payload[token_limit_name] = 2000
+    payload[token_limit_name] = 4000 if request.channel.value == "naver_blog" else 2000
     if structured:
         payload["response_format"] = {
             "type": "json_schema",
@@ -134,6 +134,16 @@ def _parse_content(content: str) -> AdCopyContent:
         for field in ("headlines", "body_copies", "ctas", "hashtags", "safety_notes"):
             if isinstance(data.get(field), str):
                 data[field] = [data[field]]
+        channel_recommendation = data.get("channel_recommendation")
+        if isinstance(channel_recommendation, dict) and isinstance(
+            channel_recommendation.get("publish_hashtags"),
+            str,
+        ):
+            channel_recommendation["publish_hashtags"] = [
+                item.strip()
+                for item in channel_recommendation["publish_hashtags"].replace(",", " ").split()
+                if item.strip()
+            ]
         return AdCopyContent.model_validate(data)
     except (json.JSONDecodeError, ValidationError, AttributeError) as error:
         raise InvalidModelOutputError(

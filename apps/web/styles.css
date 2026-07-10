@@ -253,6 +253,18 @@ h1 em {
   background: #f7f5ff;
 }
 
+.channel-blog-options {
+  margin: 4px 0 24px;
+  padding: 14px;
+  border: 1px solid #d8d1c7;
+  border-radius: 8px;
+  background: #fffaf2;
+}
+
+.channel-blog-options[hidden] {
+  display: none;
+}
+
 .model-field label,
 legend,
 .field > label {
@@ -284,6 +296,26 @@ fieldset {
   margin: 0 0 22px;
   padding: 0;
   border: 0;
+}
+
+.channel-first {
+  margin-bottom: 18px;
+  padding: 15px;
+  border: 1px solid #e7b5a8;
+  border-radius: 8px;
+  background: #fff7f2;
+}
+
+.channel-first select {
+  width: 100%;
+}
+
+.channel-first small {
+  display: block;
+  margin-top: 7px;
+  color: #8e8379;
+  font-size: 10px;
+  line-height: 1.45;
 }
 
 .choice-grid {
@@ -339,6 +371,31 @@ fieldset {
 
 .field {
   margin-bottom: 18px;
+}
+
+.product-list {
+  display: grid;
+  gap: 8px;
+}
+
+.product-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(110px, 0.8fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.product-row input {
+  min-width: 0;
+}
+
+.product-row .product-remove-button {
+  min-height: 40px;
+  padding: 8px 10px;
+}
+
+.add-product-button {
+  margin-top: 9px;
 }
 
 .inline-toggle {
@@ -727,6 +784,47 @@ select:focus {
   font-size: 11px;
 }
 
+.publish-package {
+  margin: 10px 0 14px;
+  padding: 11px;
+  border: 1px solid #e4dfef;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.publish-package span {
+  display: block;
+  margin: 10px 0 4px;
+  color: #9c948c;
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+}
+
+.publish-package span:first-child {
+  margin-top: 0;
+}
+
+.publish-package h4 {
+  margin: 0;
+  color: #312d3e;
+  font-size: 15px;
+  line-height: 1.35;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+
+.publish-package p,
+.publish-package pre {
+  margin: 0;
+  color: #514a5c;
+  font: inherit;
+  font-size: 11px;
+  line-height: 1.65;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 .channel-recommendation p {
   margin: 6px 0 0;
   color: #625b70;
@@ -838,32 +936,19 @@ select:focus {
   line-height: 1.55;
 }
 
-.artifact-box {
-  margin-top: 12px;
-  padding: 12px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.7);
+.image-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
 }
 
-.artifact-box strong,
-.artifact-box small {
-  display: block;
-}
-
-.artifact-box strong {
-  margin-bottom: 6px;
-  color: #4b4038;
-  font-size: 11px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.artifact-box small {
-  overflow-wrap: anywhere;
-  color: #7d736a;
-  font-size: 10px;
-  line-height: 1.5;
+.image-actions .text-button {
+  min-height: 34px;
+  padding: 8px 11px;
+  border-color: #d9d1c8;
+  background: #fff;
+  color: #4f443c;
 }
 
 @media (max-width: 1100px) {

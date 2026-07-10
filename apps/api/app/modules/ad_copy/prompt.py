@@ -1,6 +1,6 @@
 from app.modules.ad_copy.schemas import AdCopyRequest
 
-PROMPT_VERSION = "four-stage-ad-agency-pipeline-v5-channel-layout"
+PROMPT_VERSION = "channel-split-pipeline-v7"
 
 BUSINESS_TYPE_LABELS = {
     "cafe": "카페",
@@ -85,7 +85,213 @@ def _label(labels: dict[str, str], value: str | None) -> str:
     return labels.get(value, value)
 
 
+def build_naver_blog_prompt(request: AdCopyRequest) -> str:
+    business_type = BUSINESS_TYPE_LABELS.get(request.business_type.value, request.business_type.value)
+    situation = SITUATION_LABELS.get(request.situation.value, request.situation.value)
+    age_groups = _comma(
+        [AGE_GROUP_LABELS.get(age.value, age.value) for age in request.age_groups]
+    )
+    targets = _comma(
+        [TARGET_LABELS.get(target.value, target.value) for target in request.target_audiences]
+    )
+    tone = TONE_LABELS.get(request.tone.value, request.tone.value)
+    products = _comma(request.product_names)
+    features = _comma(request.features)
+    required_terms = _comma(request.required_terms)
+    prohibited_terms = _comma(request.prohibited_terms)
+    promotion = request.promotion or "None"
+    gender = _label(GENDER_LABELS, request.gender)
+    occupation_group = _label(OCCUPATION_GROUP_LABELS, request.occupation_group)
+    product_price = request.product_price or "None"
+    interests = _comma(request.interests)
+    region = request.region or "None"
+    trade_area = request.trade_area or "None"
+    audience_detail = request.audience_detail or "None"
+    blog_purpose = request.blog_purpose or "가게 소개"
+    blog_emphasis = _comma(request.blog_emphasis)
+    blog_style = request.blog_style or "정보형"
+    seo_keywords = _comma(request.seo_keywords)
+    blog_length = request.blog_length or "보통"
+    additional_request = request.additional_request or "None"
+    blog_photo_notes = "\n".join(f"- {note}" for note in request.blog_photo_notes) or "None"
+
+    return f"""당신은 네이버 블로그 에디터이며, SEO를 고려한 한국 소상공인 콘텐츠 작성 전문가입니다.
+
+목표는 광고 이미지를 만드는 것이 아닙니다.
+업로드된 사진을 분석한 메모를 활용해서 네이버 블로그에 바로 복붙할 수 있는 포스팅을 완성하는 것입니다.
+사진의 역할을 분류하고, 대표사진과 사진 순서를 추천하고, 각 사진이 들어갈 위치까지 표시한 블로그 글을 작성하세요.
+
+반드시 유효한 JSON 객체 하나만 반환하세요. Markdown, 설명, 코드블록은 절대 포함하지 마세요.
+JSON의 키 이름은 아래 스키마의 영어 키를 그대로 사용하세요.
+고객에게 보이는 문장은 자연스러운 한국어로 작성하세요.
+
+--------------------------------------------------
+입력 정보
+--------------------------------------------------
+채널: Naver Blog
+블로그 글 목적: {blog_purpose}
+강조할 내용: {blog_emphasis}
+글 스타일: {blog_style}
+SEO 검색 키워드: {seo_keywords}
+글 길이: {blog_length}
+업종: {business_type}
+상황: {situation}
+상호명: {request.business_name}
+상품명: {products}
+상품/가격 정보: {product_price}
+특징/판매 포인트: {features}
+프로모션/추가 정보: {promotion}
+지역: {region}
+상권: {trade_area}
+관심사: {interests}
+나이대: {age_groups}
+타깃 유형: {targets}
+성별 타겟: {gender}
+직업군: {occupation_group}
+세부 타겟 메모: {audience_detail}
+톤앤매너: {tone}
+추가 요청: {additional_request}
+반드시 포함할 표현: {required_terms}
+사용하면 안 되는 표현: {prohibited_terms}
+
+업로드 사진 분석 메모:
+{blog_photo_notes}
+
+--------------------------------------------------
+작성 원칙
+--------------------------------------------------
+1. 네이버 블로그는 이미지 생성 채널이 아닙니다. visual_brief는 시스템 호환용 최소값만 채우고, 블로그 작성에는 사용하지 마세요.
+2. 사진 메모가 있으면 사진 번호/파일명을 근거로 thumbnail_photo, thumbnail_reason, photo_order, blog_sections를 작성하세요.
+3. 사진 메모가 없으면 thumbnail_photo는 "사진 없음"으로 두고, 필요한 사진 촬영 가이드를 image_insert_guide와 blog_sections에 짧게 제안하세요.
+4. "성별 타겟:", "타겟:", "관심사:", "세부 타겟:" 같은 내부 라벨을 publish_body에 그대로 노출하지 마세요.
+5. 가격, 지역, 상권, 이벤트, 예약 가능 여부처럼 고객에게 필요한 사실 정보는 자연스러운 문장으로 반영하세요.
+6. 사용자가 입력하지 않은 메뉴, 혜택, 영업시간, 주차, 예약 정보를 만들지 마세요.
+7. 블로그 글은 제목, 대표 이미지, 도입부, 매장/상품 소개, 사진별 본문, 방문 안내, 마무리, 해시태그 흐름으로 작성하세요.
+8. SEO를 위해 지역명, 상호명, 대표 상품명을 제목과 본문에 자연스럽게 포함하세요.
+9. blog_sections의 각 항목은 title, photo, body 키를 가진 객체로 작성하세요.
+10. publish_body에는 사진 위치 표시를 포함하세요. 예: "[사진 3 삽입: 대표 메뉴]".
+11. 블로그 목적에 따라 글 구조를 바꾸세요.
+    - 가게 소개: 외관, 매장 분위기, 대표 메뉴, 가격, 위치, 마무리
+    - 대표 메뉴 소개: 대표 메뉴 사진, 맛/식감 설명, 가격, 추천 상황, 방문 안내
+    - 신메뉴 소개: 대표 사진, 신메뉴 소개, 맛 설명, 가격, 추천 조합, 이벤트, 마무리
+    - 이벤트 홍보: 이벤트 핵심, 참여/방문 방법, 대표 상품, 기간/조건, CTA
+    - 방문 후기 스타일: 방문 계기, 외관, 매장 분위기, 먹은 메뉴, 솔직 후기, 재방문 의사
+    - 브랜드 이야기: 운영 철학, 직접 만드는 과정, 공간 분위기, 대표 메뉴, 마무리
+12. 강조할 내용은 본문 섹션 제목과 문장에 반영하되 체크리스트처럼 나열하지 마세요.
+13. SEO 키워드는 제목, 첫 문단, 중간 문단, 해시태그에 자연스럽게 분산하세요.
+14. 글 길이가 "짧게"이면 3~4개 섹션, "보통"이면 4~6개 섹션, "길게"이면 6~8개 섹션으로 작성하세요.
+
+--------------------------------------------------
+출력 JSON 스키마
+--------------------------------------------------
+{{
+  "marketing_strategy": {{
+    "business_summary": {{
+      "business_name": "{request.business_name}",
+      "business_type_korean": "{business_type}",
+      "situation_korean": "{situation}",
+      "age_groups_korean": [],
+      "target_audiences_korean": [],
+      "tone_korean": "{tone}",
+      "channel_korean": "Naver Blog"
+    }},
+    "mandatory_products": [
+      {{
+        "product_name": "",
+        "role": "primary"
+      }}
+    ],
+    "mandatory_features": [
+      {{
+        "feature_text": "",
+        "copy_usage_rule": "블로그 본문에서 자연스러운 문장으로 반영해야 함",
+        "visual_usage_rule": "블로그 사진 배치 참고 정보로만 사용함"
+      }}
+    ],
+    "core_message": "",
+    "customer_emotion": "",
+    "marketing_angle": "",
+    "recommended_cta_direction": "",
+    "avoid_points": []
+  }},
+  "headlines": [],
+  "body_copies": [],
+  "ctas": [],
+  "hashtags": [],
+  "channel_recommendation": {{
+    "format_name": "네이버 블로그 포스팅",
+    "writing_direction": "",
+    "image_direction": "업로드된 사진을 그대로 활용하고, 생성 이미지는 만들지 않습니다.",
+    "placement_tip": "",
+    "overlay_headline": "",
+    "caption": "",
+    "publish_cta": "",
+    "publish_hashtags": [],
+    "publish_title": "",
+    "publish_body": "",
+    "promotion_template": "",
+    "image_insert_guide": "",
+    "blog_title": "",
+    "thumbnail_photo": "",
+    "thumbnail_reason": "",
+    "photo_order": [],
+    "blog_sections": [
+      {{
+        "title": "",
+        "photo": "",
+        "body": ""
+      }}
+    ]
+  }},
+  "validation_check": {{
+    "all_products_included": true,
+    "all_features_included": true,
+    "prohibited_terms_used": false,
+    "visual_brief_uses_enum_only": true,
+    "hashtags_removed": false,
+    "language_quality": "natural Korean"
+  }},
+  "visual_brief": {{
+    "products_to_show": [
+      {{
+        "product_name": "",
+        "visual_role": "main",
+        "must_be_visible": true
+      }}
+    ],
+    "feature_visualization": [
+      {{
+        "feature_text": "네이버 블로그 사진 기반 콘텐츠",
+        "visual_translation": ["업로드된 사진을 그대로 사용"]
+      }}
+    ],
+    "camera_angle": "eye_level_close_up",
+    "composition": "centered_product_hero",
+    "lighting": "soft_natural_window_light",
+    "background": "minimal_korean_local_cafe",
+    "color_palette": ["premium_neutral_tones"],
+    "depth_of_field": "sharp_product_soft_background",
+    "empty_space": "poster_safe_margin",
+    "avoid": [
+      "readable_text",
+      "logo",
+      "watermark",
+      "menu_board",
+      "store_sign",
+      "random_people",
+      "distorted_food",
+      "messy_table"
+    ]
+  }},
+  "safety_notes": []
+}}
+"""
+
+
 def build_prompt(request: AdCopyRequest) -> str:
+    if request.channel.value == "naver_blog":
+        return build_naver_blog_prompt(request)
+
     business_type = BUSINESS_TYPE_LABELS.get(request.business_type.value, request.business_type.value)
     situation = SITUATION_LABELS.get(request.situation.value, request.situation.value)
     age_groups = _comma(
@@ -108,6 +314,9 @@ def build_prompt(request: AdCopyRequest) -> str:
     region = request.region or "None"
     trade_area = request.trade_area or "None"
     audience_detail = request.audience_detail or "None"
+    blog_purpose = request.blog_purpose or "None"
+    additional_request = request.additional_request or "None"
+    blog_photo_notes = "\n".join(f"- {note}" for note in request.blog_photo_notes) or "None"
 
     return f"""당신은 한국 소상공인을 위한 AI 광고 제작팀입니다.
 
@@ -137,6 +346,10 @@ JSON의 키 이름과 enum 값은 아래 스키마에 있는 영어 값을 정�
 지역: {region}
 상권: {trade_area}
 세부 타겟 메모: {audience_detail}
+블로그 글 목적: {blog_purpose}
+추가 요청: {additional_request}
+업로드 사진 분석 메모:
+{blog_photo_notes}
 톤앤매너: {tone}
 마케팅 채널: {channel}
 상호명: {request.business_name}
@@ -157,16 +370,17 @@ STEP 1. 마케팅 전략
 이 단계에서는 이미지 프롬프트를 쓰지 마세요.
 
 가장 중요한 규칙:
-"features"의 모든 항목은 필수 판매 포인트입니다.
-요약하거나 삭제하거나 다른 말로 바꾸지 마세요.
+"features"의 항목은 판매 포인트와 타겟팅 참고 정보가 섞여 있습니다.
+고객에게 보여줄 문구에서는 사람이 읽는 자연스러운 광고 문장으로 변환하세요.
 성별, 직업군, 타깃 유형, 관심사, 지역, 상권, 세부 타겟 메모는 핵심 타겟 세분화 정보입니다.
+이 내부 라벨 자체를 고객용 문구에 노출하지 마세요.
 타깃 유형에 학생/중학생/고등학생/대학생이 포함되면 예산감각, 방문 가능 시간대, 친구 동반 여부, 말투의 가벼움을 다르게 해석하세요.
 직업군이 직장인/자영업자/프리랜서/전문직/주부/취업준비생이면 생활 리듬, 구매 동기, 방문 맥락, 가격 민감도를 다르게 반영하세요.
 
 규칙:
 1. 모든 product_names는 사용자가 입력한 원문 그대로 유지하세요.
-2. 모든 features는 사용자가 입력한 원문 그대로 유지하세요.
-3. 내부 라벨은 자연스러운 한국어 의미로 해석하세요.
+2. 모든 features는 의미를 보존하되 고객용 문장에서는 자연스럽게 변환하세요.
+3. 내부 라벨은 자연스러운 한국어 의미로 해석하고, "성별 타겟:", "타겟:", "관심사:", "세부 타겟:" 같은 라벨을 출력하지 마세요.
 4. prohibited_terms는 절대 사용하지 마세요.
 5. 핵심 가치는 mandatory_products와 mandatory_features를 통해 상품과 특징으로 분리하세요.
 6. 창의성, 다큐멘터리, 오디세이, 스케이핑처럼 추상적이거나 광고 맥락에 맞지 않는 단어를 만들지 마세요.
@@ -181,9 +395,9 @@ STEP 2. 광고 문구 작성
 
 반드시 지켜야 할 규칙:
 1. 모든 product_name은 광고 문구 어딘가에 최소 1회 이상 포함하세요.
-2. 모든 feature_text는 body_copies 안에 원문 그대로 최소 1회 이상 포함하세요.
-3. 필수 특징을 의역하지 마세요.
-4. 기간, 시간, 할인율 같은 정보가 있으면 삭제하지 마세요.
+2. feature_text는 Marketing Intent로 해석한 뒤 자연스러운 광고 문장으로 바꾸세요.
+3. "성별 타겟:", "타겟:", "관심사:", "상권:", "세부 타겟:" 같은 내부 데이터 라벨을 고객 문구에 그대로 쓰지 마세요.
+4. 기간, 시간, 할인율, 가격, 지역 같은 사실 정보가 있으면 삭제하지 마세요.
 5. prohibited_terms는 사용하지 마세요.
 6. 어색하거나 깨진 한국어를 만들지 마세요.
 7. 의미 없는 표현을 만들지 마세요.
@@ -204,13 +418,30 @@ STEP 3. 채널별 게시 형식 추천
 당신은 채널별 광고 콘텐츠 편집자입니다.
 
 channel_recommendation을 작성하세요.
-고객에게 보여줄 글과 이미지를 어떤 형식으로 배치하면 좋은지 추천합니다.
+고객에게 보여줄 글과 이미지를 어떤 형식으로 배치하면 좋은지 추천하고,
+실제 채널에 바로 올릴 수 있는 게시 제목과 게시 본문/홍보 양식을 함께 작성합니다.
 
 채널별 추천 방향:
-- Instagram: 인스타 피드 게시물 형식. 첫 화면에는 생성 이미지와 짧은 헤드라인을 두고, 캡션에는 본문/CTA/해시태그 순서로 배치하도록 추천하세요.
-- Naver Blog: 블로그 글 작성 형식. LLM이 작성한 글을 본문으로 쓰고, 사진은 도입부 대표 이미지와 상품 설명 중간 이미지로 넣으면 좋다고 추천하세요.
-- Delivery App: 배달앱 포스터/배너 형식. 상품 이미지 전체를 포스터처럼 쓰고, 앱 화면에서는 헤드라인, 가격/혜택, CTA가 바로 보이도록 추천하세요.
-- Store Poster: 매장 포스터 형식. 멀리서도 보이는 한 줄 헤드라인과 큰 상품 이미지를 추천하세요.
+- Instagram: 인스타 피드 게시물 형식. overlay_headline은 이미지 위에 올릴 짧은 제목, caption은 실제 인스타 캡션, publish_cta는 행동 유도 문구, publish_hashtags는 인스타 해시태그 배열로 작성하세요. publish_title은 overlay_headline과 같거나 유사하게 쓰고, publish_body는 caption + publish_cta + publish_hashtags를 조합한 완성 캡션으로 작성하세요.
+- Naver Blog: 사진 기반 블로그 콘텐츠 에디터 형식. blog_title은 네이버 검색에 어울리는 제목, thumbnail_photo는 대표 이미지로 쓸 사진 번호/이름, thumbnail_reason은 추천 이유, photo_order는 추천 사진 순서, blog_sections는 사진 위치와 본문 문단을 섹션별로 작성하세요. publish_body는 사진 위치 표시를 포함한 복붙용 완성 블로그 글로 작성하세요.
+- Delivery App: 배달앱 포스터/배너 형식. publish_title은 포스터 헤드라인, publish_body는 앱 상품 설명, promotion_template은 포스터 문구/가격 또는 혜택/주문 CTA 양식으로 작성하세요.
+- Store Poster: 매장 포스터 형식. publish_title은 포스터 제목, publish_body는 짧은 안내 문구, promotion_template은 상단 헤드라인/중앙 상품/하단 CTA 양식으로 작성하세요.
+image_insert_guide에는 생성 이미지와 글을 어디에 넣으면 좋은지 구체적으로 적으세요.
+
+Instagram 캡션 작성 규칙:
+- 내부 데이터 라벨을 그대로 쓰지 마세요.
+- 타겟 정보는 "점심 이후 잠깐의 달콤한 휴식", "특별한 날을 위한 케이크"처럼 자연스러운 상황 문장으로 바꾸세요.
+- 지역은 필요하면 "📍서울 마포구 연남동"처럼 고객에게 유용한 위치 정보로만 쓰세요.
+- 가격은 필요하면 자연스러운 한 문장으로 쓰세요.
+- 해시태그는 caption 본문에 섞지 말고 publish_hashtags 배열에 분리하세요.
+
+Naver Blog 작성 규칙:
+- 사용자는 프롬프트를 직접 쓰지 않는다고 가정하고, "블로그 글 목적"을 중심으로 글을 구성하세요.
+- 업로드 사진 분석 메모가 있으면 사진 번호/이름을 근거로 썸네일, 사진 순서, 사진 위치를 추천하세요.
+- photo_order는 예: ["사진 3: 대표 메뉴", "사진 1: 외관"]처럼 작성하세요.
+- blog_sections의 각 항목은 title, photo, body 키를 가진 객체로 작성하세요.
+- publish_body에는 "제목", "대표 이미지", "도입부", "매장 소개", "대표 메뉴", "이벤트/안내", "마무리", "해시태그" 흐름을 자연스럽게 포함하세요.
+- 사진이 없으면 photo 필드는 "사진 없음"으로 두고, 필요한 사진 촬영 가이드를 body에 짧게 제안하세요.
 
 --------------------------------------------------
 STEP 4. 비주얼 브리프
@@ -317,8 +548,8 @@ brief 안에는 읽을 수 있는 글자, 로고, 간판, 메뉴판, 워터마�
     "mandatory_features": [
       {{
         "feature_text": "",
-        "copy_usage_rule": "본문 문구에 원문 그대로 포함해야 함",
-        "visual_usage_rule": "이미지에서 시각적으로 표현 가능한 형태로 변환해야 함"
+        "copy_usage_rule": "고객용 광고 문장으로 자연스럽게 변환해야 함",
+        "visual_usage_rule": "이미지에서 시각적으로 표현 가능한 형태로만 변환해야 함"
       }}
     ],
     "core_message": "",
@@ -335,7 +566,26 @@ brief 안에는 읽을 수 있는 글자, 로고, 간판, 메뉴판, 워터마�
     "format_name": "",
     "writing_direction": "",
     "image_direction": "",
-    "placement_tip": ""
+    "placement_tip": "",
+    "overlay_headline": "",
+    "caption": "",
+    "publish_cta": "",
+    "publish_hashtags": [],
+    "publish_title": "",
+    "publish_body": "",
+    "promotion_template": "",
+    "image_insert_guide": "",
+    "blog_title": "",
+    "thumbnail_photo": "",
+    "thumbnail_reason": "",
+    "photo_order": [],
+    "blog_sections": [
+      {{
+        "title": "",
+        "photo": "",
+        "body": ""
+      }}
+    ]
   }},
   "validation_check": {{
     "all_products_included": true,

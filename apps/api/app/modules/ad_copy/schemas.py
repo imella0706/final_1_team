@@ -121,6 +121,13 @@ class AdCopyRequest(BaseModel):
     region: str | None = Field(default=None, max_length=120)
     trade_area: str | None = Field(default=None, max_length=160)
     audience_detail: str | None = Field(default=None, max_length=500)
+    blog_purpose: str | None = Field(default=None, max_length=80)
+    blog_emphasis: list[str] = Field(default_factory=list, max_length=10)
+    blog_style: str | None = Field(default=None, max_length=80)
+    seo_keywords: list[str] = Field(default_factory=list, max_length=10)
+    blog_length: str | None = Field(default=None, max_length=40)
+    additional_request: str | None = Field(default=None, max_length=500)
+    blog_photo_notes: list[str] = Field(default_factory=list, max_length=10)
 
     @model_validator(mode="before")
     @classmethod
@@ -272,6 +279,19 @@ class ChannelRecommendation(BaseModel):
     writing_direction: str = Field(default="", max_length=500)
     image_direction: str = Field(default="", max_length=500)
     placement_tip: str = Field(default="", max_length=500)
+    overlay_headline: str = Field(default="", max_length=100)
+    caption: str = Field(default="", max_length=3000)
+    publish_cta: str = Field(default="", max_length=200)
+    publish_hashtags: list[str] = Field(default_factory=list, max_length=10)
+    publish_title: str = Field(default="", max_length=150)
+    publish_body: str = Field(default="", max_length=8000)
+    promotion_template: str = Field(default="", max_length=1500)
+    image_insert_guide: str = Field(default="", max_length=700)
+    blog_title: str = Field(default="", max_length=150)
+    thumbnail_photo: str = Field(default="", max_length=120)
+    thumbnail_reason: str = Field(default="", max_length=700)
+    photo_order: list[str] = Field(default_factory=list, max_length=10)
+    blog_sections: list[dict[str, object]] = Field(default_factory=list, max_length=12)
 
 
 class AdCopyContent(BaseModel):

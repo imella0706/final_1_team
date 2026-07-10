@@ -49,6 +49,12 @@ class AdImageResponse(BaseModel):
     latency_ms: int
 
 
+class BlogImageInput(BaseModel):
+    id: str = Field(min_length=1, max_length=40)
+    name: str = Field(default="", max_length=120)
+    data_url: str = Field(min_length=1, max_length=4_000_000)
+
+
 class AdContentRequest(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
@@ -57,6 +63,7 @@ class AdContentRequest(BaseModel):
     image_width: int = Field(default=1024, ge=512, le=1536)
     image_height: int = Field(default=1280, ge=512, le=1536)
     reference_image_data_url: str | None = Field(default=None, max_length=4_000_000)
+    blog_images: list[BlogImageInput] = Field(default_factory=list, max_length=8)
 
 
 class AdContentResponse(BaseModel):
