@@ -30,7 +30,8 @@ def validate_copy_output(content: AdCopyContent, request: AdCopyRequest) -> Copy
     copy_text = " ".join(
         content.headlines + content.body_copies + content.ctas + content.hashtags
     ) + " " + channel_text
-    visual_text = str(content.visual_brief.model_dump())
+    is_blog = request.channel.value == "naver_blog"
+    visual_text = "" if is_blog else str(content.visual_brief.model_dump())
 
     missing_products = [
         product for product in request.product_names if product not in copy_text
@@ -39,21 +40,22 @@ def validate_copy_output(content: AdCopyContent, request: AdCopyRequest) -> Copy
         warnings.append(f"광고 문구에 누락된 상품명: {', '.join(missing_products)}")
 
     prohibited_in_copy = _contains_any(copy_text, request.prohibited_terms)
-    prohibited_in_visual = _contains_any(visual_text, request.prohibited_terms)
+    prohibited_in_visual = [] if is_blog else _contains_any(visual_text, request.prohibited_terms)
     if prohibited_in_copy or prohibited_in_visual:
         warnings.append(
             "금지 표현 포함: "
             + ", ".join(sorted(set(prohibited_in_copy + prohibited_in_visual)))
         )
 
-    visual_products = {item.product_name for item in content.visual_brief.products_to_show}
-    missing_visual_products = [
-        product for product in request.product_names if product not in visual_products
-    ]
-    if missing_visual_products:
-        warnings.append(
-            f"visual_brief.products_to_show에 누락된 상품명: {', '.join(missing_visual_products)}"
-        )
+    if not is_blog:
+        visual_products = {item.product_name for item in content.visual_brief.products_to_show}
+        missing_visual_products = [
+            product for product in request.product_names if product not in visual_products
+        ]
+        if missing_visual_products:
+            warnings.append(
+                f"visual_brief.products_to_show에 누락된 상품명: {', '.join(missing_visual_products)}"
+            )
 
     return CopyValidationResult(valid=not warnings, warnings=warnings)
 

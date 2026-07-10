@@ -95,21 +95,24 @@ async def generate_content(request: AdContentRequest) -> AdContentResponse:
             )
 
         copy = await generate_ad_copy(copy_request)
-        product_visualization = await visualize_products(copy_request, copy)
 
         if is_naver_blog:
             vision_prompt = {
                 "blog_images_prompt": blog_vision_prompt,
                 "blog_photo_notes": blog_photo_notes,
                 "image_generation": "skipped",
+                "product_visualization": "skipped",
             }
-            image_prompt = "Naver Blog channel uses uploaded photos directly. No generated image prompt was created."
+            image_prompt = ""
             negative_prompt = ""
             image = _uploaded_blog_image_response(request)
+            visual_brief_payload: dict[str, object] = {}
+            product_visualization_payload: dict[str, object] = {}
             image_valid = True
             image_warnings: list[str] = []
             regeneration_count = 0
         else:
+            product_visualization = await visualize_products(copy_request, copy)
             reference_image_context, vision_prompt = await describe_reference_image(
                 request.reference_image_data_url,
                 copy_request,
@@ -144,9 +147,11 @@ async def generate_content(request: AdContentRequest) -> AdContentResponse:
                         width=request.image_width,
                         height=request.image_height,
                     )
-                )
+            )
             image_valid = image_validation.valid
             image_warnings = image_validation.warnings
+            visual_brief_payload = copy.visual_brief.model_dump(mode="json")
+            product_visualization_payload = product_visualization.model_dump(mode="json")
     except ModelNotConfiguredError as error:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -174,8 +179,8 @@ async def generate_content(request: AdContentRequest) -> AdContentResponse:
         copy_result=copy,
         marketing_strategy=copy.marketing_strategy.model_dump(mode="json"),
         channel_recommendation=copy.channel_recommendation.model_dump(mode="json"),
-        visual_brief=copy.visual_brief.model_dump(mode="json"),
-        product_visualization=product_visualization.model_dump(mode="json"),
+        visual_brief=visual_brief_payload,
+        product_visualization=product_visualization_payload,
         image=image,
         llm_prompt=copy.llm_prompt,
         vision_prompt=vision_prompt,

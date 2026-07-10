@@ -160,7 +160,7 @@ SEO 검색 키워드: {seo_keywords}
 --------------------------------------------------
 작성 원칙
 --------------------------------------------------
-1. 네이버 블로그는 이미지 생성 채널이 아닙니다. visual_brief는 시스템 호환용 최소값만 채우고, 블로그 작성에는 사용하지 마세요.
+1. 네이버 블로그는 이미지 생성 채널이 아닙니다. visual_brief, product_visualization, image_prompt를 작성하지 마세요.
 2. 사진 메모가 있으면 사진 번호/파일명을 근거로 thumbnail_photo, thumbnail_reason, photo_order, blog_sections를 작성하세요.
 3. 사진 메모가 없으면 thumbnail_photo는 "사진 없음"으로 두고, 필요한 사진 촬영 가이드를 image_insert_guide와 blog_sections에 짧게 제안하세요.
 4. "성별 타겟:", "타겟:", "관심사:", "세부 타겟:" 같은 내부 라벨을 publish_body에 그대로 노출하지 마세요.
@@ -180,6 +180,10 @@ SEO 검색 키워드: {seo_keywords}
 12. 강조할 내용은 본문 섹션 제목과 문장에 반영하되 체크리스트처럼 나열하지 마세요.
 13. SEO 키워드는 제목, 첫 문단, 중간 문단, 해시태그에 자연스럽게 분산하세요.
 14. 글 길이가 "짧게"이면 3~4개 섹션, "보통"이면 4~6개 섹션, "길게"이면 6~8개 섹션으로 작성하세요.
+15. 업로드된 사진이 여러 장이면 일부만 사용하지 말고 가능한 모든 사진에 역할을 부여해 blog_sections 또는 photo_order에 반영하세요.
+16. thumbnail_reason에는 제품 크기, 초점, 색감, 클릭 가능성, 음식/공간 식별성 중 최소 2개 기준을 포함하세요.
+17. photo_order는 업로드 순서를 그대로 복사하지 말고 대표사진, 매장 소개, 대표 메뉴, 추가 메뉴, 음료/디저트, 마무리 흐름에 맞게 재배열하세요.
+18. 업로드 사진 분석 메모가 JSON 형태라면 photo_type, main_subject, camera_angle, photo_quality, recommended_section, thumbnail_score, recommended_caption, seo_keywords를 적극 활용하세요.
 
 --------------------------------------------------
 출력 JSON 스키마
@@ -250,38 +254,6 @@ SEO 검색 키워드: {seo_keywords}
     "visual_brief_uses_enum_only": true,
     "hashtags_removed": false,
     "language_quality": "natural Korean"
-  }},
-  "visual_brief": {{
-    "products_to_show": [
-      {{
-        "product_name": "",
-        "visual_role": "main",
-        "must_be_visible": true
-      }}
-    ],
-    "feature_visualization": [
-      {{
-        "feature_text": "네이버 블로그 사진 기반 콘텐츠",
-        "visual_translation": ["업로드된 사진을 그대로 사용"]
-      }}
-    ],
-    "camera_angle": "eye_level_close_up",
-    "composition": "centered_product_hero",
-    "lighting": "soft_natural_window_light",
-    "background": "minimal_korean_local_cafe",
-    "color_palette": ["premium_neutral_tones"],
-    "depth_of_field": "sharp_product_soft_background",
-    "empty_space": "poster_safe_margin",
-    "avoid": [
-      "readable_text",
-      "logo",
-      "watermark",
-      "menu_board",
-      "store_sign",
-      "random_people",
-      "distorted_food",
-      "messy_table"
-    ]
   }},
   "safety_notes": []
 }}

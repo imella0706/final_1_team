@@ -62,7 +62,7 @@ def _request_payload(
     }
     token_limit_name = "max_completion_tokens" if use_max_completion_tokens else "max_tokens"
     payload[token_limit_name] = 4000 if request.channel.value == "naver_blog" else 2000
-    if structured:
+    if structured and request.channel.value != "naver_blog":
         payload["response_format"] = {
             "type": "json_schema",
             "json_schema": {

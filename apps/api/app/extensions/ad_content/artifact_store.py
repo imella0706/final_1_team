@@ -68,7 +68,10 @@ def save_ad_content_artifacts(response: AdContentResponse) -> dict[str, str]:
         json.dumps(metadata, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
-    prompt_path.write_text(response.image_prompt, encoding="utf-8")
+    prompt_artifact = ""
+    if response.image_prompt.strip():
+        prompt_path.write_text(response.image_prompt, encoding="utf-8")
+        prompt_artifact = _relative(prompt_path)
     llm_prompt_path.write_text(
         json.dumps(response.llm_prompt, ensure_ascii=False, indent=2),
         encoding="utf-8",
@@ -79,11 +82,13 @@ def save_ad_content_artifacts(response: AdContentResponse) -> dict[str, str]:
     )
     image_path.write_bytes(base64.b64decode(response.image.image_base64))
 
-    return {
+    artifacts = {
         "directory": _relative(output_dir),
         "metadata_json": _relative(metadata_path),
         "image": _relative(image_path),
-        "image_prompt": _relative(prompt_path),
         "llm_prompt": _relative(llm_prompt_path),
         "vision_prompt": _relative(vision_prompt_path),
     }
+    if prompt_artifact:
+        artifacts["image_prompt"] = prompt_artifact
+    return artifacts

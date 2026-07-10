@@ -274,6 +274,32 @@ class VisualBrief(BaseModel):
     avoid: list[str] = Field(default_factory=list, max_length=10)
 
 
+def default_visual_brief() -> VisualBrief:
+    return VisualBrief(
+        products_to_show=[
+            ProductToShow(
+                product_name="uploaded photos",
+                visual_role="main",
+                must_be_visible=True,
+            )
+        ],
+        feature_visualization=[
+            FeatureVisualization(
+                feature_text="uploaded photos",
+                visual_translation=["use uploaded photos directly"],
+            )
+        ],
+        camera_angle="eye_level_close_up",
+        composition="centered_product_hero",
+        lighting="soft_natural_window_light",
+        background="minimal_korean_local_cafe",
+        color_palette=["premium_neutral_tones"],
+        depth_of_field="sharp_product_soft_background",
+        empty_space="poster_safe_margin",
+        avoid=[],
+    )
+
+
 class ChannelRecommendation(BaseModel):
     format_name: str = Field(default="", max_length=100)
     writing_direction: str = Field(default="", max_length=500)
@@ -304,7 +330,7 @@ class AdCopyContent(BaseModel):
         default_factory=ChannelRecommendation
     )
     validation_check: ValidationCheck
-    visual_brief: VisualBrief
+    visual_brief: VisualBrief = Field(default_factory=default_visual_brief)
     safety_notes: list[str] = Field(default_factory=list, max_length=10)
 
 

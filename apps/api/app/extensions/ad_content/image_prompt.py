@@ -1,3 +1,5 @@
+import json
+
 import httpx
 
 from app.core.config import settings
@@ -187,6 +189,62 @@ async def describe_reference_image(
     return None, prompt_record
 
 
+def _parse_json_object(value: str) -> dict[str, object] | None:
+    cleaned = value.strip()
+    if cleaned.startswith("```"):
+        cleaned = cleaned.strip("`")
+        if cleaned.lower().startswith("json"):
+            cleaned = cleaned[4:].strip()
+    try:
+        parsed = json.loads(cleaned)
+    except json.JSONDecodeError:
+        start = cleaned.find("{")
+        end = cleaned.rfind("}")
+        if start < 0 or end <= start:
+            return None
+        try:
+            parsed = json.loads(cleaned[start : end + 1])
+        except json.JSONDecodeError:
+            return None
+    return parsed if isinstance(parsed, dict) else None
+
+
+def _format_blog_photo_notes(metadata: dict[str, object]) -> list[str]:
+    notes: list[str] = []
+    photos = metadata.get("photos")
+    if isinstance(photos, list):
+        for item in photos:
+            if not isinstance(item, dict):
+                continue
+            photo_id = str(item.get("photo_id") or "사진").strip()
+            photo_type = str(item.get("photo_type") or "기타").strip()
+            main_subject = str(item.get("main_subject") or "").strip()
+            quality = str(item.get("photo_quality") or "").strip()
+            section = str(item.get("recommended_section") or "").strip()
+            score = str(item.get("thumbnail_score") or "").strip()
+            reason = str(item.get("thumbnail_reason") or "").strip()
+            caption = str(item.get("recommended_caption") or "").strip()
+            keywords = item.get("seo_keywords")
+            keyword_text = ", ".join(str(keyword) for keyword in keywords if keyword) if isinstance(keywords, list) else ""
+            notes.append(
+                (
+                    f"{photo_id}: type={photo_type}, subject={main_subject}, "
+                    f"quality={quality}, section={section}, thumbnail_score={score}, "
+                    f"thumbnail_reason={reason}, caption={caption}, seo_keywords={keyword_text}"
+                ).strip()
+            )
+    thumbnail = metadata.get("recommended_thumbnail")
+    order = metadata.get("recommended_order")
+    reason = metadata.get("ordering_reason")
+    if thumbnail:
+        notes.append(f"대표사진 추천: {thumbnail}")
+    if isinstance(order, list) and order:
+        notes.append("추천 사진 순서: " + " -> ".join(str(item) for item in order))
+    if reason:
+        notes.append(f"사진 순서 추천 이유: {reason}")
+    return notes
+
+
 async def describe_blog_images(
     blog_images: list[BlogImageInput],
     copy_request: AdCopyRequest,
@@ -201,9 +259,28 @@ async def describe_blog_images(
         f"글 스타일: {copy_request.blog_style or 'None'}\n"
         f"SEO 키워드: {', '.join(copy_request.seo_keywords) or 'None'}\n"
         f"글 길이: {copy_request.blog_length or 'None'}\n\n"
-        "각 사진마다 아래 형식으로 한 줄씩만 답하세요.\n"
-        "사진 번호/파일명: 추정 유형(외관/실내/메뉴판/대표 메뉴/디저트/기타), 핵심 시각 요소, 블로그에서 어울리는 위치, 썸네일 적합도 1~5\n"
-        "사진에 없는 정보는 만들지 마세요."
+        "반드시 JSON 객체 하나만 답하세요. Markdown, 설명, 코드블록은 쓰지 마세요.\n"
+        "사진에 없는 정보는 만들지 말고, 보이는 정보만 블로그 작성용 메타데이터로 정리하세요.\n\n"
+        "출력 형식:\n"
+        "{\n"
+        '  "photos": [\n'
+        "    {\n"
+        '      "photo_id": "사진 번호 또는 파일명",\n'
+        '      "photo_type": "외관|실내|메뉴판|대표 메뉴|디저트|음료|기타",\n'
+        '      "main_subject": "사진의 핵심 피사체",\n'
+        '      "camera_angle": "정면|45도|상단|근접|원거리|기타",\n'
+        '      "photo_quality": "초점/밝기/색감/구도에 대한 짧은 평가",\n'
+        '      "recommended_section": "도입|매장 소개|대표 메뉴|추가 메뉴|음료|디저트|가격 안내|마무리",\n'
+        '      "thumbnail_score": 1,\n'
+        '      "thumbnail_reason": "제품 크기, 초점, 색감, 클릭 가능성, 식별성 기준으로 짧게 설명",\n'
+        '      "recommended_caption": "블로그 본문에서 사진 아래에 붙일 짧은 설명",\n'
+        '      "seo_keywords": ["사진에서 자연스럽게 연결되는 검색 키워드"]\n'
+        "    }\n"
+        "  ],\n"
+        '  "recommended_thumbnail": "대표 사진 id",\n'
+        '  "recommended_order": ["사진 id를 블로그 흐름에 맞게 정렬"],\n'
+        '  "ordering_reason": "왜 이 순서가 자연스러운지 짧게 설명"\n'
+        "}"
     )
     content: list[dict[str, object]] = [{"type": "text", "text": prompt_text}]
     redacted_content: list[dict[str, object]] = [{"type": "text", "text": prompt_text}]
@@ -237,13 +314,18 @@ async def describe_blog_images(
                     "model": prompt_record["model"],
                     "messages": [{"role": "user", "content": content}],
                     "temperature": 0,
-                    "max_completion_tokens": 700,
+                    "max_completion_tokens": 1200,
                 },
             )
             response.raise_for_status()
             body = response.json()
             result = body["choices"][0]["message"]["content"]
             if isinstance(result, str):
+                parsed = _parse_json_object(result)
+                if isinstance(parsed, dict):
+                    notes = _format_blog_photo_notes(parsed)
+                    prompt_record["structured_result"] = parsed
+                    return notes[:10], prompt_record
                 notes = [line.strip("- ").strip() for line in result.splitlines() if line.strip()]
                 return notes[:10], prompt_record
     except (httpx.HTTPError, KeyError, IndexError, TypeError, ValueError):
