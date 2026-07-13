@@ -219,6 +219,183 @@ logs/
 }
 ```
 
+### 6.1 GCP VM 장애 진단 순서
+
+웹 화면이 뜨지 않거나 생성 버튼 이후 파이프라인이 멈추면 먼저 어느 서버가 죽었는지 잘라야 합니다.
+BrandMate GCP VM 구성은 보통 아래 3개 프로세스와 외부 LLM API 설정에 의존합니다.
+
+| 구성요소 | 기본 포트 | 확인 명령 | 실패 시 의심 지점 |
+| --- | --- | --- | --- |
+| Frontend 정적 서버 | `5501` | `curl -I http://127.0.0.1:5501` | 프론트 서버 미실행, CORS origin 불일치 |
+| FastAPI backend | `7660` | `curl http://127.0.0.1:7660/health` | API 서버 미실행, `.env` 설정 오류 |
+| ComfyUI image server | `8188` | `curl http://127.0.0.1:8188/system_stats` | ComfyUI 미실행, GPU/CUDA 오류, 모델 파일 누락 |
+| LLM API 설정 | 없음 | `.env`의 `BRANDMATE_LLM_API_KEY` 또는 `BRANDMATE_OPENAI_API_KEY` 확인 | API key 누락, provider/model 설정 오류, rate limit |
+
+장애 확인은 사람이 `curl`을 하나씩 치는 방식이 기본이 아닙니다. 기본 진단은 서비스 관리 스크립트로
+한 번에 확인합니다.
+
+```bash
+# [Design Intent] 프론트, API, ComfyUI 상태를 한 번에 확인해 감에 의존한 디버깅을 줄인다.
+cd ~/personal/final_1_team
+scripts/manage_brandmate_services.sh status
+```
+
+전체 서비스를 시작하거나 재시작할 때도 같은 스크립트를 사용합니다.
+
+```bash
+# [Design Intent] GCP VM에서 필요한 웹서비스 프로세스를 표준 스크립트로 기동한다.
+cd ~/personal/final_1_team
+scripts/manage_brandmate_services.sh start
+scripts/manage_brandmate_services.sh logs
+```
+
+`qa` 명령은 서비스 기동 후 비전 평가 wrapper까지 실행합니다. 단순 장애 확인용이 아니라
+`run_local_vision_eval.sh`를 호출해 smoke 수준의 생성 평가까지 돌리는 명령입니다.
+
+```bash
+# [Design Intent] 서비스 준비 상태 확인 후 최소 비전 평가까지 실행한다.
+cd ~/personal/final_1_team
+scripts/manage_brandmate_services.sh qa
+```
+
+아래 `curl` 명령은 스크립트가 없는 환경이거나 특정 endpoint만 직접 확인해야 할 때의 fallback입니다.
+
+```bash
+# [Design Intent] 자동 진단 스크립트가 없을 때 웹서비스 파이프라인의 의존성 경계를 수동으로 분리한다.
+curl -I http://127.0.0.1:5501
+curl http://127.0.0.1:7660/health
+curl http://127.0.0.1:8188/system_stats
+```
+
+FastAPI는 살아 있는데 생성 요청만 실패하면 통합 endpoint를 직접 호출합니다.
+
+```bash
+# [Design Intent] 프론트엔드를 배제하고 FastAPI -> LLM -> ComfyUI 경로만 검증한다.
+curl -s -X POST http://127.0.0.1:7660/api/v1/ad-content/generate \
+  -H "Content-Type: application/json" \
+  -d '{
+    "copy": {
+      "model": "Qwen/Qwen2.5-7B-Instruct",
+      "business_name": "달빛카페",
+      "business_type": "cafe",
+      "situation": "new_menu",
+      "target_audiences": ["twenties"],
+      "tone": "friendly",
+      "product_names": ["딸기 라떼"],
+      "features": ["제철 딸기 사용"],
+      "channel": "instagram",
+      "required_terms": [],
+      "prohibited_terms": ["최고", "무조건"]
+    },
+    "image_model": "black-forest-labs/FLUX.1-schnell",
+    "image_width": 1024,
+    "image_height": 1280
+  }'
+```
+
+GCS에 저장된 장애 로그는 날짜와 request id 기준으로 조회합니다.
+
+```bash
+# [Design Intent] 장애 발생 시 GCS에 남긴 summary와 상세 error bundle을 먼저 확인한다.
+gcloud storage ls gs://ssakda/projects/brandmate/logs/web_service/summary/
+gcloud storage cat gs://ssakda/projects/brandmate/logs/web_service/summary/YYYYMMDD.jsonl
+gcloud storage ls gs://ssakda/projects/brandmate/logs/web_service/errors/YYYYMMDD/
+gcloud storage cp \
+  gs://ssakda/projects/brandmate/logs/web_service/errors/YYYYMMDD/HHMMSS_request_id/ \
+  ./debug/web_service/YYYYMMDD/HHMMSS_request_id/ \
+  --recursive
+```
+
+장애 단계는 `error.json`의 `stage`로 먼저 판단합니다.
+
+| `stage` 예시 | 의미 | 다음 확인 |
+| --- | --- | --- |
+| `frontend_request` | 브라우저 또는 정적 서버 쪽 문제 | `5501`, CORS, API base URL |
+| `copy_model` | 외부 LLM API 호출 실패 | `.env` API key, provider base URL, 모델명, rate limit |
+| `comfyui_prompt` | ComfyUI prompt 제출 실패 | `8188/system_stats`, workflow, custom node |
+| `comfyui_result` | prompt는 들어갔지만 이미지 결과 수신 실패 | ComfyUI queue, VRAM, timeout |
+| `response_write` | 결과 저장 또는 응답 생성 실패 | output path 권한, 디스크/GCS 업로드 |
+
+운영 원칙은 단순합니다. 장애 로그는 “나중에 보기 좋은 기록”이 아니라 “어느 프로세스가 죽었는지
+5분 안에 자르는 도구”여야 합니다. 그래서 `error.json`에는 최소한 `request_id`, `stage`,
+`error_type`, `error_message`, `latency_ms`, 사용 모델명, 입력 크기를 남깁니다.
+
+### 6.2 운영 로그 구현 상태와 확장 순서
+
+현재 구현된 로그는 `manage_brandmate_services.sh`가 각 프로세스의 stdout/stderr를 로컬 파일로
+남기는 수준입니다.
+
+```text
+outputs/gcp_services/
+  fastapi.log
+  frontend.log
+  comfyui.log
+```
+
+이 로그는 FastAPI, frontend, ComfyUI 프로세스가 뜨지 않는 문제를 확인하기 위한 1차 진단 로그입니다.
+예를 들어 포트 충돌, conda 환경 오류, ComfyUI 실행 오류, uvicorn 실행 오류를 확인할 때 사용합니다.
+
+다만 이 로그만으로는 사용자 요청 단위의 장애 추적이 어렵습니다. 운영 수준의 장애 추적을 위해서는
+추가로 아래 구조가 필요합니다.
+
+- `request_id` 기반 structured JSON logging
+- 요청 단계별 `stage` 기록
+- `latency_ms`, `error_type`, `error_message` 기록
+- 정상/실패 요청의 최소 summary log 저장
+- 장애 발생 시 GCS `logs/web_service/errors/`에 error bundle 저장
+
+BrandMate는 VM 디스크가 100GB 수준이므로 로컬에 로그를 장기 보관하지 않습니다. 평상시에는 얇은
+summary log와 metric만 남기고, 장애가 발생했을 때만 상세 error bundle을 GCS에 저장합니다.
+
+```text
+gs://ssakda/projects/brandmate/logs/web_service/
+  summary/
+    dt=YYYY-MM-DD/
+      summary.jsonl
+  errors/
+    dt=YYYY-MM-DD/
+      {request_id}/
+        error.json
+        request_summary.json
+        traceback.txt
+```
+
+`summary.jsonl`에는 모든 요청의 최소 메타데이터만 저장합니다.
+
+```json
+{"time":"2026-07-13T15:30:22+09:00","request_id":"req_1","status":"success","endpoint":"/api/v1/ad-content/generate","latency_ms":92340,"copy_model":"gpt-4.1-mini","image_model":"flux_schnell"}
+{"time":"2026-07-13T15:35:10+09:00","request_id":"req_2","status":"failed","endpoint":"/api/v1/ad-content/generate","latency_ms":120000,"stage":"comfyui_result","error_type":"TimeoutError"}
+```
+
+상세 request payload, 긴 prompt, 이미지 base64, LLM raw response 전체는 summary log에 남기지 않습니다.
+이 값들은 비용, 개인정보, 용량 문제를 만들 수 있으므로 장애 발생 시 필요한 범위에서만 error bundle에
+제한적으로 저장합니다.
+
+### 6.3 Observability 적용 우선순위
+
+Cloud Logging은 관리형 로그 수집/검색에는 좋지만 비용이 발생할 수 있습니다. Prometheus와 Grafana는
+오픈소스지만 직접 운영해야 하고, 기본 역할은 로그 저장이 아니라 metric 수집과 대시보드입니다.
+
+BrandMate에서는 아래 순서로 구현합니다.
+
+1. Airflow 기반 주기 데이터 인입 파이프라인을 먼저 구축합니다.
+2. FastAPI에 `request_id` 기반 structured logging을 추가합니다.
+3. 장애 발생 시 GCS error bundle 저장을 추가합니다.
+4. Prometheus/Grafana는 latency, error rate, GPU 사용률, ComfyUI queue 같은 metric 관찰용으로 추가합니다.
+5. Cloud Logging 연동은 비용과 필요성을 보고 ERROR/WARNING 중심으로 제한 적용합니다.
+
+Prometheus/Grafana를 도입하더라도 GCS를 Prometheus의 기본 저장소로 사용하지 않습니다. Prometheus는
+로컬 TSDB에 짧은 retention을 두고 metric을 저장합니다. GCS는 장애 상세 로그, 평가 결과, error bundle 같은
+장기 보관 산출물에 사용합니다.
+
+```text
+Prometheus/Grafana:
+  request_count, error_rate, latency_p95, GPU memory, ComfyUI queue length
+
+GCS:
+  summary.jsonl, error bundle, evaluation report, generated outputs
+```
+
 ## 7. GCS 구조 생성 순서
 GCS 콘솔에서 마우스로 폴더를 만들어도 동작은 합니다. 
 ★★하지만 팀 온보딩과 재현성을 위해 `gcloud storage` 명령어를 표준으로 사용합니다.
@@ -306,7 +483,186 @@ package docs:
 `{dataset_name}/v1/{artifact_name}` 구조를 사용합니다. 새로운 dataset이나 artifact가 필요하면
 임의로 폴더를 만들지 말고 먼저 팀 내에서 이름을 합의합니다.
 
-## 9. Manifest 작성
+## 9. CSV 주기 인입 파이프라인 기준
+
+CSV를 사람이 매번 VM에 받아서 처리하는 방식은 POC에서는 가능하지만 반복 운영 기준에서는 약합니다.
+파일 누락, 중복 업로드, schema drift, 실패 재처리 기록이 남지 않기 때문입니다. BrandMate 기준에서는
+CSV 원본을 GCS에 먼저 적재하고, 검증과 Parquet 변환 결과를 `curated` 또는 `processed`로 분리합니다.
+
+Airflow는 사용자 트래픽 처리를 위한 도구가 아닙니다. 동시 접속자 수가 아니라 데이터 수집 주기, task 의존성,
+실패 재처리 필요성으로 도입 여부를 판단합니다. 단순한 1회성 데이터셋이면 `cron` 또는 수동 배치로도 충분하지만,
+BrandMate는 3~4일 주기로 외부 데이터가 반복 수집되는 운영을 전제로 하므로 Airflow 기준으로 파이프라인을 설계합니다.
+
+### 9.1 권장 구조
+
+```text
+CSV provider / manual upload
+  -> GCS raw landing bucket prefix
+  -> Airflow DAG
+  -> validation
+  -> transformation
+  -> Parquet conversion
+  -> GCS processed feature prefix
+  -> DS / training / evaluation jobs
+```
+
+```text
+gs://ssakda/projects/brandmate/data/
+  raw/
+    dowhat/
+      weekly/
+        dt=YYYY-MM-DD/
+          source.csv
+          _SUCCESS
+          manifest.json
+
+  curated/
+    dowhat/
+      v1/
+
+  processed/
+    dowhat/
+      v1/
+        hotel_features/
+          part-*.parquet
+          docs/
+            manifest.json
+            description.md
+```
+
+CSV 원본은 `raw/`에 날짜 partition으로 보관합니다. 검증과 정제를 거친 분석 후보 데이터는 `curated/`,
+모델 학습/평가가 바로 읽을 수 있는 산출물은 `processed/`에 둡니다. `raw`와 `processed`를 같은
+prefix에 섞으면 재처리와 롤백이 지저분해집니다.
+
+### 9.2 cron vs Airflow 선택 기준
+
+| 방식 | 사용 가능 조건 | 한계 | BrandMate 판단 |
+| --- | --- | --- | --- |
+| 수동 업로드 + `gcloud storage cp` | 1회성 데이터 전달, 발표용 샘플 적재 | 누가 언제 무엇을 올렸는지 추적이 약함 | 초기 적재만 허용 |
+| `cron` | 1개 스크립트, 1개 데이터 소스, 실패 시 수동 재실행 가능 | task dependency, backfill, 실패 task만 재시도하는 기능이 약함 | 대안으로만 허용 |
+| Airflow / Cloud Composer | 3~4일 주기 반복 수집, raw -> curated -> processed 단계, 검증/변환/업로드 분리, backfill 필요 | 초기 설정 비용이 있음 | BrandMate 주기 인입 기본 설계 |
+
+결론은 단순합니다. 1개 스크립트를 1회성으로 실행하는 수준이면 `cron`으로 충분합니다. 그러나 BrandMate는
+3~4일 주기 데이터 수집을 전제로 하고, 수집 -> 검증 -> 변환 -> 업로드 -> manifest 갱신처럼 단계가 나뉩니다.
+따라서 주기 인입 파이프라인은 Airflow 기준으로 설계합니다. 특히 실패한 단계만 재실행하거나 특정 날짜 데이터를
+backfill해야 하는 순간부터는 `cron`보다 Airflow가 더 적합합니다.
+
+### 9.3 cron을 쓰는 경우의 최소 기준
+
+Airflow 구축 전 임시로 `cron`을 쓰는 경우에도 하나의 shell script에 모든 로직을 몰아넣지 않습니다.
+실제 수집/검증/변환 로직은 Python 모듈로 분리하고, `cron` script는 아래 책임만 가집니다.
+
+1. 실행 날짜와 run id를 만듭니다.
+2. raw 파일을 GCS `data/raw/{source}/dt=YYYY-MM-DD/`에 저장합니다.
+3. validation script를 실행합니다.
+4. 변환 script를 실행해 `curated` 또는 `processed` prefix에 결과를 저장합니다.
+5. validation summary, output path, 실패 로그를 `logs/data_pipeline/`에 남깁니다.
+
+```bash
+# [Design Intent] Airflow 구축 전 임시 cron에서도 실제 검증/변환 로직은 Python 모듈로 분리한다.
+0 3 */3 * * cd /home/brandmate/final_1_team && \
+  ./scripts/ingest_dowhat_csv.sh >> outputs/logs/data_pipeline/dowhat_cron.log 2>&1
+```
+
+### 9.4 Airflow DAG 책임 범위
+
+Airflow는 데이터 처리를 직접 길게 구현하는 곳이 아니라 orchestration 계층입니다. BrandMate에서는 아래 조건을
+전제로 주기 인입 파이프라인을 Airflow 기준으로 설계합니다.
+
+- 데이터 소스가 여러 개로 늘어납니다.
+- 수집, 검증, 변환, 업로드, manifest 갱신을 task별로 분리해야 합니다.
+- 실패한 task만 재시도해야 합니다.
+- 특정 날짜 수집분을 다시 처리하는 backfill이 필요합니다.
+- 팀원이 UI에서 실행 이력과 실패 지점을 확인해야 합니다.
+
+Airflow DAG는 아래 책임만 가집니다.
+
+1. GCS raw prefix에 신규 CSV가 있는지 확인합니다.
+2. 파일명, 날짜 partition, checksum, manifest 존재 여부를 확인합니다.
+3. Spark 또는 Python batch job을 실행해 schema와 품질을 검증합니다.
+4. 도메인 feature 생성과 전처리를 수행합니다.
+5. 결과를 Parquet으로 변환해 `processed/{source}/v1/{artifact_name}/`에 저장합니다.
+6. validation summary와 실패 로그를 `logs/data_pipeline/`에 남깁니다.
+
+```python
+# [Design Intent] Airflow는 배치 실행 순서와 실패 재처리를 담당하고, 무거운 변환 로직은 Spark/Python job으로 분리한다.
+with DAG(
+    dag_id="brandmate_dowhat_weekly_ingestion",
+    schedule="0 3 */3 * *",
+    catchup=False,
+    max_active_runs=1,
+) as dag:
+    wait_for_csv = GCSObjectsWithPrefixExistenceSensor(
+        task_id="wait_for_csv",
+        bucket="ssakda",
+        prefix="projects/brandmate/data/raw/dowhat/weekly/dt={{ ds }}/",
+    )
+
+    validate_csv = DataprocSubmitJobOperator(
+        task_id="validate_csv",
+        project_id="sprint-ai-chunk5-01",
+        region="asia-northeast3",
+        job=build_spark_job("jobs/validate_dowhat_csv.py", "{{ ds }}"),
+    )
+
+    transform_to_parquet = DataprocSubmitJobOperator(
+        task_id="transform_to_parquet",
+        project_id="sprint-ai-chunk5-01",
+        region="asia-northeast3",
+        job=build_spark_job("jobs/build_dowhat_hotel_features.py", "{{ ds }}"),
+    )
+
+    wait_for_csv >> validate_csv >> transform_to_parquet
+```
+
+위 코드는 구조 예시입니다. 실제 repo에 넣을 때는 `build_spark_job()`과 job 파일을 별도 모듈로 분리하고,
+환경 변수로 bucket, project, region을 주입합니다.
+
+### 9.5 CSV 검증 기준
+
+CSV 인입 시 최소한 아래 검증은 통과해야 합니다.
+
+| 검증 항목 | 목적 | 실패 처리 |
+| --- | --- | --- |
+| 필수 컬럼 존재 | schema drift 차단 | DAG 실패 |
+| row count > 0 | 빈 파일 차단 | DAG 실패 |
+| primary key 중복률 | 중복 수집 감지 | 임계치 초과 시 실패 |
+| null 비율 | feature 품질 저하 감지 | 임계치 초과 시 실패 |
+| 날짜 범위 | 잘못된 기간 파일 차단 | DAG 실패 |
+| checksum | 같은 파일 재업로드/변조 추적 | manifest에 기록 |
+
+검증 결과는 raw 파일 옆이나 로그 prefix에 JSON으로 남깁니다.
+
+```json
+{
+  "dataset": "dowhat",
+  "dt": "2026-07-13",
+  "source_path": "gs://ssakda/projects/brandmate/data/raw/dowhat/weekly/dt=2026-07-13/source.csv",
+  "row_count": 102391,
+  "required_columns_passed": true,
+  "duplicate_rate": 0.0012,
+  "null_rate": {
+    "hotel_id": 0.0,
+    "review_text": 0.034
+  },
+  "checksum": "sha256:..."
+}
+```
+
+### 9.6 Storage / Processing / Consumption 정리
+
+| Layer | 역할 | BrandMate 기준 |
+| --- | --- | --- |
+| Input Storage | CSV 원본 landing | `data/raw/dowhat/weekly/dt=YYYY-MM-DD/` |
+| Processing | 검증, 도메인 feature 생성, 전처리 | Airflow가 batch job 실행 |
+| Output Storage | Parquet feature artifact 저장 | `data/processed/dowhat/v1/hotel_features/` |
+| Consumption | DS 분석, 학습, 평가 | GCS processed prefix 또는 DVC pull |
+
+Feast는 지금 단계에서 필수로 넣지 않습니다. 온라인 feature serving이 필요한 단계가 아니면 인프라만 무거워집니다.
+현재는 GCS의 Parquet dataset을 offline feature store처럼 쓰고, 필요해지는 시점에 Feast 또는 BigQuery 기반
+feature store로 승격하는 게 맞습니다.
+
+## 10. Manifest 작성
 
 Manifest와 description 작성 기준은 [DATASET_SUBMISSION_ONBOARDING.md](./DATASET_SUBMISSION_ONBOARDING.md)를 따릅니다.
 
@@ -365,7 +721,7 @@ data/processed/aihub_food_image_text/v1/food_description_data/docs/
   description.md
 ```
 
-## 10. DVC 설정
+## 11. DVC 설정
 
 DVC는 Git commit과 데이터 버전을 연결하기 위한 포인터입니다. `gs://ssakda/dvc/brandmate/`는 DVC 내부 object store이므로 사람이 직접 파일을 정리하지 않습니다.
 
@@ -432,7 +788,7 @@ git pull
 dvc pull
 ```
 
-## 11. VM으로 데이터 내려받기
+## 12. VM으로 데이터 내려받기
 
 GPU VM 디스크는 100GB 이하이므로 전체 데이터를 계속 로컬에 쌓지 않습니다. 필요한 dataset과 artifact만 내려받습니다.
 
@@ -461,7 +817,7 @@ du -sh ~/data/brandmate
 df -h
 ```
 
-## 12. 결과 업로드
+## 13. 결과 업로드
 
 평가 결과는 로컬 구조를 그대로 GCS에 올립니다.
 
@@ -490,7 +846,7 @@ gs://ssakda/projects/brandmate/outputs/web_service_generated/YYYYMMDD/request_id
   metadata.json
 ```
 
-## 13. 운영 규칙
+## 14. 운영 규칙
 
 - GCS 폴더명에는 `10gb` 같은 용량 정보를 넣지 않습니다. 용량은 manifest에 기록합니다.
 - dataset이 다르면 `curated/{dataset_name}/v1` 또는 `processed/{dataset_name}/v1/{artifact_name}`처럼 반드시 분리합니다.
