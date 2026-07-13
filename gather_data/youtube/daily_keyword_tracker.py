@@ -1,97 +1,245 @@
-# -*- coding: utf-8 -*-
-"""
-[매일 1회 실행] 인기 급상승 영상 수집 + 키워드 빈도를 날짜별로 저장
+#!/usr/bin/env python
+"""Create a versioned daily keyword snapshot from YouTube videos."""
 
-- youtube_trending_collector.py 와 youtube_trend_analysis.py의 로직을 합쳐서
-  '오늘의 키워드 빈도표'를 history 폴더에 날짜별 파일로 쌓아둡니다.
-- 이 파일이 여러 날짜만큼 쌓이면 compare_trends.py로 변화량을 비교할 수 있어요.
+from __future__ import annotations
 
-사전 준비:
-1. pip install google-api-python-client pandas python-dotenv
-   (더 정확한 분석을 원하면) pip install konlpy
-2. 루트 .env 파일에 YOUTUBE_API_KEY 입력
-3. 매일 1번씩 python daily_keyword_tracker.py 실행 (며칠 반복)
-"""
-
-from googleapiclient.discovery import build
-from collections import Counter
-from datetime import datetime
-import pandas as pd
+import argparse
+from datetime import date
+import logging
+from pathlib import Path
 import re
-import os
-from dotenv import load_dotenv
+from typing import Any, Iterable, Sequence
 
-# ===== 설정 =====
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-load_dotenv(os.path.join(BASE_DIR, "..", ".env"))
+from youtube_trends.collector import (
+    CollectionError,
+    build_youtube_service,
+    fetch_trending_videos,
+    read_video_csv,
+)
+from youtube_trends.config import (
+    DEFAULT_REGION_CODE,
+    HISTORY_V2_DIR,
+    CollectionOptions,
+    ConfigurationError,
+    collection_options_from_env,
+    configure_console,
+    configure_logging,
+    current_run_date,
+    env_text,
+    load_environment,
+    parse_run_date,
+    require_api_key,
+)
+from youtube_trends.csv_io import DataFileError, atomic_write_csv
+from youtube_trends.keywords import (
+    DEFAULT_STOPWORDS,
+    SNAPSHOT_FIELDS,
+    KeywordAnalysisError,
+    build_keyword_snapshot,
+    extract_keyword_occurrences,
+)
 
-API_KEY = os.getenv("YOUTUBE_API_KEY")
-REGION_CODE = "KR"
+
+REGION_CODE = DEFAULT_REGION_CODE
 TOTAL_VIDEOS = 100
-HISTORY_DIR = os.path.join(BASE_DIR, "history")   # 날짜별 파일이 쌓이는 폴더
-
-STOPWORDS = {"영상", "이", "가", "은", "는", "을", "를", "에", "의", "와", "과", "도", "으로", "with", "the", "and"}
-
-
-def get_trending_videos():
-    youtube = build("youtube", "v3", developerKey=API_KEY)
-    videos = []
-    next_page_token = None
-
-    while len(videos) < TOTAL_VIDEOS:
-        request = youtube.videos().list(
-            part="snippet,statistics",
-            chart="mostPopular",
-            regionCode=REGION_CODE,
-            maxResults=50,
-            pageToken=next_page_token
-        )
-        response = request.execute()
-        for item in response.get("items", []):
-            snippet = item.get("snippet", {})
-            videos.append({
-                "title": snippet.get("title", ""),
-                "tags": ",".join(snippet.get("tags", [])) if snippet.get("tags") else ""
-            })
-        next_page_token = response.get("nextPageToken")
-        if not next_page_token:
-            break
-
-    return videos[:TOTAL_VIDEOS]
+HISTORY_DIR = HISTORY_V2_DIR
+STOPWORDS = DEFAULT_STOPWORDS
+RAW_FILENAME_PATTERN = re.compile(
+    r"^youtube_trending_[A-Z]{2}_(\d{4})(\d{2})(\d{2})\.csv$"
+)
 
 
-def extract_keywords(texts):
+def build_parser(defaults: CollectionOptions | None = None) -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        description="Create a v2 keyword snapshot from a raw video CSV or the live API."
+    )
+    parser.add_argument(
+        "--input-csv",
+        type=Path,
+        help="reuse a collector CSV instead of calling the API",
+    )
+    parser.add_argument("--region", default=defaults.region_code if defaults else None)
+    parser.add_argument("--limit", type=int, default=defaults.total_videos if defaults else None)
+    parser.add_argument("--page-size", type=int, default=defaults.page_size if defaults else None)
+    parser.add_argument("--timeout", type=float, default=defaults.timeout if defaults else None)
+    parser.add_argument("--retries", type=int, default=defaults.retries if defaults else None)
+    parser.add_argument("--date", dest="run_date", help="snapshot date in YYYY-MM-DD format")
+    parser.add_argument("--history-dir", type=Path, default=HISTORY_DIR)
+    parser.add_argument("--output-file", type=Path, help="explicit output CSV path")
+    parser.add_argument(
+        "--tokenizer",
+        choices=("regex", "okt"),
+        default=None,
+    )
+    parser.add_argument(
+        "--fail-if-exists",
+        action="store_true",
+        help="do not replace an existing output file",
+    )
+    parser.add_argument(
+        "--log-level",
+        choices=("DEBUG", "INFO", "WARNING", "ERROR"),
+        default="INFO",
+    )
+    return parser
+
+
+def _date_from_input(path: Path) -> date | None:
+    match = RAW_FILENAME_PATTERN.fullmatch(path.name)
+    if not match:
+        return None
     try:
-        from konlpy.tag import Okt
-        okt = Okt()
-        words = []
-        for text in texts:
-            words.extend([n for n in okt.nouns(str(text)) if len(n) > 1 and n not in STOPWORDS])
-        return words
-    except Exception:
-        words = []
-        for text in texts:
-            tokens = re.findall(r"[가-힣a-zA-Z0-9]+", str(text))
-            words.extend([t for t in tokens if len(t) > 1 and t not in STOPWORDS])
-        return words
+        return date(int(match.group(1)), int(match.group(2)), int(match.group(3)))
+    except ValueError as exc:
+        raise ConfigurationError(f"invalid date in input filename: {path.name}") from exc
+
+
+def _same_path(left: Path, right: Path) -> bool:
+    return left.resolve(strict=False) == right.resolve(strict=False)
+
+
+def _limit_unique_videos(
+    videos: Iterable[Any],
+    limit: int,
+) -> list[Any]:
+    selected: list[Any] = []
+    seen_ids: set[str] = set()
+    for video in videos:
+        video_id = str(video.video_id)
+        if not video_id or video_id in seen_ids:
+            continue
+        seen_ids.add(video_id)
+        selected.append(video)
+        if len(selected) >= limit:
+            break
+    return selected
+
+
+def get_trending_videos(
+    *,
+    api_key: str | None = None,
+    options: CollectionOptions | None = None,
+    service: Any | None = None,
+) -> list[dict[str, str]]:
+    """Compatibility wrapper returning title and comma-joined tags."""
+    load_environment()
+    resolved = options or collection_options_from_env()
+    youtube = service or build_youtube_service(
+        api_key or require_api_key(), timeout=resolved.timeout
+    )
+    return [
+        {"title": video.title, "tags": ",".join(video.tags)}
+        for video in fetch_trending_videos(youtube, resolved)
+    ]
+
+
+def extract_keywords(texts: Iterable[object]) -> list[str]:
+    """Compatibility wrapper using the deterministic regex tokenizer."""
+    return extract_keyword_occurrences(texts, tokenizer_name="regex")
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    configure_console()
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    load_environment()
+    configure_logging(args.log_level)
+
+    try:
+        tokenizer_name = args.tokenizer or env_text("YOUTUBE_TOKENIZER", "regex")
+        if tokenizer_name not in {"regex", "okt"}:
+            raise ConfigurationError("YOUTUBE_TOKENIZER must be 'regex' or 'okt'")
+        inferred_date = _date_from_input(args.input_csv) if args.input_csv else None
+        if args.input_csv and not args.run_date and inferred_date is None:
+            raise ConfigurationError(
+                "--date is required when the input filename has no YYYYMMDD date"
+            )
+        run_date = (
+            parse_run_date(args.run_date)
+            if args.run_date
+            else inferred_date or current_run_date()
+        )
+        output = args.output_file or (
+            args.history_dir / f"keywords_{run_date.isoformat()}.csv"
+        )
+        if args.input_csv and _same_path(args.input_csv, output):
+            raise ConfigurationError("input CSV and output CSV must be different files")
+        if args.fail_if_exists and output.exists():
+            raise DataFileError(f"output already exists: {output}")
+
+        if args.input_csv:
+            if any(
+                value is not None
+                for value in (args.page_size, args.timeout, args.retries)
+            ):
+                raise ConfigurationError(
+                    "--page-size, --timeout, and --retries apply only to live collection"
+                )
+            raw_snapshot = read_video_csv(args.input_csv)
+            videos = list(raw_snapshot.videos)
+            if args.limit is not None:
+                if not 1 <= args.limit <= 500:
+                    raise ConfigurationError("limit must be between 1 and 500")
+                videos = _limit_unique_videos(videos, args.limit)
+            if (
+                raw_snapshot.region_code
+                and args.region
+                and raw_snapshot.region_code != args.region.upper()
+            ):
+                raise ConfigurationError(
+                    "--region does not match the input CSV region_code"
+                )
+            region = raw_snapshot.region_code or args.region or env_text(
+                "YOUTUBE_REGION_CODE", DEFAULT_REGION_CODE
+            )
+            region = region.strip().upper()
+            if not re.fullmatch(r"[A-Z]{2}", region):
+                raise ConfigurationError("region code must be two ASCII letters")
+            provenance = (
+                "collector_csv_v2"
+                if raw_snapshot.schema_version == 2
+                else "legacy_collector_csv"
+            )
+        else:
+            options = collection_options_from_env(
+                region_code=args.region,
+                total_videos=args.limit,
+                page_size=args.page_size,
+                timeout=args.timeout,
+                retries=args.retries,
+            )
+            service = build_youtube_service(require_api_key(), timeout=options.timeout)
+            videos = fetch_trending_videos(service, options)
+            region = options.region_code
+            inferred_date = None
+            provenance = "live_api"
+
+        rows = build_keyword_snapshot(
+            videos,
+            snapshot_date=run_date,
+            region=region,
+            tokenizer_name=tokenizer_name,
+            provenance=provenance,
+        )
+        atomic_write_csv(
+            output,
+            SNAPSHOT_FIELDS,
+            rows,
+            overwrite=not args.fail_if_exists,
+        )
+    except ConfigurationError as exc:
+        logging.error("configuration error: %s", exc)
+        return 2
+    except (CollectionError, DataFileError, KeywordAnalysisError, OSError) as exc:
+        logging.error("keyword snapshot failed: %s", exc)
+        return 1
+
+    print(
+        f"saved {len(rows)} keywords from {len({video.video_id for video in videos})} "
+        f"videos to {output}"
+    )
+    return 0
 
 
 if __name__ == "__main__":
-    if not API_KEY:
-        raise SystemExit("YOUTUBE_API_KEY가 없습니다. 루트 .env 파일을 확인하세요.")
-
-    os.makedirs(HISTORY_DIR, exist_ok=True)
-
-    today = datetime.now().strftime("%Y-%m-%d")
-    print(f"[{today}] {REGION_CODE} 인기 급상승 영상 수집 중...")
-
-    videos = get_trending_videos()
-    all_text = [v["title"] for v in videos] + [v["tags"] for v in videos]
-    words = extract_keywords(all_text)
-
-    freq_df = pd.DataFrame(Counter(words).most_common(), columns=["keyword", "count"])
-    out_path = os.path.join(HISTORY_DIR, f"keywords_{today}.csv")
-    freq_df.to_csv(out_path, index=False, encoding="utf-8-sig")
-
-    print(f"완료! {len(freq_df)}개 키워드를 '{out_path}' 에 저장했습니다.")
-    print("내일도 같은 방식으로 실행해서 며칠치 데이터를 쌓아주세요.")
+    raise SystemExit(main())

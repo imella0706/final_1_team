@@ -1,92 +1,212 @@
-# -*- coding: utf-8 -*-
-"""
-유튜브 인기 급상승 영상 수집 스크립트
-목적: SNS 트렌드 분석 과제 - 유튜브 파트
+#!/usr/bin/env python
+"""Collect a raw YouTube most-popular snapshot for one region."""
 
-사전 준비:
-1. pip install google-api-python-client python-dotenv
-2. 루트 .env 파일에 YOUTUBE_API_KEY를 입력하세요.
-3. python youtube_trending_collector.py 실행
-"""
+from __future__ import annotations
 
-from googleapiclient.discovery import build
-import csv
-from datetime import datetime
-import os
-from dotenv import load_dotenv
+import argparse
+from datetime import datetime, timezone
+import logging
+from pathlib import Path
+from typing import Any, Sequence
 
-# ===== 설정 =====
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-load_dotenv(os.path.join(BASE_DIR, "..", ".env"))
-
-API_KEY = os.getenv("YOUTUBE_API_KEY")
-REGION_CODE = "KR"                    # 한국 기준 (다른 나라: US, JP 등)
-MAX_RESULTS = 50                      # 한 번에 가져올 영상 수 (최대 50)
-TOTAL_VIDEOS = 100                    # 총 수집할 영상 수 (50개씩 나눠서 가져옴)
-OUTPUT_FILE = os.path.join(
-    BASE_DIR,
-    f"youtube_trending_{REGION_CODE}_{datetime.now().strftime('%Y%m%d')}.csv",
+from youtube_trends.collector import (
+    LEGACY_VIDEO_FIELDS,
+    CollectionError,
+    VideoRecord,
+    build_youtube_service,
+    fetch_trending_videos,
+    write_video_csv,
 )
+from youtube_trends.config import (
+    DEFAULT_PAGE_SIZE,
+    DEFAULT_REGION_CODE,
+    DEFAULT_RETRIES,
+    DEFAULT_TIMEOUT,
+    DEFAULT_TOTAL_VIDEOS,
+    RAW_DATA_DIR,
+    CollectionOptions,
+    ConfigurationError,
+    collection_options_from_env,
+    configure_console,
+    configure_logging,
+    current_run_date,
+    load_environment,
+    parse_run_date,
+    require_api_key,
+)
+from youtube_trends.csv_io import DataFileError
 
 
-def get_trending_videos():
-    youtube = build("youtube", "v3", developerKey=API_KEY)
+REGION_CODE = DEFAULT_REGION_CODE
+MAX_RESULTS = DEFAULT_PAGE_SIZE
+TOTAL_VIDEOS = DEFAULT_TOTAL_VIDEOS
 
-    videos = []
-    next_page_token = None
 
-    while len(videos) < TOTAL_VIDEOS:
-        request = youtube.videos().list(
-            part="snippet,statistics,contentDetails",
-            chart="mostPopular",
-            regionCode=REGION_CODE,
-            maxResults=MAX_RESULTS,
-            pageToken=next_page_token
+def build_parser(defaults: CollectionOptions | None = None) -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        description="Collect a YouTube most-popular video snapshot."
+    )
+    parser.add_argument(
+        "--region",
+        default=defaults.region_code if defaults else None,
+        help="ISO 3166-1 alpha-2 region code",
+    )
+    parser.add_argument(
+        "--limit",
+        type=int,
+        default=defaults.total_videos if defaults else None,
+        help="number of videos to collect",
+    )
+    parser.add_argument(
+        "--page-size",
+        type=int,
+        default=defaults.page_size if defaults else None,
+        help="API page size (1-50)",
+    )
+    parser.add_argument(
+        "--timeout",
+        type=float,
+        default=defaults.timeout if defaults else None,
+        help="HTTP timeout in seconds",
+    )
+    parser.add_argument(
+        "--retries",
+        type=int,
+        default=defaults.retries if defaults else None,
+        help="retry count for transient API errors",
+    )
+    parser.add_argument("--date", dest="run_date", help="output date in YYYY-MM-DD format")
+    parser.add_argument(
+        "--output-dir",
+        type=Path,
+        default=RAW_DATA_DIR,
+        help="directory for the default output name",
+    )
+    parser.add_argument("--output-file", type=Path, help="explicit output CSV path")
+    parser.add_argument(
+        "--fail-if-exists",
+        action="store_true",
+        help="do not replace an existing output file",
+    )
+    parser.add_argument(
+        "--log-level",
+        choices=("DEBUG", "INFO", "WARNING", "ERROR"),
+        default="INFO",
+    )
+    return parser
+
+
+def _collected_at() -> str:
+    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def get_trending_videos(
+    *,
+    api_key: str | None = None,
+    region_code: str = REGION_CODE,
+    total_videos: int = TOTAL_VIDEOS,
+    page_size: int = MAX_RESULTS,
+    timeout: float = DEFAULT_TIMEOUT,
+    retries: int = DEFAULT_RETRIES,
+    service: Any | None = None,
+) -> list[dict[str, Any]]:
+    """Compatibility wrapper returning the original dictionary shape."""
+    load_environment()
+    options = CollectionOptions(
+        region_code=region_code,
+        total_videos=total_videos,
+        page_size=page_size,
+        timeout=timeout,
+        retries=retries,
+    )
+    youtube = service or build_youtube_service(api_key or require_api_key(), timeout=timeout)
+    records = fetch_trending_videos(youtube, options)
+    collected_at = _collected_at()
+    return [
+        {
+            key: value
+            for key, value in record.to_csv_row(
+                region_code=options.region_code,
+                collected_at=collected_at,
+            ).items()
+            if key in LEGACY_VIDEO_FIELDS
+        }
+        for record in records
+    ]
+
+
+def save_to_csv(
+    videos: Sequence[VideoRecord | dict[str, Any]],
+    filename: str | Path,
+    *,
+    region_code: str = REGION_CODE,
+    overwrite: bool = True,
+) -> None:
+    records: list[VideoRecord] = []
+    for video in videos:
+        if isinstance(video, VideoRecord):
+            records.append(video)
+        else:
+            records.append(
+                VideoRecord.from_csv_row(
+                    {key: str(value) for key, value in video.items()}
+                )
+            )
+    write_video_csv(
+        Path(filename),
+        records,
+        region_code=region_code,
+        collected_at=_collected_at(),
+        overwrite=overwrite,
+    )
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    configure_console()
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    load_environment()
+    configure_logging(args.log_level)
+
+    try:
+        options = collection_options_from_env(
+            region_code=args.region,
+            total_videos=args.limit,
+            page_size=args.page_size,
+            timeout=args.timeout,
+            retries=args.retries,
         )
-        response = request.execute()
+        run_date = (
+            parse_run_date(args.run_date)
+            if args.run_date
+            else current_run_date()
+        )
+        output = args.output_file or (
+            args.output_dir
+            / f"youtube_trending_{options.region_code}_{run_date.strftime('%Y%m%d')}.csv"
+        )
+        if args.fail_if_exists and output.exists():
+            raise DataFileError(f"output already exists: {output}")
+        api_key = require_api_key()
+        service = build_youtube_service(api_key, timeout=options.timeout)
+        videos = fetch_trending_videos(service, options)
+        write_video_csv(
+            output,
+            videos,
+            region_code=options.region_code,
+            collected_at=_collected_at(),
+            overwrite=not args.fail_if_exists,
+        )
+    except ConfigurationError as exc:
+        logging.error("configuration error: %s", exc)
+        return 2
+    except (CollectionError, DataFileError, OSError) as exc:
+        logging.error("collection failed: %s", exc)
+        return 1
 
-        for item in response.get("items", []):
-            snippet = item.get("snippet", {})
-            stats = item.get("statistics", {})
-
-            videos.append({
-                "video_id": item.get("id"),
-                "title": snippet.get("title"),
-                "channel_title": snippet.get("channelTitle"),
-                "category_id": snippet.get("categoryId"),
-                "published_at": snippet.get("publishedAt"),
-                "view_count": stats.get("viewCount", 0),
-                "like_count": stats.get("likeCount", 0),
-                "comment_count": stats.get("commentCount", 0),
-                "tags": ",".join(snippet.get("tags", [])) if snippet.get("tags") else "",
-                "url": f"https://www.youtube.com/watch?v={item.get('id')}"
-            })
-
-        next_page_token = response.get("nextPageToken")
-        if not next_page_token:
-            break
-
-    return videos[:TOTAL_VIDEOS]
-
-
-def save_to_csv(videos, filename):
-    if not videos:
-        print("수집된 데이터가 없습니다.")
-        return
-
-    keys = videos[0].keys()
-    with open(filename, "w", newline="", encoding="utf-8-sig") as f:
-        writer = csv.DictWriter(f, fieldnames=keys)
-        writer.writeheader()
-        writer.writerows(videos)
-
-    print(f"완료! {len(videos)}개 영상 데이터를 '{filename}' 파일로 저장했습니다.")
+    print(f"saved {len(videos)} videos to {output}")
+    return 0
 
 
 if __name__ == "__main__":
-    if not API_KEY:
-        raise SystemExit("YOUTUBE_API_KEY가 없습니다. 루트 .env 파일을 확인하세요.")
-
-    print(f"[{REGION_CODE}] 인기 급상승 영상 수집을 시작합니다...")
-    trending_videos = get_trending_videos()
-    save_to_csv(trending_videos, OUTPUT_FILE)
+    raise SystemExit(main())

@@ -44,6 +44,16 @@ MEME_FIELDS = [
     "usage_example", "summary_source", "summary_status",
     "summary_confidence", "source_url", "collected_at",
 ]
+FINAL_REJECT_TERMS = {
+    "",
+    "목차",
+    "사용 예시",
+    "브랜드 활용 팁",
+    "함께 보면 더 알찬 아티클",
+    "이런 아티클도 있어요",
+}
+COUNTED_BUCKET_PATTERN = re.compile(r"\s+\d+$")
+SUSPECT_TERM_FIELDS = ["article_id", "meme_id", "meme_name", "parent_section", "position", "reason"]
 
 LOG = logging.getLogger("careet_crawler")
 
@@ -516,6 +526,83 @@ def atomic_write_csv(path: Path, fields: list[str], rows: Iterable[dict[str, Any
     os.replace(temporary, path)
 
 
+def _final_term_key(value: str) -> str:
+    return re.sub(r"[^0-9A-Za-z가-힣]+", "", clean_text(value)).lower()
+
+
+def _looks_like_counted_bucket(value: str) -> bool:
+    value = clean_text(value)
+    return bool(COUNTED_BUCKET_PATTERN.search(value))
+
+
+def suspect_non_term_rows(rows: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
+    rows = list(rows)
+    parent_keys = {_final_term_key(str(row.get("parent_section", ""))) for row in rows if row.get("parent_section")}
+    suspects: list[dict[str, Any]] = []
+    for row in rows:
+        term = clean_text(str(row.get("meme_name", "")))
+        key = _final_term_key(term)
+        reasons: list[str] = []
+        if key and key in parent_keys:
+            reasons.append("used_as_parent_section")
+        if _looks_like_counted_bucket(term):
+            reasons.append("ends_with_standalone_count")
+        if key.isdigit():
+            reasons.append("number_only")
+        if reasons:
+            suspects.append({**row, "reason": "|".join(reasons)})
+    return suspects
+
+
+def final_meme_terms(rows: Iterable[dict[str, Any]]) -> list[str]:
+    rows = list(rows)
+    terms: list[str] = []
+    seen: set[str] = set()
+    reject_keys = {_final_term_key(value) for value in FINAL_REJECT_TERMS}
+    parent_keys = {_final_term_key(str(row.get("parent_section", ""))) for row in rows if row.get("parent_section")}
+    for row in rows:
+        term = clean_text(str(row.get("meme_name", "")))
+        key = _final_term_key(term)
+        if len(key) < 2 or key.isdigit() or key in reject_keys or key in parent_keys or key in seen or _looks_like_counted_bucket(term):
+            continue
+        terms.append(term)
+        seen.add(key)
+    return terms
+
+
+def atomic_write_json(path: Path, values: Any) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    with temporary.open("w", encoding="utf-8", newline="\n") as handle:
+        json.dump(values, handle, ensure_ascii=False, indent=2)
+        handle.write("\n")
+        handle.flush()
+        os.fsync(handle.fileno())
+    os.replace(temporary, path)
+
+
+def _date_from_meme_csv(path: Path) -> str:
+    match = re.search(r"careet_memes_(\d{8})\.csv$", path.name)
+    return match.group(1) if match else ""
+
+
+def emit_final_terms(output_root: Path, meme_rows: Iterable[dict[str, Any]], stamp: str) -> Path:
+    final_path = output_root / "final_processed" / f"careet_meme_terms_{stamp}.json"
+    atomic_write_json(final_path, final_meme_terms(meme_rows))
+    return final_path
+
+
+def emit_suspect_terms(output_root: Path, meme_rows: Iterable[dict[str, Any]], stamp: str) -> Path:
+    suspect_path = output_root / "final_processed" / f"careet_meme_term_suspects_{stamp}.csv"
+    atomic_write_csv(suspect_path, SUSPECT_TERM_FIELDS, suspect_non_term_rows(meme_rows))
+    return suspect_path
+
+
+def read_csv_rows(path: Path) -> list[dict[str, str]]:
+    with path.open("r", encoding="utf-8-sig", newline="") as handle:
+        return list(csv.DictReader(handle))
+
+
 def _sort_articles(rows: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
     def key(row: dict[str, Any]) -> tuple[int, int, int]:
         try:
@@ -550,6 +637,7 @@ def crawl(args: argparse.Namespace, client: PoliteSession | None = None) -> tupl
     stamp = datetime.now().astimezone().strftime("%Y%m%d")
     article_path = output_root / "raw" / f"careet_articles_{stamp}.csv"
     meme_path = output_root / "processed" / f"careet_memes_{stamp}.csv"
+    final_path = output_root / "final_processed" / f"careet_meme_terms_{stamp}.json"
     previous_articles = read_csv_by_key(article_path, "article_id") if args.resume else {}
     previous_memes = read_csv_by_key(meme_path, "meme_id") if args.resume else {}
     generator: SummaryGenerator = DisabledSummaryGenerator() if args.summary_mode == "off" else RuleBasedSummaryGenerator()
@@ -644,10 +732,14 @@ def crawl(args: argparse.Namespace, client: PoliteSession | None = None) -> tupl
             if index % 10 == 0:
                 atomic_write_csv(article_path, ARTICLE_FIELDS, _sort_articles(articles_by_id.values()))
                 atomic_write_csv(meme_path, MEME_FIELDS, meme_rows)
+                atomic_write_json(final_path, final_meme_terms(meme_rows))
+                emit_suspect_terms(output_root, meme_rows, stamp)
     except KeyboardInterrupt:
         LOG.warning("중단 신호 수신; 현재까지의 결과를 체크포인트로 저장")
         atomic_write_csv(article_path, ARTICLE_FIELDS, _sort_articles(articles_by_id.values()))
         atomic_write_csv(meme_path, MEME_FIELDS, meme_rows)
+        atomic_write_json(final_path, final_meme_terms(meme_rows))
+        emit_suspect_terms(output_root, meme_rows, stamp)
         raise
     finally:
         if owns_client:
@@ -658,6 +750,8 @@ def crawl(args: argparse.Namespace, client: PoliteSession | None = None) -> tupl
     meme_rows.sort(key=lambda row: (article_order.get(str(row["article_id"]), len(article_order)), int(row["position"])))
     atomic_write_csv(article_path, ARTICLE_FIELDS, articles)
     atomic_write_csv(meme_path, MEME_FIELDS, meme_rows)
+    emit_final_terms(output_root, meme_rows, stamp)
+    emit_suspect_terms(output_root, meme_rows, stamp)
     LOG.info(
         "완료: articles=%d success=%d failed=%d no_toc=%d memes=%d summaries=%d images=%d",
         len(articles),
@@ -681,6 +775,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--output-dir", type=Path, default=Path("data"))
     parser.add_argument("--list-only", action="store_true")
     parser.add_argument("--resume", action="store_true")
+    parser.add_argument("--emit-final-from-csv", type=Path, help="existing processed/careet_memes_YYYYMMDD.csv에서 final_processed JSON만 생성")
+    parser.add_argument("--audit-final-from-csv", type=Path, help="existing processed/careet_memes_YYYYMMDD.csv에서 제외 의심 후보 CSV만 생성")
     parser.add_argument("--summary-mode", choices=("rule", "off"), default="rule")
     parser.add_argument("--download-thumbnails", action="store_true")
     parser.add_argument("--max-image-bytes", type=int, default=10_485_760)
@@ -702,6 +798,11 @@ def validate_args(parser: argparse.ArgumentParser, args: argparse.Namespace) -> 
     if args.max_image_bytes <= 0:
         parser.error("--max-image-bytes는 0보다 커야 합니다")
 
+    if args.emit_final_from_csv is not None and not args.emit_final_from_csv.exists():
+        parser.error("--emit-final-from-csv file does not exist")
+    if args.audit_final_from_csv is not None and not args.audit_final_from_csv.exists():
+        parser.error("--audit-final-from-csv file does not exist")
+
 
 def main() -> int:
     parser = build_parser()
@@ -712,6 +813,18 @@ def main() -> int:
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
     try:
+        if args.emit_final_from_csv is not None:
+            rows = read_csv_rows(args.emit_final_from_csv)
+            stamp = _date_from_meme_csv(args.emit_final_from_csv) or datetime.now().astimezone().strftime("%Y%m%d")
+            final_path = emit_final_terms(Path(args.output_dir), rows, stamp)
+            LOG.info("final terms output: %s", final_path)
+            return 0
+        if args.audit_final_from_csv is not None:
+            rows = read_csv_rows(args.audit_final_from_csv)
+            stamp = _date_from_meme_csv(args.audit_final_from_csv) or datetime.now().astimezone().strftime("%Y%m%d")
+            suspect_path = emit_suspect_terms(Path(args.output_dir), rows, stamp)
+            LOG.info("suspect terms output: %s", suspect_path)
+            return 0
         crawl(args)
     except CrawlerError as exc:
         LOG.error("수집 중단: %s", exc)
