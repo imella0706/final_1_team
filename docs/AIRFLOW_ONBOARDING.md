@@ -1,14 +1,25 @@
 # BrandMate Airflow Onboarding
 
-이 문서는 BrandMate의 SNS 트렌드/밈 문구 데이터 인입 파이프라인을 Airflow로 구축하기 위한 기준입니다.
+이 문서는 BrandMate의 트렌드/밈 문구 데이터 인입 파이프라인을 Airflow로 구축하기 위한 기준입니다.
 
 Airflow는 크롤링 라이브러리도 아니고 전처리 엔진도 아닙니다. Airflow의 역할은 정해진 주기로 작업을
 실행하고, task 의존성, 실패 재시도, backfill, 실행 로그를 통제하는 것입니다. 실제 크롤링은
 `requests`, `BeautifulSoup`, `Selenium`, `Playwright`가 담당하고, MVP 전처리는 `pandas`가 담당합니다.
 
-BrandMate는 네이버, 구글, 인스타그램, 틱톡 등에서 최신 트렌드 밈 문구를 주기적으로 수집합니다.
+현재 실제 수집 코드는 `gather_data/` 아래에 있으며, 1차 Airflow 적용 대상은 아래 소스입니다.
+
+| 영역 | 현재 역할 | Airflow 1차 적용 판단 |
+| --- | --- | --- |
+| `gather_data/crawling/careet` | 캐릿 `요즘 뜨는 밈` 공개 메타데이터와 밈 항목 수집 | 안정화된 crawler 산출물 인입 |
+| `gather_data/crawling/gogumafarm` | 고구마팜 WordPress API 기반 밈/트렌드 수집 | 안정화된 crawler 산출물 인입 |
+| `gather_data/naver` | 네이버 블로그/뉴스/데이터랩 기반 키워드 흐름 수집 | CLI 인자화 후 Airflow task 승격 |
+| `gather_data/youtube` | YouTube 인기 영상과 키워드 변화 수집 | v2 산출물 기준 인입 |
+
+인스타그램, 틱톡, 구글 트렌드 수집은 이후 확장 후보입니다. 현재 문서에서는 실제 구현이 존재하는
+`careet`, `gogumafarm`, `naver`, `youtube`를 1차 대상으로 봅니다.
+
 밈/트렌드는 시간이 지나면 데이터 가치가 떨어지므로 수동 실행이나 단발성 스크립트로 관리하면 운영 품질이
-무너집니다. Airflow는 이 반복 수집과 검증, GCS 저장, 실패 추적을 자동화하기 위해 사용합니다.
+무너집니다. Airflow는 반복 수집, 산출물 검증, GCS 저장, 실패 추적을 자동화하기 위해 사용합니다.
 
 ## 1. 적용 범위
 
@@ -18,11 +29,11 @@ BrandMate는 네이버, 구글, 인스타그램, 틱톡 등에서 최신 트렌�
 
 ```text
 # [Design Intent] 반복 실행, 실패 추적, 재처리가 필요한 배치성 데이터 작업만 Airflow에 올린다.
-- SNS/검색 트렌드 크롤링 task 실행
-- 크롤러가 만든 CSV 파일 감지
-- raw CSV를 GCS raw prefix에 백업
+- careet/gogumafarm/naver/youtube 산출물 감지
+- 안정화된 크롤러 task 실행
+- raw CSV/JSON을 GCS raw prefix에 백업
 - schema, row count, null 비율, 중복률, 날짜 범위, checksum 검증
-- 검증된 CSV를 processed Parquet/CSV로 변환
+- 검증된 CSV/JSON을 processed Parquet/CSV로 변환
 - manifest, validation result, run summary, error bundle 저장
 ```
 
@@ -43,15 +54,15 @@ task 의존성, 실패 재처리, backfill 필요성으로 도입 여부를 판�
 
 ## 2. 현재 권장 아키텍처
 
-현재 팀원이 크롤링과 기본 전처리를 수행해 CSV로 저장하고 있으므로, 첫 단계는 아래 구조가 맞습니다.
+현재 팀원이 크롤링과 기본 전처리를 수행해 CSV/JSON으로 저장하고 있으므로, 첫 단계는 아래 구조가 맞습니다.
 
 ```text
-# [Design Intent] 기존 크롤러 구현을 억지로 뜯지 않고, CSV contract를 경계로 Airflow 인입 품질을 먼저 확보한다.
-external crawler
-  -> local/server landing CSV
-  -> Airflow detect CSV
-  -> validate CSV
-  -> upload raw CSV to GCS
+# [Design Intent] 기존 크롤러 구현을 억지로 뜯지 않고, 산출물 contract를 경계로 Airflow 인입 품질을 먼저 확보한다.
+existing gather_data crawler
+  -> local/server landing CSV/JSON
+  -> Airflow detect output
+  -> validate source output
+  -> upload raw output to GCS
   -> transform to processed dataset
   -> upload processed artifact to GCS
   -> write manifest and run summary
@@ -62,19 +73,19 @@ external crawler
 ```text
 # [Design Intent] 수집 코드가 안정화된 뒤 source별 크롤링 실패를 Airflow task 단위로 격리한다.
 Airflow DAG
+  -> crawl_careet
+  -> crawl_gogumafarm
   -> crawl_naver
-  -> crawl_google
-  -> crawl_instagram
-  -> crawl_tiktok
-  -> merge_raw_csv
-  -> validate_csv
+  -> crawl_youtube
+  -> collect_raw_outputs
+  -> validate_raw_outputs
   -> upload_raw_to_gcs
   -> transform_to_processed
   -> upload_processed_to_gcs
   -> write_run_summary
 ```
 
-처음부터 크롤러 전체를 Airflow에 넣지 않아도 됩니다. 먼저 CSV 형식과 저장 위치를 고정하고,
+처음부터 크롤러 전체를 Airflow에 넣지 않아도 됩니다. 먼저 산출물 형식과 저장 위치를 고정하고,
 Airflow가 그 결과물을 안정적으로 검증하고 GCS에 올리게 만듭니다.
 
 ## 3. Docker화 범위
@@ -142,41 +153,47 @@ XCom에는 작은 값만 저장합니다.
 
 Airflow metadata DB는 실행 상태 저장소입니다. 데이터 저장소가 아닙니다.
 
-## 5. SNS Trend CSV Contract
+## 5. Trend Source Output Contract
 
-Airflow에 연결하기 전에 팀원이 생성하는 CSV 형식을 고정해야 합니다. 이 계약 없이 Airflow를 붙이면
-자동화된 쓰레기 수거장이 됩니다. 스케줄러가 성실하게 잘못된 데이터를 GCS에 쌓는 구조가 됩니다.
+Airflow에 연결하기 전에 팀원이 생성하는 CSV/JSON 산출물 형식을 고정해야 합니다. 이 계약 없이
+Airflow를 붙이면 자동화된 쓰레기 수거장이 됩니다. 스케줄러가 성실하게 잘못된 데이터를 GCS에 쌓는
+구조가 됩니다.
 
 파일명 규칙:
 
 ```text
 # [Design Intent] source, 수집일, 실행 단위를 파일명에 박아 재처리와 장애 추적을 단순하게 만든다.
-{source}_trend_{YYYYMMDD}.csv
-naver_trend_20260714.csv
-google_trend_20260714.csv
-instagram_trend_20260714.csv
-tiktok_trend_20260714.csv
+{source}_{artifact}_{YYYYMMDD}.{csv|json}
+careet_memes_20260715.csv
+gogumafarm_meme_terms_20260715.csv
+naver_blog_카페_20260715.csv
+naver_datalab_카페_20260715.csv
+youtube_trending_KR_20260715.csv
 ```
 
 권장 landing directory:
 
 ```text
 # [Design Intent] Airflow worker가 접근 가능한 서버 경로를 ingestion boundary로 삼는다.
-/data/brandmate/incoming/sns_trend/dt=YYYY-MM-DD/{source}_trend_YYYYMMDD.csv
+/data/brandmate/incoming/trend_context/dt=YYYY-MM-DD/source={source}/{artifact}.{csv|json}
 ```
 
-필수 컬럼:
+raw 산출물은 source별 형식이 달라도 됩니다. 다만 processed dataset으로 변환한 뒤에는 아래 공통
+schema를 맞춥니다.
+
+processed 필수 컬럼:
 
 | 컬럼 | 의미 | 예시 |
 | --- | --- | --- |
-| `id` | source 내부 식별자. 없으면 URL hash로 생성 | `naver_20260714_0001` |
-| `source` | 데이터 출처 | `naver`, `google`, `instagram`, `tiktok` |
-| `collected_at` | 크롤링 수집 시각 | `2026-07-14T07:00:00+09:00` |
-| `published_at` | 원문 게시 시각. 없으면 null 허용 | `2026-07-13T22:10:00+09:00` |
-| `keyword` | 수집 기준 키워드 또는 trend seed | `여름 밈` |
-| `text` | 수집된 밈 문구/본문/캡션 | `요즘 이 밈 모르면 대화가 안 됨` |
+| `id` | source + URL/hash 기반 고유 id | `careet_20260715_0001` |
+| `source` | 데이터 출처 | `careet`, `gogumafarm`, `naver_blog`, `naver_news`, `naver_datalab`, `youtube` |
+| `collected_at` | 크롤링 수집 시각 | `2026-07-15T07:00:00+09:00` |
+| `published_at` | 원문 게시 시각. 없으면 null 허용 | `2026-07-14T22:10:00+09:00` |
+| `keyword` | 수집 기준 키워드 또는 trend seed | `카페`, `여름 밈` |
+| `trend_term` | 밈/트렌드 핵심어 | `두바이 초콜릿`, `요아정` |
+| `text` | 수집된 제목/요약/문구/캡션 | `요즘 이 밈 모르면 대화가 안 됨` |
 | `url` | 원문 URL | `https://...` |
-| `engagement_count` | 좋아요/댓글/조회수 합산 또는 source별 기준값 | `1234` |
+| `engagement_count` | 조회수/좋아요/댓글/검색량 등 가능한 지표. 없으면 null | `1234` |
 
 선택 컬럼:
 
@@ -186,6 +203,8 @@ tiktok_trend_20260714.csv
 | `hashtags` | 해시태그 문자열 또는 JSON string |
 | `category` | 음식, 카페, 계절, 이벤트 등 내부 분류 |
 | `language` | `ko`, `en` 등 |
+| `rank` | source 내부 랭킹 |
+| `quality_score` | 내부 품질 점수. 초기에는 null 허용 |
 | `raw_payload_path` | 원본 HTML/JSON/screenshot을 별도 저장한 경우의 경로 |
 
 CSV 기본 규칙:
@@ -202,16 +221,16 @@ CSV 기본 규칙:
 
 ## 6. 권장 DAG 구조
 
-초기 MVP DAG는 외부 크롤러가 만든 CSV를 Airflow가 수집하는 방식으로 시작합니다.
+초기 MVP DAG는 기존 `gather_data` 크롤러가 만든 CSV/JSON을 Airflow가 수집하는 방식으로 시작합니다.
 
 ```text
 # [Design Intent] 이미 존재하는 크롤러 산출물에 품질 게이트와 저장 정책을 붙이는 최소 MVP DAG다.
-brandmate_sns_trend_ingestion
+brandmate_trend_context_ingestion
 
-wait_for_source_csv
-  -> validate_source_csv
-  -> upload_raw_csv_to_gcs
-  -> merge_sources
+wait_for_source_outputs
+  -> validate_raw_outputs
+  -> upload_raw_outputs_to_gcs
+  -> normalize_sources
   -> transform_to_processed
   -> validate_processed
   -> upload_processed_to_gcs
@@ -223,15 +242,15 @@ wait_for_source_csv
 
 ```text
 # [Design Intent] source별 크롤링 실패를 분리해 하나의 외부 사이트 장애가 전체 수집을 막지 않게 한다.
-brandmate_sns_trend_crawling
+brandmate_trend_context_crawling
 
+crawl_careet
+crawl_gogumafarm
 crawl_naver
-crawl_google
-crawl_instagram
-crawl_tiktok
-  -> validate_source_csv
-  -> upload_raw_csv_to_gcs
-  -> merge_sources
+crawl_youtube
+  -> validate_raw_outputs
+  -> upload_raw_outputs_to_gcs
+  -> normalize_sources
   -> transform_to_processed
   -> validate_processed
   -> upload_processed_to_gcs
@@ -253,8 +272,8 @@ from pendulum import datetime
 
 
 with DAG(
-    dag_id="brandmate_sns_trend_ingestion",
-    start_date=datetime(2026, 7, 14, tz="Asia/Seoul"),
+    dag_id="brandmate_trend_context_ingestion",
+    start_date=datetime(2026, 7, 15, tz="Asia/Seoul"),
     schedule="0 7 * * *",
     catchup=False,
     max_active_runs=1,
@@ -263,31 +282,31 @@ with DAG(
         "retry_delay": timedelta(minutes=10),
         "execution_timeout": timedelta(minutes=30),
     },
-    tags=["brandmate", "sns", "trend", "ingestion"],
+    tags=["brandmate", "trend", "meme", "ingestion"],
 ) as dag:
-    wait_for_source_csv = PythonOperator(
-        task_id="wait_for_source_csv",
-        python_callable=wait_for_source_csv_files,
+    wait_for_source_outputs = PythonOperator(
+        task_id="wait_for_source_outputs",
+        python_callable=wait_for_source_output_files,
     )
 
-    validate_source_csv = PythonOperator(
-        task_id="validate_source_csv",
-        python_callable=validate_source_csv_files,
+    validate_raw_outputs = PythonOperator(
+        task_id="validate_raw_outputs",
+        python_callable=validate_raw_output_files,
     )
 
-    upload_raw_csv_to_gcs = PythonOperator(
-        task_id="upload_raw_csv_to_gcs",
-        python_callable=upload_raw_csv_files,
+    upload_raw_outputs_to_gcs = PythonOperator(
+        task_id="upload_raw_outputs_to_gcs",
+        python_callable=upload_raw_output_files,
     )
 
-    merge_sources = PythonOperator(
-        task_id="merge_sources",
-        python_callable=merge_source_csv_files,
+    normalize_sources = PythonOperator(
+        task_id="normalize_sources",
+        python_callable=normalize_source_outputs,
     )
 
     transform_to_processed = PythonOperator(
         task_id="transform_to_processed",
-        python_callable=transform_sns_trend_dataset,
+        python_callable=transform_trend_context_dataset,
     )
 
     validate_processed = PythonOperator(
@@ -310,8 +329,8 @@ with DAG(
         python_callable=write_airflow_run_summary,
     )
 
-    wait_for_source_csv >> validate_source_csv >> upload_raw_csv_to_gcs
-    upload_raw_csv_to_gcs >> merge_sources >> transform_to_processed
+    wait_for_source_outputs >> validate_raw_outputs >> upload_raw_outputs_to_gcs
+    upload_raw_outputs_to_gcs >> normalize_sources >> transform_to_processed
     transform_to_processed >> validate_processed >> upload_processed_to_gcs
     upload_processed_to_gcs >> write_manifest >> write_run_summary
 ```
@@ -320,21 +339,23 @@ with DAG(
 
 `raw`, `processed`, `logs`를 같은 prefix에 섞지 않습니다.
 
-SNS trend raw:
+Trend source raw:
 
 ```text
-# [Design Intent] 원본 CSV를 source와 수집일 기준으로 보존해 전처리 버그가 나도 재생성 가능하게 만든다.
-gs://ssakda/projects/brandmate/data/raw/sns_trend/dt=YYYY-MM-DD/naver.csv
-gs://ssakda/projects/brandmate/data/raw/sns_trend/dt=YYYY-MM-DD/google.csv
-gs://ssakda/projects/brandmate/data/raw/sns_trend/dt=YYYY-MM-DD/instagram.csv
-gs://ssakda/projects/brandmate/data/raw/sns_trend/dt=YYYY-MM-DD/tiktok.csv
+# [Design Intent] 원본 CSV/JSON을 source와 수집일 기준으로 보존해 전처리 버그가 나도 재생성 가능하게 만든다.
+gs://ssakda/projects/brandmate/data/raw/trend_context/source=careet/dt=YYYY-MM-DD/careet_memes.csv
+gs://ssakda/projects/brandmate/data/raw/trend_context/source=gogumafarm/dt=YYYY-MM-DD/gogumafarm_meme_terms.csv
+gs://ssakda/projects/brandmate/data/raw/trend_context/source=naver_blog/dt=YYYY-MM-DD/naver_blog_카페.csv
+gs://ssakda/projects/brandmate/data/raw/trend_context/source=naver_news/dt=YYYY-MM-DD/naver_news_카페.csv
+gs://ssakda/projects/brandmate/data/raw/trend_context/source=naver_datalab/dt=YYYY-MM-DD/datalab_카페.csv
+gs://ssakda/projects/brandmate/data/raw/trend_context/source=youtube/dt=YYYY-MM-DD/youtube_trending_KR.csv
 ```
 
-SNS trend processed:
+Trend context processed:
 
 ```text
 # [Design Intent] 모델/API/평가 코드가 바로 읽을 수 있는 stable artifact만 processed에 둔다.
-gs://ssakda/projects/brandmate/data/processed/sns_trend/v1/meme_phrase_dataset/
+gs://ssakda/projects/brandmate/data/processed/trend_context/v1/meme_phrase_dataset/
   data.parquet
   data.csv
   validation_summary.json
@@ -349,7 +370,7 @@ Airflow logs:
 # [Design Intent] Airflow DB에는 상태만 남기고 상세 검증/장애 기록은 GCS에 남긴다.
 gs://ssakda/projects/brandmate/logs/data_pipeline/airflow/
   dt=YYYY-MM-DD/
-    dag_id=brandmate_sns_trend_ingestion/
+    dag_id=brandmate_trend_context_ingestion/
       run_id={run_id}/
         run_summary.json
         validation_result.json
@@ -373,9 +394,9 @@ gs://ssakda/projects/brandmate/logs/web_service/
         traceback.txt
 ```
 
-## 8. CSV 검증 기준
+## 8. 산출물 검증 기준
 
-CSV 인입 시 최소한 아래 검증은 통과해야 합니다.
+CSV/JSON 인입 시 최소한 아래 검증은 통과해야 합니다.
 
 | 검증 항목 | 목적 | 실패 처리 |
 | --- | --- | --- |
@@ -395,15 +416,16 @@ CSV 인입 시 최소한 아래 검증은 통과해야 합니다.
 ```jsonc
 // [Design Intent] validation result는 사람이 읽는 로그이면서 자동 검증 리포트로도 재사용 가능해야 한다.
 {
-  "dataset": "sns_trend",
-  "run_date": "2026-07-14",
+  "dataset": "trend_context",
+  "run_date": "2026-07-15",
   "status": "passed",
-  "row_count": 1240,
+  "row_count": 2248,
   "source_counts": {
-    "naver": 310,
-    "google": 280,
-    "instagram": 420,
-    "tiktok": 230
+    "careet": 134,
+    "gogumafarm": 89,
+    "naver_blog": 946,
+    "naver_news": 999,
+    "youtube": 80
   },
   "duplicate_url_rate": 0.031,
   "null_text_rate": 0.0,
@@ -413,7 +435,7 @@ CSV 인입 시 최소한 아래 검증은 통과해야 합니다.
 
 ## 9. pandas와 Spark 기준
 
-현재 BrandMate SNS trend 수집은 `pandas`로 처리합니다. Spark는 지금 단계에서 넣지 않습니다.
+현재 BrandMate trend context 수집은 `pandas`로 처리합니다. Spark는 지금 단계에서 넣지 않습니다.
 
 | 상황 | 선택 |
 | --- | --- |
@@ -426,7 +448,7 @@ Spark를 쓰지 않는 이유:
 
 ```text
 # [Design Intent] 현재 병목이 아닌 분산 처리 인프라를 먼저 넣지 않고, 운영 복잡도를 데이터 규모에 맞춘다.
-- SNS 밈 문구 CSV는 MVP 기준으로 pandas 처리량 안에 들어온다.
+- 현재 `gather_data` 산출물은 MVP 기준으로 pandas 처리량 안에 들어온다.
 - Airflow 도입 목적은 분산 연산이 아니라 스케줄링, 재시도, 검증, 로그 추적이다.
 - Spark는 job packaging, cluster/runtime, dependency 관리 비용이 있다.
 - 데이터 크기와 변환 복잡도가 실제로 커진 뒤 승격한다.
@@ -458,13 +480,13 @@ Spark를 쓰지 않는 이유:
 
 ## 11. 실패 처리 기준
 
-SNS 크롤링은 자주 깨집니다. 사이트 구조 변경, rate limit, 로그인 요구, 네트워크 지연이 정상적으로 발생합니다.
+트렌드 크롤링은 자주 깨집니다. 사이트 구조 변경, API quota, rate limit, 네트워크 지연이 정상적으로 발생합니다.
 따라서 실패 처리를 설계에 포함해야 합니다.
 
 | 실패 지점 | 처리 |
 | --- | --- |
-| 특정 source CSV 미생성 | 해당 source 실패로 기록, 필수 source면 DAG 실패 |
-| 일부 row validation 실패 | quarantine CSV로 분리하고 summary 기록 |
+| 특정 source 산출물 미생성 | 해당 source 실패로 기록, 필수 source면 DAG 실패 |
+| 일부 row validation 실패 | quarantine 파일로 분리하고 summary 기록 |
 | 필수 컬럼 누락 | DAG 실패 |
 | 전체 row count 0 | DAG 실패 |
 | GCS 업로드 실패 | retry 후 실패 시 error bundle 저장 |
@@ -475,28 +497,28 @@ SNS 크롤링은 자주 깨집니다. 사이트 구조 변경, rate limit, 로�
 ```jsonc
 // [Design Intent] 장애 재현에 필요한 최소 실행 맥락을 error bundle에 남긴다.
 {
-  "time": "2026-07-14T07:15:22+09:00",
-  "dag_id": "brandmate_sns_trend_ingestion",
-  "task_id": "validate_source_csv",
-  "run_id": "manual__2026-07-14T07:00:00+09:00",
+  "time": "2026-07-15T07:15:22+09:00",
+  "dag_id": "brandmate_trend_context_ingestion",
+  "task_id": "validate_raw_outputs",
+  "run_id": "manual__2026-07-15T07:00:00+09:00",
   "status": "failed",
-  "source": "instagram",
+  "source": "naver_blog",
   "error_type": "SchemaValidationError",
   "error_message": "missing required column: text",
-  "raw_path": "/data/brandmate/incoming/sns_trend/dt=2026-07-14/instagram_trend_20260714.csv"
+  "raw_path": "/data/brandmate/incoming/trend_context/dt=2026-07-15/source=naver_blog/naver_blog_카페.csv"
 }
 ```
 
 ## 12. 초기 POC 순서
 
-초기 Airflow POC는 실제 SNS 크롤러 전체를 바로 붙이지 않습니다. 먼저 mock CSV로
+초기 Airflow POC는 실제 크롤러 전체를 바로 붙이지 않습니다. 먼저 mock CSV로
 Airflow -> validation -> raw upload -> processed 변환 -> GCS upload 흐름을 검증합니다.
 
 POC 순서:
 
 ```text
 # [Design Intent] 크롤러 품질 문제와 Airflow/GCS 연결 문제를 분리해 디버깅 범위를 줄인다.
-1. mock SNS CSV 생성
+1. mock trend context CSV 생성
 2. local landing directory에 저장
 3. Airflow DAG 수동 실행
 4. CSV validation 통과 확인
@@ -504,26 +526,26 @@ POC 순서:
 6. processed Parquet/CSV 생성 확인
 7. run_summary.json, validation_result.json 저장 확인
 8. 실패 CSV로 DAG 실패와 error.json 저장 확인
-9. 실제 crawler 산출 CSV로 교체
+9. 실제 `gather_data` crawler 산출 CSV/JSON으로 교체
 10. source별 crawler task를 Airflow 내부로 옮길지 판단
 ```
 
 예시 mock CSV:
 
 ```text
-# [Design Intent] mock CSV는 실제 SNS crawler 산출물과 같은 schema로 만들어 DAG 연결만 먼저 검증한다.
-id,source,collected_at,published_at,keyword,text,url,engagement_count
-instagram_001,instagram,2026-07-14T07:00:00+09:00,2026-07-13T23:10:00+09:00,여름 밈,"요즘 이거 모르면 대화가 안 됨",https://example.com/1,1200
-tiktok_001,tiktok,2026-07-14T07:00:00+09:00,2026-07-13T21:30:00+09:00,카페 트렌드,"얼죽아 다음은 얼죽빙",https://example.com/2,3400
-naver_001,naver,2026-07-14T07:00:00+09:00,,신메뉴 홍보,"두바이 초콜릿 다음 유행 찾는 중",https://example.com/3,80
+# [Design Intent] mock CSV는 processed 공통 schema와 같은 형태로 만들어 DAG 연결만 먼저 검증한다.
+id,source,collected_at,published_at,keyword,trend_term,text,url,engagement_count
+careet_001,careet,2026-07-15T07:00:00+09:00,2026-07-14T23:10:00+09:00,밈,두바이 초콜릿,"두바이 초콜릿 이후 디저트 밈 확산",https://example.com/careet/1,1200
+gogumafarm_001,gogumafarm,2026-07-15T07:00:00+09:00,2026-07-14T21:30:00+09:00,카페 트렌드,요아정,"요아정 소비 맥락을 활용한 카페 신메뉴 콘텐츠",https://example.com/gogumafarm/1,3400
+naver_blog_001,naver_blog,2026-07-15T07:00:00+09:00,,카페,신메뉴 홍보,"여름 카페 신메뉴 리뷰 글 증가",https://example.com/naver/1,80
 ```
 
 ## 13. 완료 기준
 
 - Airflow webserver에 접속할 수 있습니다.
 - Airflow scheduler가 DAG를 감지합니다.
-- `brandmate_sns_trend_ingestion` DAG를 수동 실행할 수 있습니다.
-- mock SNS CSV ingestion이 성공합니다.
+- `brandmate_trend_context_ingestion` DAG를 수동 실행할 수 있습니다.
+- mock trend context CSV ingestion이 성공합니다.
 - 실패 mock CSV에서 DAG가 실패하고 `error.json`이 GCS에 저장됩니다.
 - source별 raw CSV가 GCS raw prefix에 저장됩니다.
 - processed `meme_phrase_dataset` 산출물이 GCS processed prefix에 저장됩니다.
@@ -537,10 +559,12 @@ Airflow 인입 파이프라인이 먼저입니다. Prometheus/Grafana는 그 다
 
 우선순위:
 
-1. Airflow 기반 SNS trend CSV 인입 파이프라인
-2. source별 crawler task Airflow 편입
-3. FastAPI request_id 기반 structured logging
-4. GCS error bundle 저장
-5. Prometheus/Grafana metric dashboard
-6. Cloud Logging ERROR/WARNING 제한 연동
-7. 데이터 규모 증가 시 BigQuery 또는 Spark/Dataproc 검토
+1. Airflow 기반 trend context 산출물 인입 파이프라인
+2. `careet`, `gogumafarm` crawler task Airflow 편입
+3. `naver` 스크립트 CLI 인자화 후 Airflow 편입
+4. `youtube` v2 산출물 기준 Airflow 편입
+5. FastAPI request_id 기반 structured logging
+6. GCS error bundle 저장
+7. Prometheus/Grafana metric dashboard
+8. Cloud Logging ERROR/WARNING 제한 연동
+9. 데이터 규모 증가 시 BigQuery 또는 Spark/Dataproc 검토
