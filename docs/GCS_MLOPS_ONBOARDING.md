@@ -5,6 +5,7 @@
 데이터셋을 새로 만들거나 GCS에 업로드하기 전에는 데이터셋 제출 규격을 먼저 확인합니다.
 
 - [BrandMate Dataset Submission Onboarding](./DATASET_SUBMISSION_ONBOARDING.md)
+- [BrandMate Airflow Onboarding](./AIRFLOW_ONBOARDING.md)
 
 ## 1. 설계 원칙
 
@@ -483,179 +484,28 @@ package docs:
 `{dataset_name}/v1/{artifact_name}` 구조를 사용합니다. 새로운 dataset이나 artifact가 필요하면
 임의로 폴더를 만들지 말고 먼저 팀 내에서 이름을 합의합니다.
 
-## 9. CSV 주기 인입 파이프라인 기준
+## 9. 주기 데이터 인입과 Airflow 연동 기준
 
-CSV를 사람이 매번 VM에 받아서 처리하는 방식은 POC에서는 가능하지만 반복 운영 기준에서는 약합니다.
-파일 누락, 중복 업로드, schema drift, 실패 재처리 기록이 남지 않기 때문입니다. BrandMate 기준에서는
-CSV 원본을 GCS에 먼저 적재하고, 검증과 Parquet 변환 결과를 `curated` 또는 `processed`로 분리합니다.
+Airflow 세부 구축 계획은 [AIRFLOW_ONBOARDING.md](./AIRFLOW_ONBOARDING.md)를 따릅니다.
 
 Airflow는 사용자 트래픽 처리를 위한 도구가 아닙니다. 동시 접속자 수가 아니라 데이터 수집 주기, task 의존성,
 실패 재처리 필요성으로 도입 여부를 판단합니다. 단순한 1회성 데이터셋이면 `cron` 또는 수동 배치로도 충분하지만,
 BrandMate는 3~4일 주기로 외부 데이터가 반복 수집되는 운영을 전제로 하므로 Airflow 기준으로 파이프라인을 설계합니다.
 
-### 9.1 권장 구조
+GCS 관점의 핵심 원칙은 아래와 같습니다.
 
-```text
-CSV provider / manual upload
-  -> GCS raw landing bucket prefix
-  -> Airflow DAG
-  -> validation
-  -> transformation
-  -> Parquet conversion
-  -> GCS processed feature prefix
-  -> DS / training / evaluation jobs
-```
-
-```text
-gs://ssakda/projects/brandmate/data/
-  raw/
-    dowhat/
-      weekly/
-        dt=YYYY-MM-DD/
-          source.csv
-          _SUCCESS
-          manifest.json
-
-  curated/
-    dowhat/
-      v1/
-
-  processed/
-    dowhat/
-      v1/
-        hotel_features/
-          part-*.parquet
-          docs/
-            manifest.json
-            description.md
-```
-
-CSV 원본은 `raw/`에 날짜 partition으로 보관합니다. 검증과 정제를 거친 분석 후보 데이터는 `curated/`,
-모델 학습/평가가 바로 읽을 수 있는 산출물은 `processed/`에 둡니다. `raw`와 `processed`를 같은
-prefix에 섞으면 재처리와 롤백이 지저분해집니다.
-
-### 9.2 cron vs Airflow 선택 기준
-
-| 방식 | 사용 가능 조건 | 한계 | BrandMate 판단 |
-| --- | --- | --- | --- |
-| 수동 업로드 + `gcloud storage cp` | 1회성 데이터 전달, 발표용 샘플 적재 | 누가 언제 무엇을 올렸는지 추적이 약함 | 초기 적재만 허용 |
-| `cron` | 1개 스크립트, 1개 데이터 소스, 실패 시 수동 재실행 가능 | task dependency, backfill, 실패 task만 재시도하는 기능이 약함 | 대안으로만 허용 |
-| Airflow / Cloud Composer | 3~4일 주기 반복 수집, raw -> curated -> processed 단계, 검증/변환/업로드 분리, backfill 필요 | 초기 설정 비용이 있음 | BrandMate 주기 인입 기본 설계 |
-
-결론은 단순합니다. 1개 스크립트를 1회성으로 실행하는 수준이면 `cron`으로 충분합니다. 그러나 BrandMate는
-3~4일 주기 데이터 수집을 전제로 하고, 수집 -> 검증 -> 변환 -> 업로드 -> manifest 갱신처럼 단계가 나뉩니다.
-따라서 주기 인입 파이프라인은 Airflow 기준으로 설계합니다. 특히 실패한 단계만 재실행하거나 특정 날짜 데이터를
-backfill해야 하는 순간부터는 `cron`보다 Airflow가 더 적합합니다.
-
-### 9.3 cron을 쓰는 경우의 최소 기준
-
-Airflow 구축 전 임시로 `cron`을 쓰는 경우에도 하나의 shell script에 모든 로직을 몰아넣지 않습니다.
-실제 수집/검증/변환 로직은 Python 모듈로 분리하고, `cron` script는 아래 책임만 가집니다.
-
-1. 실행 날짜와 run id를 만듭니다.
-2. raw 파일을 GCS `data/raw/{source}/dt=YYYY-MM-DD/`에 저장합니다.
-3. validation script를 실행합니다.
-4. 변환 script를 실행해 `curated` 또는 `processed` prefix에 결과를 저장합니다.
-5. validation summary, output path, 실패 로그를 `logs/data_pipeline/`에 남깁니다.
-
-```bash
-# [Design Intent] Airflow 구축 전 임시 cron에서도 실제 검증/변환 로직은 Python 모듈로 분리한다.
-0 3 */3 * * cd /home/brandmate/final_1_team && \
-  ./scripts/ingest_dowhat_csv.sh >> outputs/logs/data_pipeline/dowhat_cron.log 2>&1
-```
-
-### 9.4 Airflow DAG 책임 범위
-
-Airflow는 데이터 처리를 직접 길게 구현하는 곳이 아니라 orchestration 계층입니다. BrandMate에서는 아래 조건을
-전제로 주기 인입 파이프라인을 Airflow 기준으로 설계합니다.
-
-- 데이터 소스가 여러 개로 늘어납니다.
-- 수집, 검증, 변환, 업로드, manifest 갱신을 task별로 분리해야 합니다.
-- 실패한 task만 재시도해야 합니다.
-- 특정 날짜 수집분을 다시 처리하는 backfill이 필요합니다.
-- 팀원이 UI에서 실행 이력과 실패 지점을 확인해야 합니다.
-
-Airflow DAG는 아래 책임만 가집니다.
-
-1. GCS raw prefix에 신규 CSV가 있는지 확인합니다.
-2. 파일명, 날짜 partition, checksum, manifest 존재 여부를 확인합니다.
-3. Spark 또는 Python batch job을 실행해 schema와 품질을 검증합니다.
-4. 도메인 feature 생성과 전처리를 수행합니다.
-5. 결과를 Parquet으로 변환해 `processed/{source}/v1/{artifact_name}/`에 저장합니다.
-6. validation summary와 실패 로그를 `logs/data_pipeline/`에 남깁니다.
-
-```python
-# [Design Intent] Airflow는 배치 실행 순서와 실패 재처리를 담당하고, 무거운 변환 로직은 Spark/Python job으로 분리한다.
-with DAG(
-    dag_id="brandmate_dowhat_weekly_ingestion",
-    schedule="0 3 */3 * *",
-    catchup=False,
-    max_active_runs=1,
-) as dag:
-    wait_for_csv = GCSObjectsWithPrefixExistenceSensor(
-        task_id="wait_for_csv",
-        bucket="ssakda",
-        prefix="projects/brandmate/data/raw/dowhat/weekly/dt={{ ds }}/",
-    )
-
-    validate_csv = DataprocSubmitJobOperator(
-        task_id="validate_csv",
-        project_id="sprint-ai-chunk5-01",
-        region="asia-northeast3",
-        job=build_spark_job("jobs/validate_dowhat_csv.py", "{{ ds }}"),
-    )
-
-    transform_to_parquet = DataprocSubmitJobOperator(
-        task_id="transform_to_parquet",
-        project_id="sprint-ai-chunk5-01",
-        region="asia-northeast3",
-        job=build_spark_job("jobs/build_dowhat_hotel_features.py", "{{ ds }}"),
-    )
-
-    wait_for_csv >> validate_csv >> transform_to_parquet
-```
-
-위 코드는 구조 예시입니다. 실제 repo에 넣을 때는 `build_spark_job()`과 job 파일을 별도 모듈로 분리하고,
-환경 변수로 bucket, project, region을 주입합니다.
-
-### 9.5 CSV 검증 기준
-
-CSV 인입 시 최소한 아래 검증은 통과해야 합니다.
-
-| 검증 항목 | 목적 | 실패 처리 |
-| --- | --- | --- |
-| 필수 컬럼 존재 | schema drift 차단 | DAG 실패 |
-| row count > 0 | 빈 파일 차단 | DAG 실패 |
-| primary key 중복률 | 중복 수집 감지 | 임계치 초과 시 실패 |
-| null 비율 | feature 품질 저하 감지 | 임계치 초과 시 실패 |
-| 날짜 범위 | 잘못된 기간 파일 차단 | DAG 실패 |
-| checksum | 같은 파일 재업로드/변조 추적 | manifest에 기록 |
-
-검증 결과는 raw 파일 옆이나 로그 prefix에 JSON으로 남깁니다.
-
-```json
-{
-  "dataset": "dowhat",
-  "dt": "2026-07-13",
-  "source_path": "gs://ssakda/projects/brandmate/data/raw/dowhat/weekly/dt=2026-07-13/source.csv",
-  "row_count": 102391,
-  "required_columns_passed": true,
-  "duplicate_rate": 0.0012,
-  "null_rate": {
-    "hotel_id": 0.0,
-    "review_text": 0.034
-  },
-  "checksum": "sha256:..."
-}
-```
-
-### 9.6 Storage / Processing / Consumption 정리
+- 원본 파일은 `data/raw/{source}/dt=YYYY-MM-DD/`에 저장합니다.
+- 검증과 정제를 거친 분석 후보 데이터는 `data/curated/{source}/v1/`에 저장합니다.
+- 모델 학습/평가/API가 바로 읽는 산출물은 `data/processed/{source}/v1/{artifact_name}/`에 저장합니다.
+- validation 결과와 Airflow error bundle은 `logs/data_pipeline/`에 저장합니다.
+- Airflow metadata DB에는 task 상태와 run metadata만 남기고, CSV 원본이나 validation result 전문은 저장하지 않습니다.
+- `raw`와 `processed`를 같은 prefix에 섞지 않습니다.
 
 | Layer | 역할 | BrandMate 기준 |
 | --- | --- | --- |
-| Input Storage | CSV 원본 landing | `data/raw/dowhat/weekly/dt=YYYY-MM-DD/` |
+| Input Storage | 원본 landing | `data/raw/{source}/dt=YYYY-MM-DD/` |
 | Processing | 검증, 도메인 feature 생성, 전처리 | Airflow가 batch job 실행 |
-| Output Storage | Parquet feature artifact 저장 | `data/processed/dowhat/v1/hotel_features/` |
+| Output Storage | processed artifact 저장 | `data/processed/{source}/v1/{artifact_name}/` |
 | Consumption | DS 분석, 학습, 평가 | GCS processed prefix 또는 DVC pull |
 
 Feast는 지금 단계에서 필수로 넣지 않습니다. 온라인 feature serving이 필요한 단계가 아니면 인프라만 무거워집니다.
