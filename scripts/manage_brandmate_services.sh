@@ -35,7 +35,8 @@ mkdir -p "$LOG_DIR" "$PID_DIR"
 usage() {
   cat <<'USAGE'
 Usage:
-  scripts/manage_brandmate_services.sh start       Start FastAPI, frontend, and ComfyUI.
+  scripts/manage_brandmate_services.sh             Start FastAPI, frontend, and ComfyUI.
+  scripts/manage_brandmate_services.sh serve       Start FastAPI, frontend, and ComfyUI.
   scripts/manage_brandmate_services.sh status      Check service readiness.
   scripts/manage_brandmate_services.sh logs        Tail service logs.
   scripts/manage_brandmate_services.sh stop        Stop processes started by this script.
@@ -273,7 +274,7 @@ if [[ "$#" -gt 0 ]]; then
 fi
 
 case "$action" in
-  start|serve)
+  serve)
     serve
     ;;
   status)

@@ -246,7 +246,7 @@ scripts/manage_brandmate_services.sh status
 ```bash
 # [Design Intent] GCP VM에서 필요한 웹서비스 프로세스를 표준 스크립트로 기동한다.
 cd ~/personal/final_1_team
-scripts/manage_brandmate_services.sh start
+scripts/manage_brandmate_services.sh
 scripts/manage_brandmate_services.sh logs
 ```
 
