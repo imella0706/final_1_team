@@ -1,5 +1,8 @@
-# 로컬에서 비전 평가를 간편하게 실행하기 위해 만든 자동화 파일 
 #!/usr/bin/env bash
+# Legacy Ollama-based local vision evaluation wrapper kept for team compatibility.
+# Standard service management: scripts/manage_brandmate_services.sh.
+# Move to scripts/legacy or delete only after team agreement.
+
 set -euo pipefail
 
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

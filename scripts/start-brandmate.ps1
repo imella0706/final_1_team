@@ -1,3 +1,7 @@
+# Legacy Windows launcher kept for team compatibility.
+# Standard Linux/GCP/WSL entrypoint: scripts/manage_brandmate_services.sh.
+# Move to scripts/legacy or delete only after team agreement.
+
 $NoBrowser = $false
 [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new()
 
