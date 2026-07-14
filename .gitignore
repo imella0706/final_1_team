@@ -26,6 +26,13 @@ outputs/
 *.sqlite3
 *.sqlite
 
+# Local / large datasets
+# [Design Intent] Keep large dataset files out of Git while allowing DVC
+# pointer files under data/ to be committed.
+/data/**
+!/data/**/
+!/data/**/*.dvc
+
 # Editors and OS
 .idea/
 .vscode/

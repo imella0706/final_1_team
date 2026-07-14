@@ -73,10 +73,16 @@ python -m scripts.evaluate_vision_models \
 ./scripts/run_local_vision_eval.sh
 ```
 
-CLIP Score까지 포함한 최종 평가가 필요하면 wrapper에서 `VISION_EVAL_SKIP_CLIP=0`을 지정합니다.
+CLIP Score는 기본 평가에서 제외합니다. 12GB VRAM 로컬 환경에서는 FLUX/ComfyUI가 이미
+GPU 메모리를 크게 사용하므로, CLIP/Aesthetic/Diversity 같은 vision encoder 기반 품질 지표까지
+같은 평가 path에 올리면 안정성이 떨어집니다. 필요할 때만 24GB 이상 GPU 또는 별도 offline batch
+환경에서 선택 실행합니다.
 
 ```bash
-# [Design Intent] 이미지 저장까지 안정화된 뒤에만 CPU CLIP 평가를 추가한다.
+# [Design Intent] 기본 평가는 이미지 생성 안정성을 우선하므로 CLIP을 끄고 실행한다.
+VISION_EVAL_SKIP_CLIP=1 ./scripts/run_local_vision_eval.sh
+
+# [Design Intent] 별도 평가 환경에서만 CPU/GPU 여유를 확인한 뒤 CLIP을 선택 실행한다.
 VISION_EVAL_SKIP_CLIP=0 ./scripts/run_local_vision_eval.sh
 ```
 
@@ -130,9 +136,10 @@ latency만 확인합니다.
 | `model_summaries[].serving_quality.mean_image_latency_ms` | 성공한 이미지 생성 요청들의 평균 이미지 생성 시간 |
 | `model_summaries[].serving_quality.mean_latency_ms` | 성공한 trial들의 평균 End-to-End 시간 |
 
-CLIP Score는 기본 지표에서 제외하고 선택 지표로만 유지합니다. 이미지 생성이 성공했다면
-CLIP 계산 여부와 관계없이 Serving Quality의 성공률과 latency는 별도로 집계합니다.
-CLIP Score까지 계산하려면 `apps/api`에서 GPU image dependency를 설치합니다.
+CLIP Score, Aesthetic Score, Diversity는 기본 지표에서 제외하고 offline 선택 지표로만 유지합니다.
+이미지 생성이 성공했다면 CLIP 계산 여부와 관계없이 Serving Quality의 성공률, Failure Rate,
+latency, throughput은 별도로 집계합니다. CLIP Score까지 계산하려면 `apps/api`에서 GPU image
+dependency를 설치합니다.
 
 ```bash
 # [Design Intent] 로컬과 GPU 서버를 같은 CUDA 12.1 PyTorch wheel 기준으로 고정한다.
@@ -199,38 +206,47 @@ Tone과 Hallucination 자동 점수는 초기 프록시입니다. 운영 모델 
 적용하지 않고, 필요하면 `time_per_image` 또는 diffusion step 단위 시간이 노출되는
 런타임에서 `time_per_step`을 별도 지표로 둡니다.
 
-## Vision 평가 확장
+## Vision 평가 결정
 
-이미지 모델 연결 후 같은 평가 보고서에 Vision Model Quality와 Serving Quality를
-추가합니다. 현재 기본 목표는 로컬 FLUX/ComfyUI 환경에서 안정적으로 반복 가능한 지표를
-먼저 남기는 것입니다. 무거운 모델 의존성, 유료 API, 수동 집계가 필요한 지표는 선택 검증으로
-분리합니다.
+처음 계획은 CLIP Score, ImageReward, GPT-4o Vision Judge, Human Preference, Aesthetic Score,
+Failure Rate, Diversity를 모두 포함하는 것이었습니다. 이 계획은 현재 로컬 평가 환경 기준으로
+너무 무겁습니다. LLM 평가는 텍스트 JSON 파싱, 규칙 기반 검증, latency 측정 중심이라 비용이
+비교적 작지만, 이미지 생성 평가는 diffusion step 자체가 무겁고 품질 지표도 별도 vision encoder와
+임베딩 계산이 필요합니다.
+
+그래서 현재 기본 비전 평가는 Model Quality 자동 점수보다 Serving Quality에 집중합니다. 광고
+이미지는 자동 점수보다 사람이 보는 품질 판단이 중요하므로, 생성 이미지를 저장하고 팀원이 직접
+비교합니다. CLIP/Aesthetic/Diversity는 24GB 이상 GPU 또는 별도 offline batch 평가 환경에서만
+후보 지표로 다시 검토합니다. 24GB에서도 LLM, vision model, ComfyUI가 동시에 떠 있으면 안정성을
+장담할 수 없으므로 기본 path에는 넣지 않습니다.
 
 ### 현재 기본 지표
 
-| 지표 | 계산 방식과 도구 | 모델 선정 기준과 비즈니스 임팩트 |
-| --- | --- | --- |
-| Image Generation Success Rate | 이미지 생성 요청 중 base64 payload가 정상 디코딩되고 파일로 저장된 비율 | 모델이 실제로 결과물을 안정적으로 생성하는지 판단합니다. |
-| Failure Rate | Python exception handling으로 API 실패, timeout, 빈 이미지, 깨진 base64, corrupt image 건수를 집계하고 `실패 수 / 전체 요청 수 * 100`으로 계산 | 생성 실패율이 높으면 사용자는 같은 요청을 반복해야 합니다. 품질 이전에 서비스 신뢰도를 무너뜨리는 운영 안정성 지표입니다. |
-| Image Latency | 이미지 생성 요청 시작부터 이미지 payload 수신까지 걸린 시간 | FLUX/SDXL 등 후보 모델의 실제 생성 속도를 비교합니다. |
-| Pipeline Latency | 광고 문구 생성, Product Visualizer, 이미지 생성, 저장, metric 계산 시도를 포함한 trial 전체 시간 | 사용자가 체감할 end-to-end 비용과 평가 runner 처리량을 판단합니다. |
-| Saved Image Path | run별 `images/{model_name}/` 아래 생성 이미지를 저장 | 자동 점수만으로 판단하기 어려운 광고 이미지 품질을 팀원이 직접 비교할 수 있습니다. |
+| 구분 | 평가지표 | 기본 사용 여부 | 측정 방식 | 선정 이유 |
+| --- | --- | --- | --- | --- |
+| Model Quality | 저장 이미지 수동 비교 | 사용 | 모델별 생성 이미지를 `outputs/evaluations/vision/{date}/{time}/images/{model}/`에 저장한 뒤 팀원이 직접 비교 | 광고 이미지는 자동 점수보다 사람이 보는 품질 판단이 중요합니다. |
+| Serving Quality | Image Generation Success Rate | 사용 | 정상 base64 이미지 생성 및 파일 저장 성공 수 / 전체 요청 수 | 모델이 실제로 이미지를 안정적으로 생성하는지 판단합니다. |
+| Serving Quality | Failure Rate | 사용 | 실패 요청 수 / 전체 요청 수 * 100. API 실패, timeout, 빈 이미지, 깨진 base64, corrupt image 포함 | 품질 이전에 운영 안정성을 판단하는 핵심 지표입니다. |
+| Serving Quality | Image Latency | 사용 | 이미지 생성 요청부터 이미지 payload 수신까지 걸린 시간 | FLUX/SDXL 등 후보 모델의 생성 속도를 비교합니다. |
+| Serving Quality | Pipeline Latency | 사용 | 광고 문구 생성부터 이미지 저장과 report 기록까지 전체 trial 시간 | 실제 end-to-end 비용을 판단합니다. |
+| Serving Quality | Throughput | 사용 | 전체 요청 수 / 평가 실행 시간 | 평가 환경에서 모델별 처리량을 비교합니다. |
+| Serving Quality | Client Queue Wait | 사용 | 평가 runner semaphore 진입 전 대기 시간 | 동시 실행 시 병목을 확인합니다. |
 
 ### 선택 지표
 
 | 지표 | 계산 방식과 도구 | 현재 결정 |
 | --- | --- | --- |
-| CLIP Score | OpenAI CLIP 계열 모델로 `clip_eval_prompt`와 생성 이미지 임베딩의 cosine similarity를 계산 | 토큰 제한, 모델 로딩 비용, 로컬 GPU/CPU 부담 때문에 기본 지표에서 제외합니다. 최종 보고서용 또는 별도 평가 환경에서만 `VISION_EVAL_SKIP_CLIP=0`으로 선택 실행합니다. |
-| Aesthetic Score | LAION Aesthetic Predictor 또는 CLIP 기반 Aesthetic Predictor로 이미지를 1~10점 스케일로 평가 | 계산 함수는 있으나 predictor weight와 runner 연결이 필요합니다. 현재 report에는 포함하지 않습니다. |
-| Diversity Score | 동일 프롬프트로 N장 생성 후 CLIP 또는 DINO 이미지 임베딩을 추출하고 pairwise cosine similarity의 `1 - 평균 유사도`를 계산 | 동일 prompt 반복 생성과 이미지 임베딩 계산이 필요합니다. 현재 비전 runner에는 미구현입니다. |
+| CLIP Score | OpenAI CLIP 계열 모델로 `clip_eval_prompt`와 생성 이미지 임베딩의 cosine similarity를 계산 | 토큰 제한, 모델 로딩 비용, 로컬 GPU/CPU 부담 때문에 기본 지표에서 제외합니다. 24GB 이상 GPU 또는 offline batch 환경에서만 선택 실행합니다. |
+| Aesthetic Score | LAION Aesthetic Predictor 또는 CLIP 기반 Aesthetic Predictor로 이미지를 1~10점 스케일로 평가 | predictor weight와 vision encoder 로딩 비용이 추가됩니다. 현재 report에는 포함하지 않습니다. |
+| Diversity Score | 동일 프롬프트로 N장 생성 후 CLIP 또는 DINO 이미지 임베딩을 추출하고 pairwise cosine similarity의 `1 - 평균 유사도`를 계산 | 반복 생성과 이미지 임베딩 계산이 모두 필요합니다. 현재 비전 runner에는 미구현이며 offline batch 후보입니다. |
 | GPT-4o Vision Judge | 생성 이미지와 프롬프트를 GPT-4o Vision API에 전달하고 광고 목적 부합성, 브랜드 적합성, 오브젝트 정확성, 시각적 오류를 1~5점으로 채점 | 유료 API라 기본 회귀 테스트가 아니라 후보 모델 최종 검증에만 사용합니다. |
 | Human Preference | 모델명을 가린 블라인드 A/B 테스트를 CSV 또는 JSON으로 수동 입력받아 선호도 승률을 집계 | 사람의 감성 판단이 최종 Ground Truth입니다. 발표와 보고서에서 가장 설득력이 높지만 자동화 지표는 아닙니다. |
 | ImageReward | 사람 선호 데이터로 학습된 ImageReward 모델로 이미지 품질과 텍스트 부합성을 점수화 | 설치와 모델 의존성이 무겁기 때문에 2차 이후 후보입니다. |
 
-Vision 지표도 모델별 단일 샘플 점수만 보고하지 않습니다. 동일 평가 세트에서 모델별
-반복 생성 결과를 집계하고, 핵심 지표는 평균과 표준편차를 함께 기록합니다. 현재 비교 표에는
-이미지 생성 성공률, Failure Rate, Image Latency, Pipeline Latency, 저장 이미지 경로를
-우선 포함합니다.
+Vision 지표도 모델별 단일 샘플 점수만 보고하지 않습니다. 동일 평가 세트에서 모델별 반복 생성
+결과를 집계하고, 핵심 지표는 평균과 표준편차를 함께 기록합니다. 현재 비교 표에는 이미지 생성
+성공률, Failure Rate, Image Latency, Pipeline Latency, Throughput, Client Queue Wait, 저장
+이미지 경로를 우선 포함합니다.
 
 사람 선호도는 모델명을 가린 블라인드 A/B 방식으로 기록하고, 자동 점수와 최종적으로
 교차 검증합니다. 예시 수치는 보고서 템플릿에 넣지 않고 실제 실행 결과만 기록합니다.
