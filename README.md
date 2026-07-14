@@ -18,18 +18,26 @@ feature/ad-copy-model-integration
 
 ## 기준 브랜치와 달라진 점
 
-`feature/ad-copy-model-integration`은 광고 문구 생성 LLM 중심 구조입니다. 현재 브랜치는 여기에 다음 기능을 추가했습니다.
+`feature/ad-copy-model-integration`은 광고 문구 생성 LLM 중심 구조입니다. 현재 브랜치는 여기에 이미지 생성 통합 API와 관련 모듈을 추가했습니다.
+
+현재 코드 기준으로 실제 요청 경로에서 동작하는 기능:
 
 - 브라우저에서 광고 문구 모델과 이미지 생성 모델을 함께 선택
 - 광고 문구 생성 후 이미지 생성까지 이어지는 통합 API
 - FLUX.1 Schnell, SDXL, Openjourney 이미지 모델 선택 구조
-- Product Visualizer 독립 모듈
-- Product Visual Database SQLite 캐시
-- Wikimedia/Pexels/Unsplash reference image metadata 검색 구조
-- Reference Analyzer를 통한 시각 특징 추출
+- 광고 문구 LLM이 `marketing_strategy`, 광고 문구, `visual_brief`를 JSON으로 생성
+- Product Visualizer fallback을 통한 상품별 기본 시각 JSON 생성
 - Prompt Normalizer와 negative prompt 강화
 - 이미지 생성 결과에서 상품 대체, 가짜 글자, 로고, 간판을 줄이는 프롬프트 구조
 - 모델 실행 방식별 README와 실패 원인 분석 문서
+
+구현 파일은 있지만 현재 런타임에서 완전히 활성화되지 않은 기능:
+
+- Product Visual Database SQLite 캐시
+- Wikimedia/Pexels/Unsplash reference image metadata 검색 구조
+- Reference Analyzer를 통한 시각 특징 추출
+
+위 기능들은 `product_visualizer.py` 안에 코드가 있지만, 현재 `ProductVisualizer.visualize()`가 먼저 fallback을 반환하므로 일반 `/api/v1/ad-content/generate` 요청에서는 실행되지 않습니다. 이 부분을 활성화하기 전까지는 README나 발표에서 "reference 기반 자동 상품 분석이 동작한다"고 말하면 안 됩니다.
 
 자세한 차이:
 
@@ -73,13 +81,14 @@ Browser
 -> Input Validator
 -> Marketing + Copy + Visual Brief LLM
 -> Output Validator
--> Product Visualizer
--> Product Visual Database
+-> Product Visualizer fallback
 -> Prompt Normalizer
 -> Image Generation Model
--> Image Validator
+-> Image Validator (enabled일 때만)
 -> Final Ad Content
 ```
+
+Naver Blog 채널은 예외입니다. 업로드 사진이 있으면 블로그 사진 분석 메모를 만들고, 생성 이미지는 만들지 않고 업로드 이미지를 그대로 응답에 실어 보냅니다.
 
 ## 빠른 실행
 
@@ -171,7 +180,7 @@ LM Studio 모델 ID 확인:
 curl http://localhost:1234/v1/models
 ```
 
-Product Visual Database reference search는 선택 기능입니다.
+Product Visual Database reference search는 코드상 선택 기능으로 준비되어 있지만, 현재 통합 API 요청 경로에서는 Product Visualizer 조기 fallback 때문에 실제로 사용되지 않습니다. 이 기능을 쓰려면 `product_visualizer.py`의 fallback 우회 로직을 먼저 수정해야 합니다.
 
 ```env
 BRANDMATE_REFERENCE_SEARCH_ENABLED=false

@@ -57,7 +57,7 @@
 - `headlines`
 - `body_copies`
 - `ctas`
-- 해시태그는 생성하지 않습니다.
+- `hashtags`
 - `validation_check`
 
 ## 3. Visual Brief Prompt
