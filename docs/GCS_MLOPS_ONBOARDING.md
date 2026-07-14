@@ -73,6 +73,11 @@ gs://ssakda/
   projects/
     brandmate/
       data/
+        landing/
+          processed/
+            sns_meme_trend/
+              week=YYYY-Www/
+
         curated/
           aihub_food_image_text/
             v1/
@@ -128,8 +133,9 @@ gs://ssakda/
 
 | 경로 | 의미 |
 | --- | --- |
+| `data/landing/processed/sns_meme_trend/week=YYYY-Www/` | 팀원이 업로드하는 주간 밈 CSV 입고 구역입니다. 이미 선별/정제된 processed 후보이지만, 공식 데이터셋으로 승인되기 전 단계입니다. Airflow는 이 prefix를 검수 대상으로만 사용합니다. |
 | `data/curated/aihub_food_image_text/v1/` | AIHub `비전영역 음식이미지 및 정보소개 텍스트 데이터` 원본에서 BrandMate에 쓸 샘플만 선별한 데이터 풀입니다. 학습/전처리/평가셋 후보를 뽑는 문제은행 역할입니다. |
-| `data/curated/sns/v1/` | SNS source에서 수집 후 BrandMate 목적에 맞게 정제한 데이터 풀입니다. AIHub와 섞지 않고 source를 분리해 추적합니다. |
+| `data/curated/sns/v1/` | SNS/트렌드 source에서 수집 후 BrandMate 목적에 맞게 정제한 데이터 풀입니다. 초기에는 source별 폴더를 나누기보다 통합 데이터셋 단위로 관리합니다. |
 | `data/curated/food_101/v1/` | Food-101 기반 음식 이미지 데이터 풀입니다. 카페/음식점 광고 이미지 보강이나 음식 도메인 평가에 사용합니다. |
 | `data/processed/{dataset_name}/v1/{artifact_name}/` | dataset별 curated 데이터를 모델/API/평가 파이프라인이 바로 쓸 수 있게 전처리한 산출물입니다. 예: `data/processed/aihub_food_image_text/v1/food_description_data/` |
 | `data/processed/merged/v1/` | dataset별 processed 데이터를 동일 schema로 맞춘 뒤 하나의 학습/비교실험 경로로 합친 통합 데이터셋입니다. manifest 없이 임의로 합치지 않습니다. |
@@ -490,22 +496,25 @@ Airflow 세부 구축 계획은 [AIRFLOW_ONBOARDING.md](./AIRFLOW_ONBOARDING.md)
 
 Airflow는 사용자 트래픽 처리를 위한 도구가 아닙니다. 동시 접속자 수가 아니라 데이터 수집 주기, task 의존성,
 실패 재처리 필요성으로 도입 여부를 판단합니다. 단순한 1회성 데이터셋이면 `cron` 또는 수동 배치로도 충분하지만,
-BrandMate는 3~4일 주기로 외부 데이터가 반복 수집되는 운영을 전제로 하므로 Airflow 기준으로 파이프라인을 설계합니다.
+BrandMate의 초기 Airflow MVP는 팀원이 업로드한 주간 processed 후보 CSV를 자동 검수하는 구조로 시작합니다.
+DVC 등록과 공식 processed 데이터셋 승격은 기존 데이터셋 관리 절차를 따르며, Airflow가 직접 `dvc add`,
+`dvc push`, `git commit`을 실행하지 않습니다.
 
 GCS 관점의 핵심 원칙은 아래와 같습니다.
 
-- 원본 파일은 `data/raw/{source}/dt=YYYY-MM-DD/`에 저장합니다.
-- 검증과 정제를 거친 분석 후보 데이터는 `data/curated/{source}/v1/`에 저장합니다.
-- 모델 학습/평가/API가 바로 읽는 산출물은 `data/processed/{source}/v1/{artifact_name}/`에 저장합니다.
-- validation 결과와 Airflow error bundle은 `logs/data_pipeline/`에 저장합니다.
+- 팀원이 올리는 주간 processed 후보 CSV는 `data/landing/processed/sns_meme_trend/week=YYYY-Www/`에 둡니다.
+- Airflow 초기 MVP는 landing CSV의 존재 여부, schema, 기본 품질만 검증합니다.
+- validation 결과와 Airflow error bundle은 `logs/data_pipeline/airflow/`에 저장합니다.
+- 공식 데이터셋으로 승인된 산출물만 `data/processed/{dataset_name}/v1/{artifact_name}/`에 저장하고 DVC로 추적합니다.
 - Airflow metadata DB에는 task 상태와 run metadata만 남기고, CSV 원본이나 validation result 전문은 저장하지 않습니다.
-- `raw`와 `processed`를 같은 prefix에 섞지 않습니다.
+- `landing`, `processed`, DVC remote를 같은 prefix에 섞지 않습니다.
 
 | Layer | 역할 | BrandMate 기준 |
 | --- | --- | --- |
-| Input Storage | 원본 landing | `data/raw/{source}/dt=YYYY-MM-DD/` |
-| Processing | 검증, 도메인 feature 생성, 전처리 | Airflow가 batch job 실행 |
-| Output Storage | processed artifact 저장 | `data/processed/{source}/v1/{artifact_name}/` |
+| Input Storage | 주간 processed 후보 CSV landing | `data/landing/processed/sns_meme_trend/week=YYYY-Www/` |
+| Validation | 파일 존재, schema, 품질 검증 | Airflow가 validation task 실행 |
+| Validation Output | 검증 요약과 실패 로그 | `logs/data_pipeline/airflow/dag_id=.../week=YYYY-Www/` |
+| Official Dataset | 승인된 processed artifact 저장 | `data/processed/{dataset_name}/v1/{artifact_name}/` |
 | Consumption | DS 분석, 학습, 평가 | GCS processed prefix 또는 DVC pull |
 
 Feast는 지금 단계에서 필수로 넣지 않습니다. 온라인 feature serving이 필요한 단계가 아니면 인프라만 무거워집니다.

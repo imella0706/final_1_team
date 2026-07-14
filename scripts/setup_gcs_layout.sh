@@ -119,6 +119,10 @@ main() {
   gcs_cp_keep "$(project_path data/curated/sns/v1)"
   gcs_cp_keep "$(project_path data/curated/food_101/v1)"
 
+  # [Design Intent] Airflow MVP validates weekly processed candidate CSV files
+  # before a dataset manager promotes them to official DVC-tracked datasets.
+  gcs_cp_keep "$(project_path data/landing/processed/sns_meme_trend)"
+
   gcs_cp_keep "$(project_path data/processed/aihub_food_image_text/v1/food_description_data)"
   gcs_cp_keep "$(project_path data/processed/sns/v1)"
   gcs_cp_keep "$(project_path data/processed/food_101/v1)"
@@ -150,6 +154,7 @@ main() {
   gcs_cp_keep "$(project_path logs/web_service/errors)"
   gcs_cp_keep "$(project_path logs/evaluations/summary)"
   gcs_cp_keep "$(project_path logs/evaluations/errors)"
+  gcs_cp_keep "$(project_path logs/data_pipeline/airflow)"
 
   # [Design Intent] DVC owns this prefix as an object store. Humans should not
   # manually reorganize files under it.
