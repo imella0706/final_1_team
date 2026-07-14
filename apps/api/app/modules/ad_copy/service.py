@@ -46,9 +46,7 @@ def _request_payload(
     provider: TextRuntimeProvider,
     provider_model_name: str,
     structured: bool,
-<<<<<<< HEAD
     supports_system_role: bool = True,
-    use_max_completion_tokens: bool = False,
     invalid_content: str | None = None,
 ) -> dict[str, Any]:
     messages = build_prompt_messages(
@@ -60,38 +58,6 @@ def _request_payload(
     payload: dict[str, Any] = {
         "model": provider_model_name,
         "messages": messages,
-        "temperature": 0.75,
-    }
-    token_limit_name = "max_completion_tokens" if use_max_completion_tokens else "max_tokens"
-    payload[token_limit_name] = 4000 if request.channel.value == "naver_blog" else 2000
-    if structured and request.channel.value != "naver_blog":
-=======
-    invalid_content: str | None = None,
-) -> dict[str, Any]:
-    user_content = build_prompt(request)
-    if invalid_content is not None:
-        user_content += f"""
-
-[Design Intent] 직전 응답이 JSON 스키마 또는 비즈니스 검증을 통과하지 못했다.
-아래 직전 응답의 의미는 유지하되, 현재 시스템이 요구하는 JSON 객체 형식으로만 다시 작성하라.
-설명, 마크다운 코드 블록, 추가 문장은 출력하지 마라.
-
-직전 응답:
-{invalid_content[:6000]}
-"""
-
-    payload: dict[str, Any] = {
-        "model": provider_model_name,
-        "messages": [
-            {
-                "role": "system",
-                "content": (
-                    "당신은 한국 소상공인을 위한 광고 카피라이터입니다. "
-                    "입력에 없는 사실을 만들지 말고 JSON 객체만 출력하세요."
-                ),
-            },
-            {"role": "user", "content": user_content},
-        ],
         "temperature": 0.2 if invalid_content is not None else 0.75,
     }
     token_limit_key = (
@@ -100,9 +66,8 @@ def _request_payload(
         and provider_model_name.startswith("gpt-5")
         else "max_tokens"
     )
-    payload[token_limit_key] = 2000
-    if structured:
->>>>>>> origin/dev
+    payload[token_limit_key] = 4000 if request.channel.value == "naver_blog" else 2000
+    if structured and request.channel.value != "naver_blog":
         payload["response_format"] = {
             "type": "json_schema",
             "json_schema": {
@@ -196,10 +161,6 @@ async def _call_model(
     *,
     invalid_content: str | None = None,
 ) -> str:
-<<<<<<< HEAD
-=======
-    model_spec = get_model_spec(request.model)
->>>>>>> origin/dev
     try:
         config = get_text_model_config(request.model.value)
     except KeyError as error:
@@ -216,14 +177,8 @@ async def _call_model(
         TextRuntimeProvider.OPENAI,
         TextRuntimeProvider.NVIDIA,
     } and not api_key:
-<<<<<<< HEAD
-        key_name = _required_key_name(provider)
-        raise ModelNotConfiguredError(
-            f"{key_name} is missing. Add it to apps/api/.env before calling {request.model.value}."
-=======
         raise ModelNotConfiguredError(
             f"{config.api_key_setting}가 없습니다. API 서버의 .env를 설정해주세요."
->>>>>>> origin/dev
         )
 
     endpoint = f"{base_url.rstrip('/')}/chat/completions"
@@ -241,11 +196,7 @@ async def _call_model(
                     provider=provider,
                     provider_model_name=provider_model_name,
                     structured=model_spec.supports_structured_output,
-<<<<<<< HEAD
                     supports_system_role=model_spec.supports_system_role,
-                    use_max_completion_tokens=provider == TextRuntimeProvider.OPENAI,
-=======
->>>>>>> origin/dev
                     invalid_content=invalid_content,
                 ),
             )
@@ -262,11 +213,7 @@ async def _call_model(
                         provider=provider,
                         provider_model_name=provider_model_name,
                         structured=False,
-<<<<<<< HEAD
                         supports_system_role=model_spec.supports_system_role,
-                        use_max_completion_tokens=provider == TextRuntimeProvider.OPENAI,
-=======
->>>>>>> origin/dev
                         invalid_content=invalid_content,
                     ),
                 )
@@ -313,8 +260,6 @@ async def generate_ad_copy(request: AdCopyRequest) -> AdCopyResponse:
     invalid_content: str | None = None
     attempts = 0
     output_repaired = False
-<<<<<<< HEAD
-    model_spec = get_model_spec(request.model)
     llm_prompt = {
         "prompt_version": PROMPT_VERSION,
         "model": request.model.value,
@@ -327,11 +272,6 @@ async def generate_ad_copy(request: AdCopyRequest) -> AdCopyResponse:
     for attempt in range(3):
         attempts = attempt + 1
         raw_content: str | None = None
-=======
-
-    for attempt in range(3):
-        attempts = attempt + 1
->>>>>>> origin/dev
         try:
             raw_content = await _call_model(request, invalid_content=invalid_content)
             candidate = _parse_content(raw_content)
@@ -343,20 +283,13 @@ async def generate_ad_copy(request: AdCopyRequest) -> AdCopyResponse:
             warnings = validation.warnings
             last_error = InvalidModelOutputError("; ".join(validation.warnings))
             invalid_content = raw_content
-<<<<<<< HEAD
+            output_repaired = True
         except InvalidModelOutputError as error:
             last_error = error
             warnings = [str(error)]
             if raw_content:
                 invalid_content = raw_content
-=======
             output_repaired = True
-        except InvalidModelOutputError as error:
-            last_error = error
-            warnings = [str(error)]
-            invalid_content = raw_content if "raw_content" in locals() else None
-            output_repaired = True
->>>>>>> origin/dev
 
         if attempt == 2:
             content = build_fallback_copy(request, warnings)

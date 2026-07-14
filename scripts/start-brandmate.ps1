@@ -13,8 +13,8 @@ $Root = Split-Path -Parent $PSScriptRoot
 $ApiDir = Join-Path $Root "apps\api"
 $WebDir = Join-Path $Root "apps\web"
 $ApiPython = Join-Path $ApiDir ".venv\Scripts\python.exe"
-$ApiUrl = "http://127.0.0.1:8000"
-$WebUrl = "http://127.0.0.1:5500"
+$ApiUrl = "http://127.0.0.1:7660"
+$WebUrl = "http://127.0.0.1:5501"
 $ApiLog = Join-Path $Root "api-server.log"
 $ApiErrorLog = Join-Path $Root "api-server-error.log"
 $WebLog = Join-Path $Root "web-server.log"
@@ -63,7 +63,7 @@ try {
         Write-Host "API 서버 실행 중: $ApiUrl"
         $apiProcess = Start-Process `
             -FilePath $ApiPython `
-            -ArgumentList @("-m", "uvicorn", "app.extensions.ad_content.main:app", "--host", "127.0.0.1", "--port", "8000") `
+            -ArgumentList @("-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", "7660") `
             -WorkingDirectory $ApiDir `
             -RedirectStandardOutput $ApiLog `
             -RedirectStandardError $ApiErrorLog `
@@ -85,7 +85,7 @@ try {
         Write-Host "웹 서버 실행 중: $WebUrl"
         $webProcess = Start-Process `
             -FilePath $ApiPython `
-            -ArgumentList @("-m", "http.server", "5500", "--bind", "127.0.0.1") `
+            -ArgumentList @("-m", "http.server", "5501", "--bind", "127.0.0.1") `
             -WorkingDirectory $WebDir `
             -RedirectStandardOutput $WebLog `
             -RedirectStandardError $WebErrorLog `

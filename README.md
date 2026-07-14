@@ -43,7 +43,7 @@ apps/api/app/modules/model_runtime/docs/CHANGES_FROM_AD_COPY_MODEL_BRANCH.md
 apps/
   api/                 FastAPI 백엔드
   web/                 메인 통합 테스트 페이지
-  web-ad-content/      통합 브라우저 화면 원본/비교용 폴더
+  web-legacy-ad-content/ 프롬프트/UI 고도화 전 베이스라인 비교용 폴더
 docs/                  기존 설계 문서
 ```
 

@@ -126,17 +126,6 @@ async def generate_content(request: AdContentRequest) -> AdContentResponse:
                 product_visualization,
                 reference_image_context,
             )
-<<<<<<< HEAD
-=======
-        )
-        image_validation = await validate_generated_image(image, request.copy_request)
-        regeneration_count = 0
-        if not image_validation.valid and image_validation.regeneration_prompt_suffix:
-            regeneration_count = 1
-            image_prompt = compact_regenerated_prompt(
-                f"{image_prompt}\n\n{image_validation.regeneration_prompt_suffix}"
-            )
->>>>>>> origin/dev
             image = await generate_ad_image(
                 AdImageRequest(
                     model=request.image_model,
@@ -151,7 +140,9 @@ async def generate_content(request: AdContentRequest) -> AdContentResponse:
             regeneration_count = 0
             if not image_validation.valid and image_validation.regeneration_prompt_suffix:
                 regeneration_count = 1
-                image_prompt = f"{image_prompt}\n\n{image_validation.regeneration_prompt_suffix}"
+                image_prompt = compact_regenerated_prompt(
+                    f"{image_prompt}\n\n{image_validation.regeneration_prompt_suffix}"
+                )
                 image = await generate_ad_image(
                     AdImageRequest(
                         model=request.image_model,
@@ -161,7 +152,8 @@ async def generate_content(request: AdContentRequest) -> AdContentResponse:
                         width=request.image_width,
                         height=request.image_height,
                     )
-            )
+                )
+                image_validation = await validate_generated_image(image, copy_request)
             image_valid = image_validation.valid
             image_warnings = image_validation.warnings
             visual_brief_payload = copy.visual_brief.model_dump(mode="json")

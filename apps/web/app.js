@@ -1,5 +1,5 @@
 const pageHost = window.location.hostname || "127.0.0.1";
-const API_BASE_URL = `http://${pageHost}:8000/api/v1`;
+const API_BASE_URL = `http://${pageHost}:7660/api/v1`;
 
 const $ = (selector) => document.querySelector(selector);
 

@@ -373,12 +373,18 @@ def _product_identity_description(product_name: str, copy: AdCopyResponse) -> st
 
 
 def _describe_visualized_product(product: ProductVisual) -> str:
+    visual_description = _bullet_lines(product.visual_description)
+    serving_style = _bullet_lines(product.serving_style)
     must_show = _bullet_lines(product.must_show)
     must_not = _bullet_lines(product.must_not_replace_with)
     block = [
         f"- {product.original_name}",
         f"  English: {product.english_name}",
     ]
+    if visual_description:
+        block.extend(["", "  Visual cues:", visual_description])
+    if serving_style:
+        block.extend(["", "  Serving style:", serving_style])
     if must_show:
         block.extend(["", "  Must show:", must_show])
     if must_not:
@@ -436,9 +442,6 @@ def _describe_products(
         )
     return "\n".join(lines)
 
-
-<<<<<<< HEAD
-=======
 def _describe_features(copy: AdCopyResponse) -> str:
     lines = []
     for item in copy.visual_brief.feature_visualization:
@@ -494,7 +497,6 @@ def build_clip_eval_prompt(
     )
 
 
->>>>>>> origin/dev
 def _unlisted_product_negative(
     product_visualization: ProductVisualization | None,
 ) -> str:
@@ -542,7 +544,12 @@ def build_ad_image_prompt(
     composition = _label(COMPOSITION_LABELS, brief.composition)
     template = settings.image_prompt_template or "generic"
     product_names = ", ".join(request.product_names)
-    negative_prompt = _build_negative_prompt()
+    negative_prompt = " ".join(
+        [
+            _build_negative_prompt(),
+            _unlisted_product_negative(product_visualization),
+        ]
+    )
     reference_context = _reference_context_block(reference_image_context)
     channel = _channel_direction(request.channel.value)
 
@@ -600,6 +607,7 @@ def _build_negative_prompt() -> str:
     return (
         "No readable text. No logo. No watermark. No menu board. "
         "No people. No hands. No extra food. No product substitution. "
+        "No gibberish text. No malformed Hangul. "
         "No birthday candles unless visible in the reference image. "
         "No party props unless visible in the reference image."
     )

@@ -327,7 +327,7 @@ gcloud storage cp \
 남기는 수준입니다.
 
 ```text
-outputs/gcp_services/
+outputs/brandmate_services/
   fastapi.log
   frontend.log
   comfyui.log

@@ -73,11 +73,11 @@ def save_ad_content_artifacts(response: AdContentResponse) -> dict[str, str]:
         prompt_path.write_text(response.image_prompt, encoding="utf-8")
         prompt_artifact = _relative(prompt_path)
     llm_prompt_path.write_text(
-        json.dumps(response.llm_prompt, ensure_ascii=False, indent=2),
+        json.dumps(getattr(response, "llm_prompt", {}), ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
     vision_prompt_path.write_text(
-        json.dumps(response.vision_prompt, ensure_ascii=False, indent=2),
+        json.dumps(getattr(response, "vision_prompt", {}), ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
     image_path.write_bytes(base64.b64decode(response.image.image_base64))

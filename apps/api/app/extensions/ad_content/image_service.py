@@ -1,10 +1,7 @@
 import base64
-<<<<<<< HEAD
 import binascii
-=======
 import copy
 import json
->>>>>>> origin/dev
 import os
 import random
 import time
@@ -28,7 +25,6 @@ class ImageModelProviderError(RuntimeError):
 
 
 DEFAULT_IMAGE_BASE_URL = "https://router.huggingface.co/hf-inference"
-<<<<<<< HEAD
 DATA_URL_BASE64_MARKER = ";base64,"
 REFERENCE_IMAGE_EXTENSIONS = {
     "image/jpeg": "jpg",
@@ -44,7 +40,8 @@ def _secret_value(value) -> str | None:
     if hasattr(value, "get_secret_value"):
         return value.get_secret_value() or None
     return str(value) or None
-=======
+
+
 DEFAULT_COMFYUI_WORKFLOW_PATH = (
     Path(__file__).resolve().parent / "workflows" / "flux_schnell_gguf_api.json"
 )
@@ -56,7 +53,6 @@ LATENT_NODE_ID = "8"
 SAMPLING_MODEL_NODE_ID = "2"
 KSAMPLER_NODE_ID = "9"
 SAVE_IMAGE_NODE_ID = "11"
->>>>>>> origin/dev
 
 
 def _build_payload(request: AdImageRequest) -> dict:
@@ -330,16 +326,17 @@ async def _sleep(seconds: float) -> None:
 
 
 async def generate_ad_image(request: AdImageRequest) -> AdImageResponse:
-<<<<<<< HEAD
+    if (
+        settings.image_provider.lower() == "comfyui"
+        and request.model == ImageModel.FLUX_SCHNELL
+    ):
+        return await _generate_ad_image_comfyui(request)
+
     if _is_openai_responses_image_model(request.model.value):
         return await _generate_openai_responses_image(request)
 
     if _is_openai_image_model(request.model.value):
         return await _generate_openai_image(request)
-=======
-    if settings.image_provider.lower() == "comfyui":
-        return await _generate_ad_image_comfyui(request)
->>>>>>> origin/dev
 
     if settings.llm_api_key is None:
         raise ImageModelNotConfiguredError(

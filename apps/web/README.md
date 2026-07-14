@@ -24,17 +24,17 @@ start-brandmate.cmd
 
 이 스크립트는 API와 정적 웹 서버를 함께 확인/실행하고 브라우저를 엽니다.
 
-개별로 실행하려면 먼저 `apps/api`에서 API를 `http://127.0.0.1:8000`으로 실행합니다. 그다음 별도
+개별로 실행하려면 먼저 `apps/api`에서 API를 `http://127.0.0.1:7660`으로 실행합니다. 그다음 별도
 터미널에서 테스트 페이지를 실행합니다.
 
 `index.html`을 직접 열거나 이 폴더에서 정적 서버를 실행합니다.
 
 ```bash
 cd apps/web
-python -m http.server 5500
+python -m http.server 5501
 ```
 
-브라우저에서 `http://localhost:5500`으로 접속합니다.
+브라우저에서 `http://localhost:5501`으로 접속합니다.
 
 ## 파일
 

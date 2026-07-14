@@ -16,23 +16,6 @@ class TextModelConfig:
 
 
 MODEL_MAP: dict[str, TextModelConfig] = {
-<<<<<<< HEAD
-    "openai/gpt-4.1-mini": TextModelConfig(
-        display_name="OpenAI GPT 4.1 Mini",
-        provider=TextRuntimeProvider.OPENAI,
-        default_model="gpt-4.1-mini",
-        base_url_setting="openai_base_url",
-        model_setting="openai_gpt_4_1_mini_model",
-        api_key_setting="openai_api_key",
-    ),
-    "gpt-4.1-mini": TextModelConfig(
-        display_name="OpenAI GPT 4.1 Mini",
-        provider=TextRuntimeProvider.OPENAI,
-        default_model="gpt-4.1-mini",
-        base_url_setting="openai_base_url",
-        model_setting="openai_gpt_4_1_mini_model",
-        api_key_setting="openai_api_key",
-    ),
     "openai/gpt-5.5": TextModelConfig(
         display_name="OpenAI GPT-5.5",
         provider=TextRuntimeProvider.OPENAI,
@@ -89,56 +72,14 @@ MODEL_MAP: dict[str, TextModelConfig] = {
         model_setting="openai_gpt_5_4_nano_model",
         api_key_setting="openai_api_key",
     ),
-    "gpt-5.4-nano": TextModelConfig(
-        display_name="OpenAI GPT-5.4 Nano",
+    "openai/gpt-4.1-mini": TextModelConfig(
+        display_name="OpenAI GPT 4.1 Mini",
         provider=TextRuntimeProvider.OPENAI,
-        default_model="gpt-5.4-nano",
+        default_model="gpt-4.1-mini",
         base_url_setting="openai_base_url",
-        model_setting="openai_gpt_5_4_nano_model",
+        model_setting="openai_gpt_4_1_mini_model",
         api_key_setting="openai_api_key",
     ),
-    "nvidia/meta/llama-3.1-8b-instruct": TextModelConfig(
-        display_name="NVIDIA Llama 3.1 8B Instruct",
-        provider=TextRuntimeProvider.NVIDIA,
-        default_model="meta/llama-3.1-8b-instruct",
-        base_url_setting="nvidia_base_url",
-        model_setting="nvidia_llama_model",
-        api_key_setting="nvidia_api_key",
-    ),
-    "mistral-7b-instruct-v0.3": TextModelConfig(
-        display_name="Mistral 7B Instruct v0.3",
-        provider=TextRuntimeProvider.HUGGING_FACE_ROUTER,
-        default_model="mistral-community/Mistral-7B-Instruct-v0.3:featherless-ai",
-        base_url_setting="mistral_base_url",
-        model_setting="mistral_model",
-        api_key_setting="mistral_api_key",
-    ),
-    "gemma-2-9b-instruct": TextModelConfig(
-        display_name="Gemma 2 9B Instruct",
-        provider=TextRuntimeProvider.HUGGING_FACE_ROUTER,
-        default_model="google/gemma-2-9b-it:featherless-ai",
-        base_url_setting="gemma_base_url",
-        model_setting="gemma_model",
-        api_key_setting="gemma_api_key",
-    ),
-    "phi-4-mini-instruct": TextModelConfig(
-        display_name="Phi 4 Mini Instruct",
-        provider=TextRuntimeProvider.HUGGING_FACE_ROUTER,
-        default_model="microsoft/Phi-4-mini-instruct:featherless-ai",
-        base_url_setting="phi_base_url",
-        model_setting="phi_model",
-        api_key_setting="phi_api_key",
-    ),
-    "solar-10.7b-instruct": TextModelConfig(
-        display_name="SOLAR 10.7B Instruct",
-        provider=TextRuntimeProvider.HUGGING_FACE_ROUTER,
-        default_model="upstage/SOLAR-10.7B-Instruct-v1.0:featherless-ai",
-        base_url_setting="solar_base_url",
-        model_setting="solar_model",
-        api_key_setting="solar_api_key",
-    ),
-=======
->>>>>>> origin/dev
     "qwen-2.5-7b-instruct": TextModelConfig(
         display_name="Qwen 2.5 7B Instruct",
         provider=TextRuntimeProvider.HUGGING_FACE_ROUTER,
@@ -271,6 +212,8 @@ def resolve_api_key(config: TextModelConfig) -> str | None:
 
 def infer_provider(base_url: str, fallback: TextRuntimeProvider) -> TextRuntimeProvider:
     normalized = base_url.lower()
+    if fallback in {TextRuntimeProvider.OPENAI, TextRuntimeProvider.NVIDIA}:
+        return fallback
     if "router.huggingface.co" in normalized:
         return TextRuntimeProvider.HUGGING_FACE_ROUTER
     if "api.openai.com" in normalized:

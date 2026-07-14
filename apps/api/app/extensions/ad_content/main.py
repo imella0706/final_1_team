@@ -12,16 +12,14 @@ def create_app() -> FastAPI:
     app = FastAPI(title=f"{settings.app_name} Ad Content Extension")
     app.add_middleware(
         CORSMiddleware,
-<<<<<<< HEAD
-        allow_origins=["*"],
-=======
         allow_origins=[
             settings.web_origin,
             "http://localhost:5501",
             "http://127.0.0.1:5501",
+            "http://localhost:5500",
+            "http://127.0.0.1:5500",
             "http://34.55.162.157:5501",
         ],
->>>>>>> origin/dev
         allow_credentials=False,
         allow_methods=["*"],
         allow_headers=["*"],

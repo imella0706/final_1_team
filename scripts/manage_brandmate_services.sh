@@ -3,7 +3,7 @@ set -euo pipefail
 
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 API_DIR="$PROJECT_ROOT/apps/api"
-WEB_DIR="$PROJECT_ROOT/apps/web-ad-content"
+WEB_DIR="$PROJECT_ROOT/apps/web"
 
 if [[ -d "$HOME/ComfyUI" ]]; then
   DEFAULT_COMFYUI_DIR="$HOME/ComfyUI"
@@ -27,7 +27,7 @@ API_URL="http://127.0.0.1:${API_PORT}"
 WEB_URL="http://127.0.0.1:${WEB_PORT}"
 COMFYUI_URL="http://127.0.0.1:${COMFYUI_PORT}"
 
-LOG_DIR="${BRANDMATE_SERVICE_LOG_DIR:-$PROJECT_ROOT/outputs/gcp_services}"
+LOG_DIR="${BRANDMATE_SERVICE_LOG_DIR:-$PROJECT_ROOT/outputs/brandmate_services}"
 PID_DIR="$LOG_DIR/pids"
 
 mkdir -p "$LOG_DIR" "$PID_DIR"
@@ -49,7 +49,7 @@ Environment overrides:
   API_PORT=7660
   WEB_PORT=5501
   COMFYUI_PORT=8188
-  BRANDMATE_SERVICE_LOG_DIR=outputs/gcp_services
+  BRANDMATE_SERVICE_LOG_DIR=outputs/brandmate_services
 USAGE
 }
 
@@ -108,8 +108,8 @@ start_process() {
   echo "[start] $name"
   (
     cd "$work_dir"
-    # [Design Intent] Keep service logs durable outside the terminal session so GCP
-    # smoke tests can be diagnosed after the shell is closed.
+    # [Design Intent] Keep service logs durable outside the terminal session so
+    # local and GCP smoke tests can be diagnosed after the shell is closed.
     nohup "$@" >"$log_file" 2>&1 &
     echo "$!" >"$pid_file"
   )

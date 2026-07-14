@@ -102,11 +102,18 @@ COMFYUI_IMAGE_MODEL_CATALOG = (
 
 
 def list_image_model_options() -> list[ImageModelOption]:
-    catalog = (
-        COMFYUI_IMAGE_MODEL_CATALOG
-        if settings.image_provider.lower() == "comfyui"
-        else IMAGE_MODEL_CATALOG
-    )
+    if settings.image_provider.lower() == "comfyui":
+        catalog = (
+            *COMFYUI_IMAGE_MODEL_CATALOG,
+            *[
+                spec
+                for spec in IMAGE_MODEL_CATALOG
+                if spec.id != ImageModel.FLUX_SCHNELL
+            ],
+        )
+    else:
+        catalog = IMAGE_MODEL_CATALOG
+
     return [
         ImageModelOption(
             id=spec.id,

@@ -340,6 +340,7 @@ class AdCopyResponse(AdCopyContent):
     routed_model: str = ""
     provider: str = ""
     prompt_version: str = ""
+    image_prompt: str = ""
     llm_prompt: dict[str, object] = Field(default_factory=dict)
     latency_ms: int = 0
     attempts: int = 1
