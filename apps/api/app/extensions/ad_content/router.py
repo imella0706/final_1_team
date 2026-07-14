@@ -11,7 +11,10 @@ from app.extensions.ad_content.image_service import (
 from app.extensions.ad_content.image_prompt import describe_blog_images, describe_reference_image
 from app.extensions.ad_content.models import list_image_model_options
 from app.extensions.ad_content.product_visualizer import visualize_products
-from app.extensions.ad_content.prompt_normalizer import normalize_image_prompt
+from app.extensions.ad_content.prompt_normalizer import (
+    compact_regenerated_prompt,
+    normalize_image_prompt,
+)
 from app.extensions.ad_content.schemas import (
     AdContentRequest,
     AdContentResponse,
@@ -123,6 +126,17 @@ async def generate_content(request: AdContentRequest) -> AdContentResponse:
                 product_visualization,
                 reference_image_context,
             )
+<<<<<<< HEAD
+=======
+        )
+        image_validation = await validate_generated_image(image, request.copy_request)
+        regeneration_count = 0
+        if not image_validation.valid and image_validation.regeneration_prompt_suffix:
+            regeneration_count = 1
+            image_prompt = compact_regenerated_prompt(
+                f"{image_prompt}\n\n{image_validation.regeneration_prompt_suffix}"
+            )
+>>>>>>> origin/dev
             image = await generate_ad_image(
                 AdImageRequest(
                     model=request.image_model,

@@ -148,12 +148,21 @@ OUTPUT JSON FORMAT
                 },
             },
         }
+<<<<<<< HEAD
         token_limit_name = (
             "max_completion_tokens"
             if provider == TextRuntimeProvider.OPENAI
             else "max_tokens"
         )
         payload[token_limit_name] = 1200
+=======
+        token_limit_key = (
+            "max_completion_tokens"
+            if model_name.startswith("gpt-5")
+            else "max_tokens"
+        )
+        payload[token_limit_key] = 1200
+>>>>>>> origin/dev
         return payload
 
     def _parse(self, content: str) -> ProductVisualization:

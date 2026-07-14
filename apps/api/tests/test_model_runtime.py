@@ -16,18 +16,33 @@ from app.modules.model_runtime.schemas import (
 )
 
 
-def test_lm_studio_settings_resolve_model_alias(monkeypatch) -> None:
-    monkeypatch.setattr(settings, "local_llm_base_url", "http://localhost:1234/v1")
-    monkeypatch.setattr(settings, "local_llm_model", None)
-    monkeypatch.setattr(settings, "mistral_base_url", None)
-    monkeypatch.setattr(settings, "mistral_model", "lm-studio-mistral-id")
+def test_openai_settings_resolve_model_alias(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "openai_base_url", "https://api.openai.com/v1")
+    monkeypatch.setattr(settings, "openai_gpt_4_1_mini_model", "gpt-4.1-mini")
 
-    config = get_text_model_config("mistral-7b-instruct-v0.3")
+    config = get_text_model_config("gpt-4.1-mini")
 
-    assert resolve_base_url(config) == "http://localhost:1234/v1"
-    assert resolve_model_name(config) == "lm-studio-mistral-id"
-    assert infer_provider("http://localhost:1234/v1", config.provider) == (
-        TextRuntimeProvider.LM_STUDIO
+    assert resolve_base_url(config) == "https://api.openai.com/v1"
+    assert resolve_model_name(config) == "gpt-4.1-mini"
+    assert infer_provider("https://api.openai.com/v1", config.provider) == (
+        TextRuntimeProvider.OPENAI
+    )
+
+
+def test_nvidia_settings_resolve_model_alias(monkeypatch) -> None:
+    monkeypatch.setattr(
+        settings,
+        "nvidia_base_url",
+        "https://integrate.api.nvidia.com/v1",
+    )
+    monkeypatch.setattr(settings, "nvidia_llama_model", "meta/llama-3.1-8b-instruct")
+
+    config = get_text_model_config("nvidia/meta/llama-3.1-8b-instruct")
+
+    assert resolve_base_url(config) == "https://integrate.api.nvidia.com/v1"
+    assert resolve_model_name(config) == "meta/llama-3.1-8b-instruct"
+    assert infer_provider("https://integrate.api.nvidia.com/v1", config.provider) == (
+        TextRuntimeProvider.NVIDIA
     )
 
 
@@ -35,7 +50,7 @@ def test_llm_generate_endpoint_delegates_to_service(monkeypatch) -> None:
     async def fake_generate_text(request):
         return LlmGenerateResponse(
             model=request.model,
-            provider=TextRuntimeProvider.LM_STUDIO,
+            provider=TextRuntimeProvider.OPENAI,
             content="Generated ad copy",
             latency_ms=12,
         )
@@ -47,7 +62,7 @@ def test_llm_generate_endpoint_delegates_to_service(monkeypatch) -> None:
 
     response = TestClient(app).post(
         "/api/llm/generate",
-        json={"model": "mistral-7b-instruct-v0.3", "prompt": "Make an ad"},
+        json={"model": "gpt-4.1-mini", "prompt": "Make an ad"},
     )
 
     assert response.status_code == 200

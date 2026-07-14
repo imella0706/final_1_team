@@ -103,12 +103,21 @@ Output:
                 },
             },
         }
+<<<<<<< HEAD
         token_limit_name = (
             "max_completion_tokens"
             if provider == TextRuntimeProvider.OPENAI
             else "max_tokens"
         )
         payload[token_limit_name] = 900
+=======
+        token_limit_key = (
+            "max_completion_tokens"
+            if model_name.startswith("gpt-5")
+            else "max_tokens"
+        )
+        payload[token_limit_key] = 900
+>>>>>>> origin/dev
         return payload
 
     def _parse_product(self, product_name: str, content: str) -> ProductVisual | None:

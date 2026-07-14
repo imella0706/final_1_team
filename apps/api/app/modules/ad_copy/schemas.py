@@ -23,10 +23,11 @@ class AdModel(StrEnum):
     QWEN_2_5_7B = "Qwen/Qwen2.5-7B-Instruct"
     LLAMA_3_1_8B = "meta-llama/Llama-3.1-8B-Instruct"
     NVIDIA_LLAMA_3_1_8B = "nvidia/meta/llama-3.1-8b-instruct"
-    MISTRAL_7B_V03 = "mistralai/Mistral-7B-Instruct-v0.3"
-    GEMMA_2_9B = "google/gemma-2-9b-it"
-    PHI_4_MINI = "microsoft/Phi-4-mini-instruct"
-    SOLAR_10_7B = "upstage/SOLAR-10.7B-Instruct-v1.0"
+    GPT_5_5 = "gpt-5.5"
+    GPT_5_4 = "gpt-5.4"
+    GPT_5_4_MINI = "gpt-5.4-mini"
+    GPT_5_4_NANO = "gpt-5.4-nano"
+    GPT_4_1_MINI = "gpt-4.1-mini"
 
 
 class ModelAvailability(StrEnum):

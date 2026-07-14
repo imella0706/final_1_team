@@ -38,12 +38,22 @@ class OpenAICompatibleClient:
             "messages": messages,
             "temperature": temperature,
         }
+<<<<<<< HEAD
         token_limit_name = (
             "max_completion_tokens"
             if self.provider == TextRuntimeProvider.OPENAI
             else "max_tokens"
         )
         payload[token_limit_name] = max_tokens
+=======
+        token_limit_key = (
+            "max_completion_tokens"
+            if self.provider == TextRuntimeProvider.OPENAI
+            and model_name.startswith("gpt-5")
+            else "max_tokens"
+        )
+        payload[token_limit_key] = max_tokens
+>>>>>>> origin/dev
         endpoint = f"{base_url.rstrip('/')}/chat/completions"
 
         try:

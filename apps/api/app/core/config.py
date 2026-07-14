@@ -1,5 +1,9 @@
+from pathlib import Path
+
 from pydantic import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+ENV_FILE = Path(__file__).resolve().parents[2] / ".env"
 
 
 class Settings(BaseSettings):
@@ -10,6 +14,19 @@ class Settings(BaseSettings):
     llm_base_url: str = "https://router.huggingface.co/v1"
     llm_api_key: SecretStr | None = None
     llm_timeout_seconds: float = 120
+    openai_base_url: str = "https://api.openai.com/v1"
+    openai_api_key: SecretStr | None = None
+    openai_chat_model: str | None = None
+    openai_vision_model: str | None = None
+    openai_image_model: str | None = None
+    openai_gpt_5_5_model: str | None = None
+    openai_gpt_5_4_model: str | None = None
+    openai_gpt_5_4_mini_model: str | None = None
+    openai_gpt_5_4_nano_model: str | None = None
+    openai_gpt_4_1_mini_model: str | None = None
+    nvidia_base_url: str | None = None
+    nvidia_api_key: SecretStr | None = None
+    nvidia_llama_model: str | None = None
     image_base_url: str = "https://router.huggingface.co/hf-inference"
     openai_base_url: str = "https://api.openai.com/v1"
     openai_api_key: SecretStr | None = None
@@ -50,6 +67,10 @@ class Settings(BaseSettings):
     openjourney_model: str | None = None
     image_provider: str = "huggingface"
     image_prompt_template: str = "generic"
+    comfyui_base_url: str = "http://127.0.0.1:8188"
+    comfyui_workflow_path: str | None = None
+    comfyui_timeout_seconds: float = 300
+    comfyui_poll_interval_seconds: float = 1
     image_validation_enabled: bool = False
     image_validator_model_name: str | None = None
     image_validation_threshold: float = 0.24
@@ -61,7 +82,7 @@ class Settings(BaseSettings):
     unsplash_access_key: SecretStr | None = None
 
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=ENV_FILE,
         env_prefix="BRANDMATE_",
         extra="ignore",
     )

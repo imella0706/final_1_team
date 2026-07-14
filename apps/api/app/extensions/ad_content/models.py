@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 
+from app.core.config import settings
 from app.extensions.ad_content.schemas import (
     ImageModel,
     ImageModelAvailability,
@@ -88,8 +89,24 @@ IMAGE_MODEL_CATALOG = (
     ),
 )
 
+COMFYUI_IMAGE_MODEL_CATALOG = (
+    ImageModelSpec(
+        id=ImageModel.FLUX_SCHNELL,
+        name="FLUX.1 Schnell GGUF",
+        provider="Local ComfyUI",
+        availability=ImageModelAvailability.GATED,
+        note="Local Flux Schnell pipeline served by ComfyUI with the GGUF loader.",
+        recommended=True,
+    ),
+)
+
 
 def list_image_model_options() -> list[ImageModelOption]:
+    catalog = (
+        COMFYUI_IMAGE_MODEL_CATALOG
+        if settings.image_provider.lower() == "comfyui"
+        else IMAGE_MODEL_CATALOG
+    )
     return [
         ImageModelOption(
             id=spec.id,
@@ -99,5 +116,5 @@ def list_image_model_options() -> list[ImageModelOption]:
             recommended=spec.recommended,
             note=spec.note,
         )
-        for spec in IMAGE_MODEL_CATALOG
+        for spec in catalog
     ]

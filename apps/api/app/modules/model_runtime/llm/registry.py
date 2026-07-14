@@ -16,6 +16,7 @@ class TextModelConfig:
 
 
 MODEL_MAP: dict[str, TextModelConfig] = {
+<<<<<<< HEAD
     "openai/gpt-4.1-mini": TextModelConfig(
         display_name="OpenAI GPT 4.1 Mini",
         provider=TextRuntimeProvider.OPENAI,
@@ -136,6 +137,8 @@ MODEL_MAP: dict[str, TextModelConfig] = {
         model_setting="solar_model",
         api_key_setting="solar_api_key",
     ),
+=======
+>>>>>>> origin/dev
     "qwen-2.5-7b-instruct": TextModelConfig(
         display_name="Qwen 2.5 7B Instruct",
         provider=TextRuntimeProvider.HUGGING_FACE_ROUTER,
@@ -151,6 +154,54 @@ MODEL_MAP: dict[str, TextModelConfig] = {
         base_url_setting="llama_base_url",
         model_setting="llama_model",
         api_key_setting="llama_api_key",
+    ),
+    "nvidia/meta/llama-3.1-8b-instruct": TextModelConfig(
+        display_name="NVIDIA · Llama 3.1 8B Instruct",
+        provider=TextRuntimeProvider.NVIDIA,
+        default_model="meta/llama-3.1-8b-instruct",
+        base_url_setting="nvidia_base_url",
+        model_setting="nvidia_llama_model",
+        api_key_setting="nvidia_api_key",
+    ),
+    "gpt-5.5": TextModelConfig(
+        display_name="GPT-5.5",
+        provider=TextRuntimeProvider.OPENAI,
+        default_model="gpt-5.5",
+        base_url_setting="openai_base_url",
+        model_setting="openai_gpt_5_5_model",
+        api_key_setting="openai_api_key",
+    ),
+    "gpt-5.4": TextModelConfig(
+        display_name="GPT-5.4",
+        provider=TextRuntimeProvider.OPENAI,
+        default_model="gpt-5.4",
+        base_url_setting="openai_base_url",
+        model_setting="openai_gpt_5_4_model",
+        api_key_setting="openai_api_key",
+    ),
+    "gpt-5.4-mini": TextModelConfig(
+        display_name="GPT-5.4 Mini",
+        provider=TextRuntimeProvider.OPENAI,
+        default_model="gpt-5.4-mini",
+        base_url_setting="openai_base_url",
+        model_setting="openai_gpt_5_4_mini_model",
+        api_key_setting="openai_api_key",
+    ),
+    "gpt-5.4-nano": TextModelConfig(
+        display_name="GPT-5.4 Nano",
+        provider=TextRuntimeProvider.OPENAI,
+        default_model="gpt-5.4-nano",
+        base_url_setting="openai_base_url",
+        model_setting="openai_gpt_5_4_nano_model",
+        api_key_setting="openai_api_key",
+    ),
+    "gpt-4.1-mini": TextModelConfig(
+        display_name="GPT-4.1 Mini",
+        provider=TextRuntimeProvider.OPENAI,
+        default_model="gpt-4.1-mini",
+        base_url_setting="openai_base_url",
+        model_setting="openai_gpt_4_1_mini_model",
+        api_key_setting="openai_api_key",
     ),
 }
 

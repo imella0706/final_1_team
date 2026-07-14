@@ -1,0 +1,5 @@
+[core]
+    site_cache_dir = .dvc/site-cache
+    remote = gcsremote
+['remote "gcsremote"']
+    url = gs://ssakda/dvc/brandmate
