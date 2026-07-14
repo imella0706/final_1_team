@@ -1,10 +1,13 @@
-# 로컬에서 비전 평가를 간편하게 실행하기 위해 만든 자동화 파일 
 #!/usr/bin/env bash
+# Legacy Ollama-based local vision evaluation wrapper kept for team compatibility.
+# Standard service management: scripts/manage_brandmate_services.sh.
+# Move to scripts/legacy or delete only after team agreement.
+
 set -euo pipefail
 
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 API_DIR="$PROJECT_ROOT/apps/api"
-LOG_DIR="$PROJECT_ROOT/outputs/local_services"
+LOG_DIR="${BRANDMATE_SERVICE_LOG_DIR:-$PROJECT_ROOT/outputs/brandmate_services}"
 COMFYUI_DIR="${COMFYUI_DIR:-$HOME/personal/ComfyUI}"
 OLLAMA_URL="${OLLAMA_URL:-http://127.0.0.1:11434}"
 COMFYUI_URL="${COMFYUI_URL:-http://127.0.0.1:8188}"

@@ -9,11 +9,17 @@ from app.modules.ad_copy.input_validator import (
     SITUATION_MAP,
     TONE_MAP,
     normalize_ad_copy_input,
+    normalize_age_groups,
     normalize_target_audiences,
 )
 
 
 class AdModel(StrEnum):
+    OPENAI_GPT_5_5 = "openai/gpt-5.5"
+    OPENAI_GPT_5_4 = "openai/gpt-5.4"
+    OPENAI_GPT_5_4_MINI = "openai/gpt-5.4-mini"
+    OPENAI_GPT_5_4_NANO = "openai/gpt-5.4-nano"
+    OPENAI_GPT_4_1_MINI = "openai/gpt-4.1-mini"
     QWEN_2_5_7B = "Qwen/Qwen2.5-7B-Instruct"
     LLAMA_3_1_8B = "meta-llama/Llama-3.1-8B-Instruct"
     NVIDIA_LLAMA_3_1_8B = "nvidia/meta/llama-3.1-8b-instruct"
@@ -59,11 +65,22 @@ class AdSituation(StrEnum):
 
 
 class TargetAudience(StrEnum):
-    TEENS = "teens"
-    TWENTIES = "twenties"
     OFFICE_WORKERS = "office_workers"
+    STUDENTS = "students"
+    MIDDLE_SCHOOL_STUDENTS = "middle_school_students"
+    HIGH_SCHOOL_STUDENTS = "high_school_students"
+    COLLEGE_STUDENTS = "college_students"
     FAMILIES = "families"
     COUPLES = "couples"
+    SOLO = "solo"
+
+
+class AgeGroup(StrEnum):
+    TEENS = "teens"
+    TWENTIES = "twenties"
+    THIRTIES = "thirties"
+    FORTIES = "forties"
+    FIFTIES_PLUS = "fifties_plus"
 
 
 class AdChannel(StrEnum):
@@ -89,7 +106,8 @@ class AdCopyRequest(BaseModel):
     business_name: str = Field(min_length=1, max_length=100)
     business_type: BusinessType
     situation: AdSituation
-    target_audiences: list[TargetAudience] = Field(min_length=1, max_length=5)
+    age_groups: list[AgeGroup] = Field(default_factory=list, max_length=5)
+    target_audiences: list[TargetAudience] = Field(default_factory=list, max_length=6)
     tone: CopyTone
     product_names: list[str] = Field(min_length=1, max_length=10)
     features: list[str] = Field(default_factory=list, max_length=10)
@@ -97,6 +115,20 @@ class AdCopyRequest(BaseModel):
     promotion: str | None = Field(default=None, max_length=300)
     required_terms: list[str] = Field(default_factory=list, max_length=10)
     prohibited_terms: list[str] = Field(default_factory=list, max_length=20)
+    gender: str | None = Field(default=None, max_length=40)
+    occupation_group: str | None = Field(default=None, max_length=80)
+    product_price: str | None = Field(default=None, max_length=120)
+    interests: list[str] = Field(default_factory=list, max_length=10)
+    region: str | None = Field(default=None, max_length=120)
+    trade_area: str | None = Field(default=None, max_length=160)
+    audience_detail: str | None = Field(default=None, max_length=500)
+    blog_purpose: str | None = Field(default=None, max_length=80)
+    blog_emphasis: list[str] = Field(default_factory=list, max_length=10)
+    blog_style: str | None = Field(default=None, max_length=80)
+    seo_keywords: list[str] = Field(default_factory=list, max_length=10)
+    blog_length: str | None = Field(default=None, max_length=40)
+    additional_request: str | None = Field(default=None, max_length=500)
+    blog_photo_notes: list[str] = Field(default_factory=list, max_length=10)
 
     @model_validator(mode="before")
     @classmethod
@@ -120,6 +152,11 @@ class AdCopyRequest(BaseModel):
     def normalize_targets(cls, value):
         return normalize_target_audiences(value)
 
+    @field_validator("age_groups", mode="before")
+    @classmethod
+    def normalize_ages(cls, value):
+        return normalize_age_groups(value)
+
     @field_validator("tone", mode="before")
     @classmethod
     def normalize_tone(cls, value):
@@ -135,7 +172,8 @@ class BusinessSummary(BaseModel):
     business_name: str = Field(min_length=1, max_length=100)
     business_type_korean: str = Field(min_length=1, max_length=100)
     situation_korean: str = Field(min_length=1, max_length=100)
-    target_audiences_korean: list[str] = Field(min_length=1, max_length=5)
+    age_groups_korean: list[str] = Field(default_factory=list, max_length=5)
+    target_audiences_korean: list[str] = Field(default_factory=list, max_length=6)
     tone_korean: str = Field(min_length=1, max_length=100)
     channel_korean: str = Field(min_length=1, max_length=100)
 
@@ -237,21 +275,73 @@ class VisualBrief(BaseModel):
     avoid: list[str] = Field(default_factory=list, max_length=10)
 
 
+def default_visual_brief() -> VisualBrief:
+    return VisualBrief(
+        products_to_show=[
+            ProductToShow(
+                product_name="uploaded photos",
+                visual_role="main",
+                must_be_visible=True,
+            )
+        ],
+        feature_visualization=[
+            FeatureVisualization(
+                feature_text="uploaded photos",
+                visual_translation=["use uploaded photos directly"],
+            )
+        ],
+        camera_angle="eye_level_close_up",
+        composition="centered_product_hero",
+        lighting="soft_natural_window_light",
+        background="minimal_korean_local_cafe",
+        color_palette=["premium_neutral_tones"],
+        depth_of_field="sharp_product_soft_background",
+        empty_space="poster_safe_margin",
+        avoid=[],
+    )
+
+
+class ChannelRecommendation(BaseModel):
+    format_name: str = Field(default="", max_length=100)
+    writing_direction: str = Field(default="", max_length=500)
+    image_direction: str = Field(default="", max_length=500)
+    placement_tip: str = Field(default="", max_length=500)
+    overlay_headline: str = Field(default="", max_length=100)
+    caption: str = Field(default="", max_length=3000)
+    publish_cta: str = Field(default="", max_length=200)
+    publish_hashtags: list[str] = Field(default_factory=list, max_length=10)
+    publish_title: str = Field(default="", max_length=150)
+    publish_body: str = Field(default="", max_length=8000)
+    promotion_template: str = Field(default="", max_length=1500)
+    image_insert_guide: str = Field(default="", max_length=700)
+    blog_title: str = Field(default="", max_length=150)
+    thumbnail_photo: str = Field(default="", max_length=120)
+    thumbnail_reason: str = Field(default="", max_length=700)
+    photo_order: list[str] = Field(default_factory=list, max_length=10)
+    blog_sections: list[dict[str, object]] = Field(default_factory=list, max_length=12)
+
+
 class AdCopyContent(BaseModel):
     marketing_strategy: MarketingStrategy
     headlines: list[str] = Field(min_length=1, max_length=5)
     body_copies: list[str] = Field(min_length=1, max_length=5)
     ctas: list[str] = Field(min_length=1, max_length=5)
+    hashtags: list[str] = Field(default_factory=list, max_length=10)
+    channel_recommendation: ChannelRecommendation = Field(
+        default_factory=ChannelRecommendation
+    )
     validation_check: ValidationCheck
-    visual_brief: VisualBrief
+    visual_brief: VisualBrief = Field(default_factory=default_visual_brief)
     safety_notes: list[str] = Field(default_factory=list, max_length=10)
 
 
 class AdCopyResponse(AdCopyContent):
     model: str
-    routed_model: str
-    provider: str
-    prompt_version: str
-    latency_ms: int
+    routed_model: str = ""
+    provider: str = ""
+    prompt_version: str = ""
+    image_prompt: str = ""
+    llm_prompt: dict[str, object] = Field(default_factory=dict)
+    latency_ms: int = 0
     attempts: int = 1
     output_repaired: bool = False

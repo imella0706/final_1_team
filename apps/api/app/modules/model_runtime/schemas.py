@@ -14,6 +14,7 @@ class TextRuntimeProvider(StrEnum):
 
 class ImageRuntimeProvider(StrEnum):
     DIFFUSERS = "diffusers"
+    OPENAI = "openai"
 
 
 class LlmGenerateRequest(BaseModel):

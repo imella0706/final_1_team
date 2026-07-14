@@ -16,6 +16,70 @@ class TextModelConfig:
 
 
 MODEL_MAP: dict[str, TextModelConfig] = {
+    "openai/gpt-5.5": TextModelConfig(
+        display_name="OpenAI GPT-5.5",
+        provider=TextRuntimeProvider.OPENAI,
+        default_model="gpt-5.5",
+        base_url_setting="openai_base_url",
+        model_setting="openai_gpt_5_5_model",
+        api_key_setting="openai_api_key",
+    ),
+    "gpt-5.5": TextModelConfig(
+        display_name="OpenAI GPT-5.5",
+        provider=TextRuntimeProvider.OPENAI,
+        default_model="gpt-5.5",
+        base_url_setting="openai_base_url",
+        model_setting="openai_gpt_5_5_model",
+        api_key_setting="openai_api_key",
+    ),
+    "openai/gpt-5.4": TextModelConfig(
+        display_name="OpenAI GPT-5.4",
+        provider=TextRuntimeProvider.OPENAI,
+        default_model="gpt-5.4",
+        base_url_setting="openai_base_url",
+        model_setting="openai_gpt_5_4_model",
+        api_key_setting="openai_api_key",
+    ),
+    "gpt-5.4": TextModelConfig(
+        display_name="OpenAI GPT-5.4",
+        provider=TextRuntimeProvider.OPENAI,
+        default_model="gpt-5.4",
+        base_url_setting="openai_base_url",
+        model_setting="openai_gpt_5_4_model",
+        api_key_setting="openai_api_key",
+    ),
+    "openai/gpt-5.4-mini": TextModelConfig(
+        display_name="OpenAI GPT-5.4 Mini",
+        provider=TextRuntimeProvider.OPENAI,
+        default_model="gpt-5.4-mini",
+        base_url_setting="openai_base_url",
+        model_setting="openai_gpt_5_4_mini_model",
+        api_key_setting="openai_api_key",
+    ),
+    "gpt-5.4-mini": TextModelConfig(
+        display_name="OpenAI GPT-5.4 Mini",
+        provider=TextRuntimeProvider.OPENAI,
+        default_model="gpt-5.4-mini",
+        base_url_setting="openai_base_url",
+        model_setting="openai_gpt_5_4_mini_model",
+        api_key_setting="openai_api_key",
+    ),
+    "openai/gpt-5.4-nano": TextModelConfig(
+        display_name="OpenAI GPT-5.4 Nano",
+        provider=TextRuntimeProvider.OPENAI,
+        default_model="gpt-5.4-nano",
+        base_url_setting="openai_base_url",
+        model_setting="openai_gpt_5_4_nano_model",
+        api_key_setting="openai_api_key",
+    ),
+    "openai/gpt-4.1-mini": TextModelConfig(
+        display_name="OpenAI GPT 4.1 Mini",
+        provider=TextRuntimeProvider.OPENAI,
+        default_model="gpt-4.1-mini",
+        base_url_setting="openai_base_url",
+        model_setting="openai_gpt_4_1_mini_model",
+        api_key_setting="openai_api_key",
+    ),
     "qwen-2.5-7b-instruct": TextModelConfig(
         display_name="Qwen 2.5 7B Instruct",
         provider=TextRuntimeProvider.HUGGING_FACE_ROUTER,
@@ -88,7 +152,8 @@ def get_text_model_config(model: str) -> TextModelConfig:
     if key in MODEL_MAP:
         return MODEL_MAP[key]
     for config in MODEL_MAP.values():
-        if key in {config.display_name, config.default_model}:
+        routed_base = config.default_model.removesuffix(":featherless-ai")
+        if key in {config.display_name, config.default_model, routed_base}:
             return config
     raise KeyError(f"Unknown text model: {model}")
 
@@ -110,12 +175,22 @@ def resolve_base_url(config: TextModelConfig) -> str:
     if model_base_url:
         return model_base_url
     local_base_url = settings.local_llm_base_url
+    if (
+        local_base_url
+        and config.provider not in {TextRuntimeProvider.OPENAI, TextRuntimeProvider.NVIDIA}
+        and (_setting(config.model_setting) or settings.local_llm_model)
+    ):
+        return local_base_url
     if config.provider in {
         TextRuntimeProvider.LM_STUDIO,
         TextRuntimeProvider.OLLAMA,
         TextRuntimeProvider.VLLM,
     } and local_base_url:
         return local_base_url
+    if config.provider == TextRuntimeProvider.OPENAI:
+        return settings.openai_base_url
+    if config.provider == TextRuntimeProvider.NVIDIA:
+        return settings.nvidia_base_url
     return settings.llm_base_url
 
 
@@ -137,6 +212,8 @@ def resolve_api_key(config: TextModelConfig) -> str | None:
 
 def infer_provider(base_url: str, fallback: TextRuntimeProvider) -> TextRuntimeProvider:
     normalized = base_url.lower()
+    if fallback in {TextRuntimeProvider.OPENAI, TextRuntimeProvider.NVIDIA}:
+        return fallback
     if "router.huggingface.co" in normalized:
         return TextRuntimeProvider.HUGGING_FACE_ROUTER
     if "api.openai.com" in normalized:

@@ -45,7 +45,7 @@ POST /api/v1/ad-content/generate
 추가 폴더:
 
 ```text
-apps/web-ad-content/
+apps/web-legacy-ad-content/
 ```
 
 역할:
@@ -182,5 +182,5 @@ apps/api/tests/test_model_runtime.py
 cd apps\api
 .venv\Scripts\python.exe -m pytest
 .venv\Scripts\python.exe -m ruff check app tests
-node --check ..\web-ad-content\app.js
+node --check ..\web-legacy-ad-content\app.js
 ```

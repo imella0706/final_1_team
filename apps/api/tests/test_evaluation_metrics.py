@@ -31,11 +31,68 @@ def request_fixture() -> AdCopyRequest:
 def response_fixture() -> AdCopyResponse:
     return AdCopyResponse.model_validate(
         {
+            "marketing_strategy": {
+                "business_summary": {
+                    "business_name": "오후의 조각",
+                    "business_type_korean": "카페",
+                    "situation_korean": "신메뉴",
+                    "age_groups_korean": ["20대"],
+                    "target_audiences_korean": [],
+                    "tone_korean": "감성적인",
+                    "channel_korean": "Instagram",
+                },
+                "mandatory_products": [
+                    {"product_name": "수제 딸기 티라미수", "role": "primary"}
+                ],
+                "mandatory_features": [
+                    {
+                        "feature_text": "생딸기 사용",
+                        "copy_usage_rule": "본문 문구에 자연스럽게 포함해야 함",
+                        "visual_usage_rule": "이미지에서 생딸기 토핑으로 표현해야 함",
+                    }
+                ],
+                "core_message": "생딸기 티라미수 신메뉴 소개",
+                "customer_emotion": "달콤한 기대감",
+                "marketing_angle": "신메뉴 경험",
+                "recommended_cta_direction": "방문 유도",
+                "avoid_points": [],
+            },
             "headlines": ["생딸기 티라미수의 달콤한 순간", "오늘의 디저트 한 조각"],
             "body_copies": ["수제 딸기 티라미수를 만나보세요."],
             "ctas": ["지금 매장에 들러보세요."],
             "hashtags": ["#생딸기", "#수제티라미수"],
             "image_prompt": "Editorial photography of handmade strawberry tiramisu",
+            "validation_check": {
+                "all_products_included": True,
+                "all_features_included": True,
+                "prohibited_terms_used": False,
+                "visual_brief_uses_enum_only": True,
+                "hashtags_removed": True,
+                "language_quality": "natural Korean",
+            },
+            "visual_brief": {
+                "products_to_show": [
+                    {
+                        "product_name": "수제 딸기 티라미수",
+                        "visual_role": "main",
+                        "must_be_visible": True,
+                    }
+                ],
+                "feature_visualization": [
+                    {
+                        "feature_text": "생딸기 사용",
+                        "visual_translation": ["fresh strawberry topping"],
+                    }
+                ],
+                "camera_angle": "45_degree_close_up",
+                "composition": "centered_product_hero",
+                "lighting": "soft_natural_window_light",
+                "background": "minimal_korean_local_cafe",
+                "color_palette": ["warm_beige_cream"],
+                "depth_of_field": "shallow_depth_of_field",
+                "empty_space": "top_20_percent",
+                "avoid": ["readable_text"],
+            },
             "safety_notes": [],
             "model": "Qwen/Qwen2.5-7B-Instruct",
             "routed_model": "Qwen/Qwen2.5-7B-Instruct",

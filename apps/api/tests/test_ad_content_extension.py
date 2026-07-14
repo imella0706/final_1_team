@@ -1,15 +1,20 @@
-from fastapi.testclient import TestClient
+import asyncio
+
+import httpx
+from pydantic import SecretStr
 import pytest
 
+from app.core.config import settings
 from app.extensions.ad_content.main import app
-from app.extensions.ad_content.schemas import AdImageResponse
+from app.extensions.ad_content.schemas import AdImageRequest, AdImageResponse
 from app.extensions.ad_content.image_prompt import build_ad_image_prompt
-from app.extensions.ad_content.image_service import _image_endpoint
+from app.extensions.ad_content.image_service import _image_endpoint, generate_ad_image
 from app.extensions.ad_content.product_visualizer import ProductVisualization
 from app.extensions.ad_content.reference_search import search_reference_images
 from app.extensions.ad_content.reference_store import ProductVisualProfileStore
 from app.modules.ad_copy.schemas import AdCopyRequest
 from app.modules.ad_copy.schemas import AdCopyResponse
+from tests.api_client import get, post
 
 
 def sample_content_request() -> dict[str, object]:
@@ -31,17 +36,26 @@ def sample_content_request() -> dict[str, object]:
         "image_model": "black-forest-labs/FLUX.1-schnell",
         "image_width": 1024,
         "image_height": 1280,
+        "reference_image_data_url": "data:image/png;base64,aW1hZ2U=",
     }
 
 
-def test_image_model_catalog_is_exposed() -> None:
-    response = TestClient(app).get("/api/v1/ad-content/image-models")
+def test_image_model_catalog_is_exposed(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "image_provider", "comfyui")
+
+    response = get(app, "/api/v1/ad-content/image-models")
 
     assert response.status_code == 200
     models = response.json()
+    models_by_id = {model["id"]: model for model in models}
     assert models[0]["id"] == "black-forest-labs/FLUX.1-schnell"
-    assert models[0]["recommended"] is False
-    assert len(models) == 3
+    assert models[0]["provider"] == "Local ComfyUI"
+    assert models[0]["recommended"] is True
+    assert models_by_id["openai/gpt-image-1-mini"]["provider"] == "OpenAI"
+    assert models_by_id["openai-responses/gpt-5.5"]["provider"] == "OpenAI Responses API"
+    assert models_by_id["stabilityai/stable-diffusion-xl-base-1.0"]["provider"] == (
+        "Hugging Face Inference"
+    )
 
 
 def test_image_endpoint_uses_hugging_face_router_by_default(monkeypatch) -> None:
@@ -51,6 +65,103 @@ def test_image_endpoint_uses_hugging_face_router_by_default(monkeypatch) -> None
         _image_endpoint("black-forest-labs/FLUX.1-schnell")
         == "https://router.huggingface.co/hf-inference/models/black-forest-labs/FLUX.1-schnell"
     )
+
+
+def test_openai_image_generation_sends_reference_image_as_edit(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    class FakeAsyncClient:
+        def __init__(self, **kwargs) -> None:
+            del kwargs
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args) -> None:
+            del args
+
+        async def post(self, url, *, headers, data=None, files=None, json=None):
+            captured["url"] = url
+            captured["headers"] = headers
+            captured["data"] = data
+            captured["files"] = files
+            captured["json"] = json
+            return httpx.Response(
+                200,
+                request=httpx.Request("POST", url),
+                json={"data": [{"b64_json": "aW1hZ2U="}]},
+            )
+
+    monkeypatch.setattr(settings, "openai_api_key", SecretStr("openai-test-token"))
+    monkeypatch.setattr(settings, "image_provider", "huggingface")
+    monkeypatch.setattr(
+        "app.extensions.ad_content.image_service.httpx.AsyncClient",
+        FakeAsyncClient,
+    )
+
+    response = asyncio.run(
+        generate_ad_image(
+            AdImageRequest(
+                model="openai/gpt-image-1-mini",
+                prompt="Make a cafe poster background",
+                reference_image_data_url="data:image/png;base64,aW1hZ2U=",
+            )
+        )
+    )
+
+    assert response.image_base64 == "aW1hZ2U="
+    assert captured["url"].endswith("/images/edits")
+    assert captured["data"]["model"] == "gpt-image-1-mini"
+    assert "attached reference image as the primary visual source" in captured["data"]["prompt"]
+    assert "Make a cafe poster background" in captured["data"]["prompt"]
+    assert captured["json"] is None
+    assert captured["files"]["image"][0] == "reference.png"
+
+
+def test_comfyui_provider_still_allows_openai_image_models(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    class FakeAsyncClient:
+        def __init__(self, **kwargs) -> None:
+            del kwargs
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args) -> None:
+            del args
+
+        async def post(self, url, *, headers, data=None, files=None, json=None):
+            captured["url"] = url
+            captured["headers"] = headers
+            captured["data"] = data
+            captured["files"] = files
+            captured["json"] = json
+            return httpx.Response(
+                200,
+                request=httpx.Request("POST", url),
+                json={"data": [{"b64_json": "aW1hZ2U="}]},
+            )
+
+    monkeypatch.setattr(settings, "image_provider", "comfyui")
+    monkeypatch.setattr(settings, "openai_api_key", SecretStr("openai-test-token"))
+    monkeypatch.setattr(
+        "app.extensions.ad_content.image_service.httpx.AsyncClient",
+        FakeAsyncClient,
+    )
+
+    response = asyncio.run(
+        generate_ad_image(
+            AdImageRequest(
+                model="openai/gpt-image-1-mini",
+                prompt="Make a cafe poster background",
+            )
+        )
+    )
+
+    assert response.image_base64 == "aW1hZ2U="
+    assert captured["url"].endswith("/images/generations")
+    assert captured["json"]["model"] == "gpt-image-1-mini"
 
 
 def test_generate_content_orchestrates_copy_and_image_models(monkeypatch) -> None:
@@ -136,6 +247,7 @@ def test_generate_content_orchestrates_copy_and_image_models(monkeypatch) -> Non
         captured_image_request["model"] = request.model.value
         captured_image_request["prompt"] = request.prompt
         captured_image_request["negative_prompt"] = request.negative_prompt
+        captured_image_request["reference_image_data_url"] = request.reference_image_data_url
         captured_image_request["width"] = request.width
         captured_image_request["height"] = request.height
         return AdImageResponse(
@@ -145,6 +257,12 @@ def test_generate_content_orchestrates_copy_and_image_models(monkeypatch) -> Non
             media_type="image/png",
             latency_ms=456,
         )
+
+    async def fake_describe_reference_image(reference_image_data_url, copy_request):
+        del reference_image_data_url, copy_request
+        return "참고 이미지: 딸기 디저트와 음료가 함께 보이는 사진", {
+            "reference_image_prompt": "mocked",
+        }
 
     async def fake_visualize_products(request, copy):
         del request, copy
@@ -183,24 +301,117 @@ def test_generate_content_orchestrates_copy_and_image_models(monkeypatch) -> Non
         "app.extensions.ad_content.router.visualize_products",
         fake_visualize_products,
     )
+    monkeypatch.setattr(
+        "app.extensions.ad_content.router.describe_reference_image",
+        fake_describe_reference_image,
+    )
 
-    response = TestClient(app).post("/api/v1/ad-content/generate", json=sample_content_request())
+    response = post(app, "/api/v1/ad-content/generate", json=sample_content_request())
 
     assert response.status_code == 200
     body = response.json()
     assert body["copy"]["latency_ms"] == 123
-    assert "hashtags" not in body["copy"]
+    assert body["copy"]["hashtags"] == []
     assert body["ad_copy"]["ctas"] == ["Visit Sample Cafe today"]
     assert body["product_visualization"]["products"][0]["category"] == "Dessert"
     assert body["validation"]["input_valid"] is True
     assert body["image"]["latency_ms"] == 456
     assert captured_image_request["model"] == "black-forest-labs/FLUX.1-schnell"
+    assert captured_image_request["reference_image_data_url"] == "data:image/png;base64,aW1hZ2U="
     assert captured_image_request["width"] == 1024
     assert captured_image_request["height"] == 1280
-    assert "photorealistic commercial advertising image" in captured_image_request["prompt"]
+    assert "commercial product ad image" in captured_image_request["prompt"]
     assert "strawberry tiramisu" in captured_image_request["prompt"]
-    assert "Peach ade" in captured_image_request["prompt"] or "peach ade" in captured_image_request["prompt"]
-    assert "readable text" in captured_image_request["negative_prompt"]
+    assert (
+        "Peach ade" in captured_image_request["prompt"]
+        or "peach ade" in captured_image_request["prompt"]
+    )
+    assert "No readable text" in captured_image_request["negative_prompt"]
+
+
+def test_image_prompt_uses_korean_and_reference_image_context() -> None:
+    request = AdCopyRequest.model_validate(
+        {
+            "model": "Qwen/Qwen2.5-7B-Instruct",
+            "business_name": "오후의 조각",
+            "business_type": "cafe",
+            "situation": "new_menu",
+            "target_audiences": ["twenties"],
+            "tone": "emotional",
+            "product_names": ["수제 딸기 티라미수"],
+            "features": ["매일 아침 직접 만드는 디저트"],
+            "channel": "instagram",
+            "promotion": None,
+            "required_terms": [],
+            "prohibited_terms": [],
+        }
+    )
+    copy = AdCopyResponse(
+        marketing_strategy={
+            "business_summary": {
+                "business_name": "오후의 조각",
+                "business_type_korean": "카페",
+                "situation_korean": "신메뉴",
+                "target_audiences_korean": ["20대"],
+                "tone_korean": "감성적인",
+                "channel_korean": "Instagram",
+            },
+            "mandatory_products": [{"product_name": "수제 딸기 티라미수", "role": "primary"}],
+            "mandatory_features": [],
+            "core_message": "신메뉴를 강조하는 광고",
+            "customer_emotion": "따뜻한 기대",
+            "marketing_angle": "신메뉴 경험",
+            "recommended_cta_direction": "방문 유도",
+            "avoid_points": [],
+        },
+        headlines=["신메뉴가 출시됐어요"],
+        body_copies=["수제 딸기 티라미수로 특별한 하루를 시작해보세요."],
+        ctas=["지금 방문해보세요"],
+        validation_check={
+            "all_products_included": True,
+            "all_features_included": True,
+            "prohibited_terms_used": False,
+            "visual_brief_uses_enum_only": True,
+            "hashtags_removed": True,
+            "language_quality": "natural Korean",
+        },
+        visual_brief={
+            "products_to_show": [
+                {
+                    "product_name": "수제 딸기 티라미수",
+                    "visual_role": "main",
+                    "must_be_visible": True,
+                }
+            ],
+            "feature_visualization": [],
+            "camera_angle": "45_degree_close_up",
+            "composition": "centered_product_hero",
+            "lighting": "soft_natural_window_light",
+            "background": "minimal_korean_local_cafe",
+            "color_palette": ["warm_beige_cream"],
+            "depth_of_field": "shallow_depth_of_field",
+            "empty_space": "top_20_percent",
+            "avoid": [],
+        },
+        safety_notes=[],
+        model="gpt-4.1-mini",
+        prompt_version="test",
+        latency_ms=111,
+    )
+
+    prompt, negative_prompt = build_ad_image_prompt(
+        copy,
+        request,
+        None,
+        reference_image_context="참고 이미지: 딸기 크림층이 선명하게 보이는 디저트",
+    )
+
+    assert "commercial product ad image" in prompt
+    assert "Reference image analysis" in prompt
+    assert "Product Identity Lock" in prompt
+    assert "딸기 크림층" in prompt
+    assert "photorealistic" not in prompt.lower()
+    assert "No readable text" in negative_prompt
 
 
 def test_image_prompt_locks_user_products_and_blocks_fake_text() -> None:
@@ -310,8 +521,8 @@ def test_image_prompt_locks_user_products_and_blocks_fake_text() -> None:
     assert "handmade strawberry tiramisu" in prompt
     assert "피치에이드" in prompt
     assert "visible cream layers" in prompt
-    assert "Do not replace the listed products" in prompt
-    assert "food, drinks, objects, packages, or merchandise" in prompt
+    assert "Product Identity Lock" in prompt
+    assert "realistic product photography" in prompt
     assert "no signs, no posters, no menu boards, no readable text" in prompt
     assert "unlisted product" in negative_prompt
     assert "chocolate cake" in negative_prompt
@@ -436,8 +647,8 @@ def test_image_prompt_handles_non_food_small_business_product() -> None:
     assert "handmade ceramic mug" in prompt
     assert "미니 꽃다발" in prompt
     assert "glossy ceramic texture" in prompt
-    assert "objects, packages, or merchandise" in prompt
-    assert "clean product photography styling" in prompt
+    assert "realistic product photography" in prompt
+    assert "premium neutral tones" in prompt
     assert "unrelated food" in negative_prompt
     assert "unrelated object" in negative_prompt
     assert "paper cup" in negative_prompt

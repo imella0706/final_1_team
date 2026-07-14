@@ -502,7 +502,7 @@ API 문서는 `http://127.0.0.1:8000/docs`에서 확인한다.
 
 ```bash
 # [Design Intent] 정적 프론트엔드를 .env의 CORS origin과 동일한 주소로 제공한다.
-cd ~/personal/final_1_team/apps/web-ad-content
+cd ~/personal/final_1_team/apps/web
 python -m http.server 5501 --bind 127.0.0.1
 ```
 

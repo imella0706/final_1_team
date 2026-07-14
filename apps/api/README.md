@@ -45,6 +45,15 @@ pip install -e ".[dev]"
 copy .env.example .env
 ```
 
+GCP VM에서 실행할 때는 GCP 기준 예시 파일을 사용합니다.
+
+```bash
+cp .env.gcp.example .env
+```
+
+기존 `.env.example`은 팀 협의 전까지 유지합니다. 휴가 중인 팀원 복귀 후 기존 예시 파일을
+삭제할지, 또는 GCP 기준 설정을 `.env.example`에 통합할지 결정합니다.
+
 ## `.env` 최소 설정
 
 이미지 생성은 외부 유료 API가 아니라 GCP GPU VM의 ComfyUI를 기본으로 사용합니다.
@@ -96,6 +105,14 @@ BRANDMATE_UNSPLASH_ACCESS_KEY=
 `BRANDMATE_REFERENCE_SEARCH_ENABLED=true`이면 기본값 `wikimedia`를 사용합니다. Pexels/Unsplash를 선택할 때만 각각 API 키가 필요합니다.
 
 ## 서버 실행
+
+프론트까지 한 번에 실행하려면 저장소 루트에서:
+
+```cmd
+start-brandmate.cmd
+```
+
+API만 따로 실행하려면:
 
 ```cmd
 cd apps\api

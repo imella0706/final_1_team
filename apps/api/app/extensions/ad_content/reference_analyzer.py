@@ -76,6 +76,7 @@ Output:
         product_name: str,
         references: list[ReferenceImageResult],
         model_name: str,
+        provider: TextRuntimeProvider,
     ) -> dict[str, Any]:
         payload: dict[str, Any] = {
             "model": model_name,
@@ -104,7 +105,7 @@ Output:
         }
         token_limit_key = (
             "max_completion_tokens"
-            if model_name.startswith("gpt-5")
+            if provider == TextRuntimeProvider.OPENAI and model_name.startswith("gpt-5")
             else "max_tokens"
         )
         payload[token_limit_key] = 900
@@ -145,7 +146,14 @@ Output:
                 headers["Authorization"] = f"Bearer {api_key}"
 
             endpoint = f"{base_url.rstrip('/')}/chat/completions"
-            payload = self._payload(request, copy, product_name, references, model_name)
+            payload = self._payload(
+                request,
+                copy,
+                product_name,
+                references,
+                model_name,
+                provider,
+            )
             async with httpx.AsyncClient(timeout=settings.llm_timeout_seconds) as client:
                 response = await client.post(endpoint, headers=headers, json=payload)
                 if response.status_code in {400, 422}:

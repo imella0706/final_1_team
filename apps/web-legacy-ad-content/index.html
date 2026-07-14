@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content="BrandMate 광고 문구와 이미지 생성 모델 통합 화면" />
     <title>BrandMate Ad Content Studio</title>
-    <link rel="stylesheet" href="./styles.css" />
+    <link rel="stylesheet" href="./styles.css?v=occupation-none-20260709" />
   </head>
   <body>
     <header class="topbar">
@@ -48,6 +48,23 @@
           </div>
 
           <form id="ad-form">
+            <div class="field">
+              <label for="reference-image">참고 이미지(선택)</label>
+              <input id="reference-image" name="referenceImage" type="file" accept="image/*" />
+              <label class="inline-toggle">
+                <input id="reference-cutout" name="referenceCutout" type="checkbox" checked />
+                <span>제품만 추출</span>
+              </label>
+              <div class="reference-preview" id="reference-preview" hidden>
+                <img id="reference-preview-image" alt="선택한 참고 이미지 미리보기" />
+                <div>
+                  <strong id="reference-preview-name"></strong>
+                  <small id="reference-preview-meta"></small>
+                  <button class="text-button" id="reference-preview-clear" type="button">사진 제거</button>
+                </div>
+              </div>
+            </div>
+
             <div class="model-grid">
               <div class="model-field">
                 <label for="copy-model">광고 문구 모델 <b>필수</b></label>
@@ -76,7 +93,7 @@
               <legend>상황</legend>
               <div class="choice-grid three">
                 <label><input type="radio" name="situation" value="new_menu" checked /><span>신메뉴</span></label>
-                <label><input type="radio" name="situation" value="discount" /><span>할인</span></label>
+                <label><input type="radio" name="situation" value="discount" /><span>세트메뉴 할인</span></label>
                 <label><input type="radio" name="situation" value="event" /><span>이벤트</span></label>
                 <label><input type="radio" name="situation" value="delivery" /><span>배달</span></label>
                 <label><input type="radio" name="situation" value="takeout" /><span>포장</span></label>
@@ -85,13 +102,51 @@
             </fieldset>
 
             <fieldset>
-              <legend>타겟</legend>
+              <legend>나이대</legend>
               <div class="choice-grid five">
-                <label><input type="checkbox" name="target" value="teens" /><span>10대</span></label>
-                <label><input type="checkbox" name="target" value="twenties" checked /><span>20대</span></label>
+                <label><input type="radio" name="ageGroup" value="teens" /><span>10대</span></label>
+                <label><input type="radio" name="ageGroup" value="twenties" checked /><span>20대</span></label>
+                <label><input type="radio" name="ageGroup" value="thirties" /><span>30대</span></label>
+                <label><input type="radio" name="ageGroup" value="forties" /><span>40대</span></label>
+                <label><input type="radio" name="ageGroup" value="fifties_plus" /><span>50대 이상</span></label>
+              </div>
+            </fieldset>
+
+            <fieldset>
+              <legend>성별</legend>
+              <div class="choice-grid three">
+                <label><input type="radio" name="gender" value="all" checked /><span>전체</span></label>
+                <label><input type="radio" name="gender" value="female" /><span>여성</span></label>
+                <label><input type="radio" name="gender" value="male" /><span>남성</span></label>
+              </div>
+            </fieldset>
+
+            <fieldset>
+              <legend>직업군</legend>
+              <div class="choice-grid four">
+                <label><input type="radio" name="occupationGroup" value="none" checked /><span>해당 없음</span></label>
+                <label><input type="radio" name="occupationGroup" value="office_worker" /><span>직장인</span></label>
+                <label><input type="radio" name="occupationGroup" value="student" /><span>학생</span></label>
+                <label><input type="radio" name="occupationGroup" value="self_employed" /><span>자영업</span></label>
+                <label><input type="radio" name="occupationGroup" value="freelancer" /><span>프리랜서</span></label>
+                <label><input type="radio" name="occupationGroup" value="professional" /><span>전문직</span></label>
+                <label><input type="radio" name="occupationGroup" value="homemaker" /><span>주부</span></label>
+                <label><input type="radio" name="occupationGroup" value="job_seeker" /><span>취준생</span></label>
+                <label><input type="radio" name="occupationGroup" value="other" /><span>기타</span></label>
+              </div>
+            </fieldset>
+
+            <fieldset>
+              <legend>타겟</legend>
+              <div class="choice-grid four">
                 <label><input type="checkbox" name="target" value="office_workers" checked /><span>직장인</span></label>
+                <label><input type="checkbox" name="target" value="students" /><span>학생</span></label>
+                <label><input type="checkbox" name="target" value="middle_school_students" /><span>중학생</span></label>
+                <label><input type="checkbox" name="target" value="high_school_students" /><span>고등학생</span></label>
+                <label><input type="checkbox" name="target" value="college_students" /><span>대학생</span></label>
                 <label><input type="checkbox" name="target" value="families" /><span>가족</span></label>
                 <label><input type="checkbox" name="target" value="couples" /><span>커플</span></label>
+                <label><input type="checkbox" name="target" value="solo" /><span>혼자</span></label>
               </div>
             </fieldset>
 
@@ -128,9 +183,36 @@
             </div>
 
             <div class="field">
+              <label for="product-price">제품가격</label>
+              <input id="product-price" name="productPrice" value="티라미수 6,500원, 피치에이드 5,000원" maxlength="120" />
+            </div>
+
+            <div class="field">
               <label for="features">강조할 특징</label>
               <textarea id="features" name="features" rows="3">매일 아침 직접 만드는 디저트
 평일 오전 11시부터 오후 2시까지 런치 세트 운영</textarea>
+            </div>
+
+            <div class="field">
+              <label for="interests">관심사</label>
+              <input id="interests" name="interests" value="디저트 투어, 감성 카페, 사진 찍기" maxlength="160" />
+            </div>
+
+            <div class="two-columns">
+              <div class="field">
+                <label for="region">지역</label>
+                <input id="region" name="region" value="서울 마포구 연남동" maxlength="120" />
+              </div>
+              <div class="field">
+                <label for="trade-area">상권</label>
+                <input id="trade-area" name="tradeArea" value="연남동 골목상권, 주말 데이트 동선" maxlength="160" />
+              </div>
+            </div>
+
+            <div class="field">
+              <label for="audience-detail">세부 타겟 메모</label>
+              <textarea id="audience-detail" name="audienceDetail" rows="3">인스타그램에 디저트 사진을 자주 올리는 고객
+점심 이후 가볍게 들르는 근처 직장인</textarea>
             </div>
 
             <div class="field">
@@ -190,13 +272,17 @@
 
               <div class="result-grid">
                 <article class="copy-result">
-                  <div class="result-label">AD COPY <span id="result-copy-model"></span></div>
+                  <div class="result-label">광고 문구 <span id="result-copy-model"></span></div>
                   <p class="context-line" id="context-line"></p>
                   <h3 id="headline"></h3>
                   <p class="body-copy" id="body-copy"></p>
                   <div class="result-block">
                     <small>CTA</small>
                     <strong id="cta"></strong>
+                  </div>
+                  <div class="result-block">
+                    <small>HASHTAGS</small>
+                    <p class="hashtag-list" id="hashtags"></p>
                   </div>
                   <div class="safety-check">
                     <span>✓</span>
@@ -205,11 +291,21 @@
                 </article>
 
                 <article class="image-result">
-                  <div class="result-label">AD IMAGE <span id="result-image-model"></span></div>
-                  <figure class="generated-image-frame">
+                  <div class="result-label">광고 이미지 <span id="result-image-model"></span></div>
+                  <figure class="generated-image-frame poster-preview">
                     <img id="generated-image" alt="생성된 광고 이미지" />
+                    <figcaption class="poster-copy">
+                      <strong id="poster-headline"></strong>
+                    </figcaption>
                   </figure>
                   <p class="image-caption" id="image-caption"></p>
+                  <div class="artifact-box" id="artifact-box" hidden>
+                    <strong>저장된 결과물</strong>
+                    <small id="artifact-directory"></small>
+                    <small id="artifact-json"></small>
+                    <small id="artifact-image"></small>
+                    <small id="artifact-prompt"></small>
+                  </div>
                 </article>
               </div>
             </div>
@@ -218,6 +314,6 @@
       </div>
     </main>
 
-    <script src="./app.js"></script>
+    <script src="./app.js?v=occupation-none-20260709"></script>
   </body>
 </html>

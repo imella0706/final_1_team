@@ -1,8 +1,10 @@
 # BrandMate Ad Content Studio
 
-광고 문구 모델과 이미지 생성 모델을 브라우저에서 선택하고 최종 광고 콘텐츠를 생성하는 정적 프론트엔드입니다.
+광고 문구 모델과 이미지 생성 모델을 브라우저에서 선택하고 최종 광고 콘텐츠를 생성하는
+초기 정적 프론트엔드입니다.
 
-기존 `apps/web`을 수정하지 않고 별도 폴더로 추가했습니다.
+현재 메인 테스트 페이지는 `apps/web`입니다. 이 폴더는 프롬프트/UI 고도화 전 베이스라인을
+비교하기 위한 레거시 폴더입니다. 운영 실행 대상이 아닙니다.
 
 ## 호출 API
 
@@ -52,7 +54,7 @@ curl http://127.0.0.1:8000/health
 새 CMD 창에서 저장소 루트 기준:
 
 ```cmd
-cd apps\web-ad-content
+cd apps\web-legacy-ad-content
 python -m http.server 5501
 ```
 

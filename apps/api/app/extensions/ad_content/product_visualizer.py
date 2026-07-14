@@ -90,35 +90,26 @@ OUTPUT JSON FORMAT
 
     def fallback(self, request: AdCopyRequest, copy: AdCopyResponse) -> ProductVisualization:
         products: list[ProductVisual] = []
-        feature_cues = [
-            cue
-            for item in copy.visual_brief.feature_visualization
-            for cue in item.visual_translation
-        ]
         for product_name in request.product_names:
+            english_name = _simple_english_name(product_name)
             products.append(
                 ProductVisual(
                     original_name=product_name,
-                    english_name=product_name,
+                    english_name=english_name,
                     category="Product",
                     visual_description=[
-                        "exact user-entered product identity",
-                        "correct visible shape, material, texture, color, package, garnish, or serving style",
-                        *feature_cues[:4],
+                        product_name,
                     ],
                     serving_style=[
-                        "presented as the main advertising product",
-                        "clearly separated from other products",
+                        "main product only",
                     ],
                     must_show=[
                         product_name,
-                        "recognizable product details",
-                        *feature_cues[:4],
                     ],
                     must_not_replace_with=[
-                        "visually similar but incorrect product",
-                        "unlisted substitute product",
-                        "generic unrelated product",
+                        "different product",
+                        "extra birthday candles",
+                        "new toppings not shown in the reference image",
                     ],
                 )
             )
@@ -129,6 +120,7 @@ OUTPUT JSON FORMAT
         request: AdCopyRequest,
         copy: AdCopyResponse,
         model_name: str,
+        provider: TextRuntimeProvider,
         reference_profiles: list[ProductVisual] | None = None,
     ) -> dict[str, Any]:
         payload: dict[str, Any] = {
@@ -158,7 +150,7 @@ OUTPUT JSON FORMAT
         }
         token_limit_key = (
             "max_completion_tokens"
-            if model_name.startswith("gpt-5")
+            if provider == TextRuntimeProvider.OPENAI and model_name.startswith("gpt-5")
             else "max_tokens"
         )
         payload[token_limit_key] = 1200
@@ -214,6 +206,8 @@ OUTPUT JSON FORMAT
         ]
 
     async def visualize(self, request: AdCopyRequest, copy: AdCopyResponse) -> ProductVisualization:
+        return self.fallback(request, copy)
+
         reference_profiles = await self._load_reference_profiles(request, copy)
         if len(reference_profiles) == len(request.product_names):
             return ProductVisualization(products=reference_profiles)
@@ -234,13 +228,20 @@ OUTPUT JSON FORMAT
                 response = await client.post(
                     f"{base_url.rstrip('/')}/chat/completions",
                     headers=headers,
-                    json=self._payload(request, copy, model_name, reference_profiles),
+                    json=self._payload(
+                        request,
+                        copy,
+                        model_name,
+                        provider,
+                        reference_profiles,
+                    ),
                 )
                 if response.status_code in {400, 422}:
                     payload = self._payload(
                         request,
                         copy,
                         model_name,
+                        provider,
                         reference_profiles,
                     )
                     payload.pop("response_format", None)
@@ -266,3 +267,18 @@ async def visualize_products(
     copy: AdCopyResponse,
 ) -> ProductVisualization:
     return await ProductVisualizer().visualize(request, copy)
+
+
+def _simple_english_name(product_name: str) -> str:
+    normalized = product_name.replace(" ", "").lower()
+    if "초코" in normalized and ("케이크" in normalized or "케익" in normalized):
+        return "Chocolate Cake"
+    if "케이크" in normalized or "케익" in normalized:
+        return "Cake"
+    if "티라미수" in normalized:
+        return "Tiramisu"
+    if "라떼" in normalized:
+        return "Latte"
+    if "에이드" in normalized:
+        return "Ade"
+    return product_name

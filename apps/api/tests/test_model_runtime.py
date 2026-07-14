@@ -1,5 +1,3 @@
-from fastapi.testclient import TestClient
-
 from app.core.config import settings
 from app.extensions.ad_content.main import app
 from app.modules.model_runtime.llm.registry import (
@@ -14,6 +12,7 @@ from app.modules.model_runtime.schemas import (
     LlmGenerateResponse,
     TextRuntimeProvider,
 )
+from tests.api_client import post
 
 
 def test_openai_settings_resolve_model_alias(monkeypatch) -> None:
@@ -60,7 +59,8 @@ def test_llm_generate_endpoint_delegates_to_service(monkeypatch) -> None:
         fake_generate_text,
     )
 
-    response = TestClient(app).post(
+    response = post(
+        app,
         "/api/llm/generate",
         json={"model": "gpt-4.1-mini", "prompt": "Make an ad"},
     )
@@ -84,7 +84,8 @@ def test_image_generate_endpoint_delegates_to_service(monkeypatch) -> None:
         fake_generate_image,
     )
 
-    response = TestClient(app).post(
+    response = post(
+        app,
         "/api/image/generate",
         json={"model": "flux.1-schnell", "prompt": "A cafe ad image"},
     )

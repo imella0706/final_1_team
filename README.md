@@ -42,8 +42,8 @@ apps/api/app/modules/model_runtime/docs/CHANGES_FROM_AD_COPY_MODEL_BRANCH.md
 ```text
 apps/
   api/                 FastAPI 백엔드
-  web/                 기존 정적 테스트 페이지
-  web-ad-content/      광고 문구 + 이미지 생성 통합 브라우저 화면
+  web/                 메인 통합 테스트 페이지
+  web-legacy-ad-content/ 프롬프트/UI 고도화 전 베이스라인 비교용 폴더
 docs/                  기존 설계 문서
 ```
 
@@ -83,6 +83,39 @@ Browser
 
 ## 빠른 실행
 
+현재 표준 실행 경로는 Linux/GCP/WSL 기준의 서비스 관리 스크립트입니다.
+FastAPI, 정적 프론트엔드, ComfyUI를 같은 명령 체계에서 관리합니다.
+
+```bash
+# 서비스 시작
+./scripts/manage_brandmate_services.sh
+
+# 상태 확인
+./scripts/manage_brandmate_services.sh status
+
+# 로그 확인
+./scripts/manage_brandmate_services.sh logs
+
+# 서비스 종료
+./scripts/manage_brandmate_services.sh stop
+
+# 서비스 재시작
+./scripts/manage_brandmate_services.sh restart
+```
+
+아래 스크립트는 협의 전까지 유지하는 legacy 경로입니다. 현재 표준 실행 경로가 아닙니다.
+
+- `scripts/start-brandmate.ps1`: Windows legacy launcher입니다. 팀 협의 후 `scripts/legacy/`로 이동하거나 삭제합니다.
+- `scripts/run_local_vision_eval.sh`: Ollama 기반 로컬 평가 전용 legacy wrapper입니다. 팀 협의 후 `scripts/legacy/`로 이동하거나 삭제합니다.
+
+Windows에서 기존 방식으로 실행해야 하는 경우에만 아래 파일을 사용합니다.
+
+```cmd
+start-brandmate.cmd
+```
+
+이 legacy 스크립트는 API 서버와 웹 서버를 함께 확인/실행하고, 브라우저를 자동으로 엽니다.
+
 ### 1. 저장소 clone
 
 ```cmd
@@ -101,6 +134,15 @@ python -m pip install --upgrade pip
 pip install -e ".[dev]"
 copy .env.example .env
 ```
+
+GCP VM에서 실행할 때는 GCP 기준 예시 파일을 사용합니다.
+
+```bash
+cp apps/api/.env.gcp.example apps/api/.env
+```
+
+기존 `apps/api/.env.example`은 팀 협의 전까지 유지합니다. 휴가 중인 팀원 복귀 후
+기존 예시 파일을 삭제할지, 또는 GCP 기준 설정을 `.env.example`에 통합할지 결정합니다.
 
 ### 3. `.env` 설정
 
@@ -139,7 +181,25 @@ BRANDMATE_PRODUCT_VISUAL_DB_PATH=product_visual_profiles.sqlite3
 
 `BRANDMATE_REFERENCE_SEARCH_ENABLED=true`로 바꾸면 Wikimedia Commons API를 사용합니다. Pexels/Unsplash는 해당 provider를 선택할 때만 API 키가 필요합니다.
 
-### 4. API 서버 실행
+### 4. API + 브라우저 한 번에 실행
+
+```cmd
+start-brandmate.cmd
+```
+
+브라우저 접속:
+
+```text
+http://127.0.0.1:5500
+```
+
+API 문서:
+
+```text
+http://127.0.0.1:8000/docs
+```
+
+### 5. API 서버만 따로 실행
 
 ```cmd
 cd apps\api
@@ -158,19 +218,19 @@ API 문서:
 http://127.0.0.1:8000/docs
 ```
 
-### 5. 브라우저 실행
+### 6. 브라우저만 따로 실행
 
 새 CMD 창:
 
 ```cmd
-cd apps\web-ad-content
-python -m http.server 5501
+cd apps\web
+python -m http.server 5500
 ```
 
 브라우저 접속:
 
 ```text
-http://127.0.0.1:5501
+http://127.0.0.1:5500
 ```
 
 ## 사용 순서
@@ -192,14 +252,14 @@ cd apps\api
 프론트엔드 문법 확인:
 
 ```cmd
-node --check ..\web-ad-content\app.js
+node --check ..\web\app.js
 ```
 
 ## 주요 문서
 
 - 로컬 Qwen + ComfyUI FLUX 온보딩: [docs/LOCAL_AI_PIPELINE_ONBOARDING.md](docs/LOCAL_AI_PIPELINE_ONBOARDING.md)
 - API 실행 문서: [apps/api/README.md](apps/api/README.md)
-- 브라우저 실행 문서: [apps/web-ad-content/README.md](apps/web-ad-content/README.md)
+- 브라우저 실행 문서: [apps/web/README.md](apps/web/README.md)
 - 광고 콘텐츠 확장 모듈: [apps/api/app/extensions/ad_content/README.md](apps/api/app/extensions/ad_content/README.md)
 - 광고 문구 모듈: [apps/api/app/modules/ad_copy/README.md](apps/api/app/modules/ad_copy/README.md)
 - 모델 런타임 구조: [apps/api/app/modules/model_runtime/README.md](apps/api/app/modules/model_runtime/README.md)
