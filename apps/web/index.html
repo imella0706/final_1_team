@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content="BrandMate 광고 문구와 이미지 생성 모델 통합 화면" />
     <title>BrandMate Ad Content Studio</title>
-    <link rel="stylesheet" href="./styles.css?v=product-compat-20260714" />
+    <link rel="stylesheet" href="./styles.css?v=voice-ads-20260715" />
   </head>
   <body>
     <header class="topbar">
@@ -402,12 +402,65 @@
                   <p class="image-caption" id="image-caption"></p>
                 </article>
               </div>
+
+              <section class="voice-ad-section" aria-labelledby="voice-ad-title">
+                <div class="voice-ad-heading">
+                  <div>
+                    <div class="result-label">음성 광고 <span id="result-audio-model">gpt-4o-mini-tts</span></div>
+                    <h3 id="voice-ad-title">광고 문구를 음성으로 만들기</h3>
+                  </div>
+                  <span class="voice-state" id="voice-state">준비됨</span>
+                </div>
+
+                <div class="voice-ad-layout">
+                  <div class="field voice-script-field">
+                    <label for="voice-script">내레이션 대본</label>
+                    <textarea id="voice-script" rows="6" maxlength="4096"></textarea>
+                    <small><span id="voice-script-count">0</span> / 4096자</small>
+                  </div>
+
+                  <div class="voice-settings">
+                    <div class="field">
+                      <label for="voice-select">목소리</label>
+                      <select id="voice-select">
+                        <option value="coral" selected>Coral · 밝고 자연스러움</option>
+                        <option value="marin">Marin · 부드럽고 선명함</option>
+                        <option value="cedar">Cedar · 안정적이고 깊음</option>
+                        <option value="nova">Nova · 활기차고 친근함</option>
+                        <option value="alloy">Alloy · 균형 잡힌 중성</option>
+                        <option value="onyx">Onyx · 낮고 차분함</option>
+                      </select>
+                    </div>
+
+                    <div class="field">
+                      <label for="voice-instructions">연기 지시</label>
+                      <textarea id="voice-instructions" rows="3" maxlength="1000">한국어 광고 성우처럼 밝고 자연스럽게 말하세요. 핵심 상품명은 또렷하게 강조하고, CTA 앞에는 짧게 쉰 뒤 설득력 있게 마무리하세요.</textarea>
+                    </div>
+
+                    <div class="field speed-field">
+                      <label for="voice-speed">말하기 속도 <output id="voice-speed-value">1.0×</output></label>
+                      <input id="voice-speed" type="range" min="0.75" max="1.5" value="1" step="0.05" />
+                    </div>
+
+                    <button class="generate-voice-button" id="generate-voice-button" type="button">
+                      음성 광고 생성
+                    </button>
+                  </div>
+                </div>
+
+                <div class="voice-error" id="voice-error" hidden></div>
+                <div class="voice-output" id="voice-output" hidden>
+                  <audio id="voice-player" controls preload="metadata"></audio>
+                  <button class="text-button" id="download-voice-button" type="button">MP3 저장</button>
+                </div>
+                <p class="ai-voice-notice">이 음성은 AI로 생성되었습니다.</p>
+              </section>
             </div>
           </div>
         </section>
       </div>
     </main>
 
-    <script src="./app.js?v=product-compat-20260714"></script>
+    <script src="./app.js?v=voice-ads-20260715"></script>
   </body>
 </html>

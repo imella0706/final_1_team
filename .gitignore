@@ -40,3 +40,8 @@ outputs/
 Thumbs.db
 
 outputs
+
+# Local CosyVoice runtime and licensed voice references
+/services/cosyvoice/.runtime/
+/services/cosyvoice/.venv/
+/services/cosyvoice/voices/*.wav

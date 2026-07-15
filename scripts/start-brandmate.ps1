@@ -83,6 +83,20 @@ try {
         exit 1
     }
 
+    try {
+        $providers = Invoke-RestMethod `
+            -Uri "$ApiUrl/api/v1/ad-content/audio/providers" `
+            -TimeoutSec 3
+        $cosyVoice = $providers | Where-Object { $_.provider -eq "cosyvoice" }
+        if ($cosyVoice.available) {
+            Write-Host "Local voice: CosyVoice is ready ($($cosyVoice.model))" -ForegroundColor Green
+        } else {
+            Write-Host "Local voice: CosyVoice is not ready; OpenAI fallback will be used." -ForegroundColor Yellow
+        }
+    } catch {
+        Write-Host "Local voice status could not be checked." -ForegroundColor Yellow
+    }
+
     if (Test-Url "$WebUrl/") {
         Write-Host "웹 서버가 이미 실행 중입니다: $WebUrl" -ForegroundColor Yellow
     } else {

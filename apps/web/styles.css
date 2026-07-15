@@ -337,6 +337,11 @@ fieldset {
 
 .choice-grid input {
   position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
   opacity: 0;
   pointer-events: none;
 }
@@ -951,9 +956,137 @@ select:focus {
   color: #4f443c;
 }
 
+.voice-ad-section {
+  margin-top: 28px;
+  padding-top: 24px;
+  border-top: 1px solid var(--line);
+}
+
+.voice-ad-heading,
+.voice-output {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.voice-ad-heading .result-label {
+  margin-bottom: 7px;
+}
+
+.voice-ad-heading h3 {
+  margin: 0;
+  color: #342f2b;
+  font-family: Georgia, "Noto Serif KR", serif;
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.voice-state {
+  flex: 0 0 auto;
+  color: var(--green);
+  font-size: 10px;
+  font-weight: 900;
+}
+
+.voice-state.running {
+  color: var(--coral-dark);
+}
+
+.voice-state.error {
+  color: #a63f3f;
+}
+
+.voice-ad-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(240px, 0.8fr);
+  gap: 18px;
+  margin-top: 18px;
+}
+
+.voice-script-field textarea {
+  min-height: 230px;
+}
+
+.voice-script-field small {
+  display: block;
+  margin-top: 5px;
+  color: var(--muted);
+  font-size: 9px;
+  text-align: right;
+}
+
+.voice-settings {
+  display: grid;
+  align-content: start;
+  gap: 12px;
+}
+
+.speed-field label {
+  display: flex;
+  justify-content: space-between;
+}
+
+.speed-field output {
+  color: var(--coral-dark);
+}
+
+.speed-field input {
+  width: 100%;
+  accent-color: var(--coral-dark);
+}
+
+.generate-voice-button {
+  min-height: 42px;
+  border: 0;
+  border-radius: 7px;
+  color: #fff;
+  background: #4f735f;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.generate-voice-button:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
+.voice-error {
+  margin-top: 14px;
+  padding: 10px 12px;
+  border: 1px solid #e4bdbd;
+  border-radius: 7px;
+  color: #873b3b;
+  background: #fff5f5;
+  font-size: 11px;
+}
+
+.voice-output {
+  margin-top: 16px;
+}
+
+.voice-output audio {
+  width: min(100%, 620px);
+  height: 42px;
+}
+
+.voice-output .text-button {
+  min-height: 36px;
+  white-space: nowrap;
+}
+
+.ai-voice-notice {
+  margin: 10px 0 0;
+  color: var(--muted);
+  font-size: 9px;
+}
+
 @media (max-width: 1100px) {
   .workspace,
-  .result-grid {
+  .result-grid,
+  .voice-ad-layout {
     grid-template-columns: 1fr;
   }
 }

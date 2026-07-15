@@ -33,14 +33,38 @@ const blogOptions = $("#blog-options");
 const referenceImageLabel = $("#reference-image-label");
 const productList = $("#product-list");
 const addProductButton = $("#add-product-button");
+const voiceScript = $("#voice-script");
+const voiceScriptCount = $("#voice-script-count");
+const voiceSelect = $("#voice-select");
+const voiceInstructions = $("#voice-instructions");
+const voiceSpeed = $("#voice-speed");
+const voiceSpeedValue = $("#voice-speed-value");
+const generateVoiceButton = $("#generate-voice-button");
+const voiceState = $("#voice-state");
+const voiceError = $("#voice-error");
+const voiceOutput = $("#voice-output");
+const voicePlayer = $("#voice-player");
+const downloadVoiceButton = $("#download-voice-button");
+
+const openAiVoiceOptions = [
+  ["coral", "Coral · 밝고 자연스러움"],
+  ["marin", "Marin · 부드럽고 선명함"],
+  ["cedar", "Cedar · 안정적이고 깊음"],
+  ["nova", "Nova · 활기차고 친근함"],
+  ["alloy", "Alloy · 균형 잡힌 중성"],
+  ["onyx", "Onyx · 낮고 차분함"],
+];
 
 let hasGeneratedAd = false;
 let referencePreviewDataUrl = null;
+let generatedVoiceDataUrl = "";
+let generatedVoiceExtension = "mp3";
+let configuredVoiceProviderLabel = "openai · gpt-4o-mini-tts";
 
 const fallbackCopyModels = [
   {
-    id: "openai/gpt-5.5",
-    name: "OpenAI GPT-5.5",
+    id: "openai/gpt-4.1-mini",
+    name: "OpenAI GPT 4.1 Mini",
     note: "최신 플래그십 GPT 모델. 광고 기획/카피 품질 비교용 기본 추천",
     recommended: true,
   },
@@ -577,6 +601,30 @@ function showGeneratedState() {
   outputPanel.classList.remove("is-empty");
 }
 
+function updateVoiceScriptCount() {
+  if (voiceScriptCount && voiceScript) {
+    voiceScriptCount.textContent = String(voiceScript.value.length);
+  }
+}
+
+function resetVoiceResult() {
+  generatedVoiceDataUrl = "";
+  generatedVoiceExtension = "mp3";
+  if (voicePlayer) {
+    voicePlayer.pause();
+    voicePlayer.removeAttribute("src");
+    voicePlayer.load();
+  }
+  if (voiceOutput) voiceOutput.hidden = true;
+  if (voiceError) voiceError.hidden = true;
+  if (voiceState) {
+    voiceState.textContent = "준비됨";
+    voiceState.className = "voice-state";
+  }
+  const audioModelLabel = $("#result-audio-model");
+  if (audioModelLabel) audioModelLabel.textContent = configuredVoiceProviderLabel;
+}
+
 function normalizeContentResult(result) {
   const copy = result.copy || result.copy_result;
   const image = result.image;
@@ -837,6 +885,49 @@ async function generateContent(payload) {
   });
 }
 
+async function generateAudio(payload) {
+  return fetchJson("/ad-content/audio/generate", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
+function fillVoiceSelect(voices) {
+  if (!voiceSelect) return;
+  voiceSelect.replaceChildren();
+  voices.forEach(([value, label]) => {
+    const option = document.createElement("option");
+    option.value = value;
+    option.textContent = label;
+    voiceSelect.append(option);
+  });
+}
+
+async function loadAudioProviders() {
+  fillVoiceSelect(openAiVoiceOptions);
+  try {
+    const providers = await fetchJson("/ad-content/audio/providers");
+    const cosyvoice = providers.find((provider) => provider.provider === "cosyvoice");
+    const openai = providers.find((provider) => provider.provider === "openai");
+    if (cosyvoice?.available && cosyvoice.voices?.length) {
+      fillVoiceSelect(
+        cosyvoice.voices.map((voice) => [
+          voice,
+          voice === "default" ? "Default · 로컬 기준 음성" : `${voice} · 로컬 음성`,
+        ]),
+      );
+      configuredVoiceProviderLabel = `cosyvoice · ${cosyvoice.model}`;
+    } else if (openai) {
+      configuredVoiceProviderLabel = `openai · ${openai.model}`;
+    }
+    setText("#result-audio-model", configuredVoiceProviderLabel);
+  } catch {
+    configuredVoiceProviderLabel = "음성 제공자 확인 필요";
+    setText("#result-audio-model", "음성 제공자 확인 필요");
+  }
+}
+
 function renderResult(input, result) {
   const { copy, image } = result;
   const headline = copy.headlines[0] || "";
@@ -903,6 +994,11 @@ function renderResult(input, result) {
   setText("#result-image-model", `${image.model} · ${formatLatencySeconds(image.latency_ms)}`);
   setText("#image-caption", result.image_prompt);
   $("#generated-image").src = `data:${image.media_type};base64,${image.image_base64}`;
+  if (voiceScript) {
+    voiceScript.value = [headline, copy.body_copies[0], copy.ctas[0]].filter(Boolean).join("\n\n");
+    updateVoiceScriptCount();
+  }
+  resetVoiceResult();
 
   payloadPreview.textContent = JSON.stringify(
     {
@@ -1015,6 +1111,65 @@ resetButton.addEventListener("click", () => {
   showEmptyState();
   generateButton.disabled = false;
   generateButton.firstElementChild.textContent = "광고 콘텐츠 생성";
+  if (voiceScript) voiceScript.value = "";
+  updateVoiceScriptCount();
+  resetVoiceResult();
+});
+
+voiceScript?.addEventListener("input", updateVoiceScriptCount);
+voiceSpeed?.addEventListener("input", () => {
+  if (voiceSpeedValue) voiceSpeedValue.textContent = `${Number(voiceSpeed.value).toFixed(2).replace(/0$/, "")}×`;
+});
+
+generateVoiceButton?.addEventListener("click", async () => {
+  const input = voiceScript?.value.trim() || "";
+  if (!input) {
+    voiceScript?.focus();
+    return;
+  }
+
+  generateVoiceButton.disabled = true;
+  generateVoiceButton.textContent = "음성 생성 중...";
+  voiceError.hidden = true;
+  voiceOutput.hidden = true;
+  voiceState.textContent = "생성 중";
+  voiceState.className = "voice-state running";
+
+  try {
+    const result = await generateAudio({
+      input,
+      voice: voiceSelect.value,
+      instructions: voiceInstructions.value.trim() || null,
+      speed: Number(voiceSpeed.value),
+    });
+    generatedVoiceDataUrl = `data:${result.media_type};base64,${result.audio_base64}`;
+    generatedVoiceExtension = result.media_type === "audio/wav" ? "wav" : "mp3";
+    voicePlayer.src = generatedVoiceDataUrl;
+    voiceOutput.hidden = false;
+    voiceState.textContent = result.fallback_used ? "완료 · 대체 모델 사용" : "완료";
+    voiceState.className = "voice-state";
+    setText(
+      "#result-audio-model",
+      `${result.provider || "openai"} · ${result.model} · ${result.voice} · ${formatLatencySeconds(result.latency_ms)}`,
+    );
+    downloadVoiceButton.textContent = `${generatedVoiceExtension.toUpperCase()} 저장`;
+  } catch (error) {
+    voiceState.textContent = "실패";
+    voiceState.className = "voice-state error";
+    voiceError.textContent = error.message;
+    voiceError.hidden = false;
+  } finally {
+    generateVoiceButton.disabled = false;
+    generateVoiceButton.textContent = "음성 광고 다시 생성";
+  }
+});
+
+downloadVoiceButton?.addEventListener("click", () => {
+  if (!generatedVoiceDataUrl) return;
+  const link = document.createElement("a");
+  link.href = generatedVoiceDataUrl;
+  link.download = `brandmate-voice-ad-${Date.now()}.${generatedVoiceExtension}`;
+  link.click();
 });
 
 downloadPosterButton?.addEventListener("click", async () => {
@@ -1040,3 +1195,4 @@ copyPosterButton?.addEventListener("click", async () => {
 showEmptyState();
 updateChannelMode();
 loadModels();
+loadAudioProviders();
