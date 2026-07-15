@@ -825,6 +825,29 @@ select:focus {
   overflow-wrap: anywhere;
 }
 
+.publish-package .naver-blog-copy-preview {
+  margin-top: 6px;
+  padding: 12px;
+  max-height: 360px;
+  overflow: auto;
+  border: 1px solid #efe8df;
+  border-radius: 8px;
+  color: #3f3a35;
+  background: #fffdf9;
+  font-size: 14px;
+  line-height: 1.85;
+}
+
+.naver-blog-copy-button {
+  width: 100%;
+  min-height: 38px;
+  margin-top: 10px;
+  justify-content: center;
+  border-color: #d8cec4;
+  background: #fff8ef;
+  color: #4f443c;
+}
+
 .channel-recommendation p {
   margin: 6px 0 0;
   color: #625b70;
@@ -923,6 +946,19 @@ select:focus {
   font-size: clamp(18px, 2.35vw, 30px);
   font-weight: 650;
   line-height: 1.18;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+
+.poster-copy small {
+  display: block;
+  max-width: 18em;
+  margin-top: 7px;
+  color: rgba(255, 255, 255, 0.9);
+  font-family: "Noto Sans KR", Arial, sans-serif;
+  font-size: clamp(11px, 1.35vw, 16px);
+  font-weight: 650;
+  line-height: 1.35;
   word-break: keep-all;
   overflow-wrap: anywhere;
 }
