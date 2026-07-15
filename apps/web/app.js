@@ -29,6 +29,7 @@ const referencePreviewClear = $("#reference-preview-clear");
 const referenceCutoutToggle = $("#reference-cutout");
 const downloadPosterButton = $("#download-poster-button");
 const copyPosterButton = $("#copy-poster-button");
+const copyNaverBlogButton = $("#copy-naver-blog-button");
 const blogOptions = $("#blog-options");
 const referenceImageLabel = $("#reference-image-label");
 const productList = $("#product-list");
@@ -60,6 +61,7 @@ let referencePreviewDataUrl = null;
 let generatedVoiceDataUrl = "";
 let generatedVoiceExtension = "mp3";
 let configuredVoiceProviderLabel = "openai · gpt-4o-mini-tts";
+let latestNaverBlogPasteText = "";
 
 const fallbackCopyModels = [
   {
@@ -329,8 +331,32 @@ function setText(selector, text) {
   $(selector).textContent = text || "";
 }
 
+function splitLongCanvasToken(context, token, maxWidth) {
+  const parts = [];
+  let part = "";
+  [...token].forEach((character) => {
+    const nextPart = `${part}${character}`;
+    if (context.measureText(nextPart).width <= maxWidth || !part) {
+      part = nextPart;
+      return;
+    }
+    parts.push(part);
+    part = character;
+  });
+  if (part) {
+    parts.push(part);
+  }
+  return parts;
+}
+
 function wrapCanvasText(context, text, maxWidth) {
-  const words = `${text || ""}`.trim().split(/\s+/).filter(Boolean);
+  const words = `${text || ""}`
+    .trim()
+    .split(/\s+/)
+    .flatMap((word) =>
+      context.measureText(word).width > maxWidth ? splitLongCanvasToken(context, word, maxWidth) : [word],
+    )
+    .filter(Boolean);
   const lines = [];
   let line = "";
   words.forEach((word) => {
@@ -348,9 +374,69 @@ function wrapCanvasText(context, text, maxWidth) {
   return lines;
 }
 
+function truncateCanvasLine(line, maxCharacters = 38) {
+  const text = `${line || ""}`.trim();
+  if ([...text].length <= maxCharacters) {
+    return text;
+  }
+  return `${[...text].slice(0, Math.max(1, maxCharacters - 1)).join("")}…`;
+}
+
+function splitPosterTitle(title) {
+  const cleanTitle = `${title || ""}`.replace(/\s+/g, " ").trim();
+  if (!cleanTitle) {
+    return { headline: "", subtitle: "" };
+  }
+  const separators = [" – ", " - ", " — ", " | ", " / ", ": "];
+  const separator = separators.find((item) => cleanTitle.includes(item));
+  if (separator && [...cleanTitle].length > 24) {
+    const [headline, ...rest] = cleanTitle.split(separator);
+    return {
+      headline: truncateCanvasLine(headline, 24),
+      subtitle: truncateCanvasLine(rest.join(separator), 44),
+    };
+  }
+  if ([...cleanTitle].length > 28) {
+    return {
+      headline: truncateCanvasLine([...cleanTitle].slice(0, 24).join(""), 24),
+      subtitle: truncateCanvasLine([...cleanTitle].slice(24).join("").trim(), 44),
+    };
+  }
+  return { headline: cleanTitle, subtitle: "" };
+}
+
+function fitCanvasText(context, text, maxWidth, options) {
+  const minSize = options.minSize || 28;
+  const maxLines = options.maxLines || 2;
+  for (let size = options.maxSize; size >= minSize; size -= 2) {
+    context.font = `${options.weight || 650} ${size}px ${options.family}`;
+    const lines = wrapCanvasText(context, text, maxWidth);
+    if (lines.length <= maxLines) {
+      return {
+        font: context.font,
+        fontSize: size,
+        lineHeight: Math.round(size * (options.lineHeightRatio || 1.22)),
+        lines,
+      };
+    }
+  }
+  context.font = `${options.weight || 650} ${minSize}px ${options.family}`;
+  const lines = wrapCanvasText(context, text, maxWidth).slice(0, maxLines);
+  if (lines.length) {
+    lines[lines.length - 1] = truncateCanvasLine(lines[lines.length - 1], options.fallbackCharacters || 36);
+  }
+  return {
+    font: context.font,
+    fontSize: minSize,
+    lineHeight: Math.round(minSize * (options.lineHeightRatio || 1.22)),
+    lines,
+  };
+}
+
 async function buildMergedPosterBlob() {
   const image = $("#generated-image");
   const headline = $("#poster-headline").textContent.trim();
+  const subtitle = $("#poster-subtitle")?.textContent.trim() || "";
   if (!image?.src || !headline) {
     throw new Error("합칠 이미지와 문구가 아직 없습니다.");
   }
@@ -370,28 +456,61 @@ async function buildMergedPosterBlob() {
   const context = canvas.getContext("2d");
   context.drawImage(image, 0, 0, width, height);
 
-  const gradient = context.createLinearGradient(0, height * 0.58, 0, height);
+  const gradient = context.createLinearGradient(0, height * 0.52, 0, height);
   gradient.addColorStop(0, "rgba(24, 18, 14, 0)");
-  gradient.addColorStop(0.45, "rgba(24, 18, 14, 0.26)");
-  gradient.addColorStop(1, "rgba(24, 18, 14, 0.72)");
+  gradient.addColorStop(0.42, "rgba(24, 18, 14, 0.34)");
+  gradient.addColorStop(1, "rgba(24, 18, 14, 0.78)");
   context.fillStyle = gradient;
   context.fillRect(0, 0, width, height);
 
   const padding = Math.round(width * 0.075);
-  const fontSize = Math.max(44, Math.round(width * 0.062));
-  const lineHeight = Math.round(fontSize * 1.22);
-  context.font = `650 ${fontSize}px Georgia, "Noto Serif KR", serif`;
   context.textBaseline = "bottom";
   context.fillStyle = "#ffffff";
   context.shadowColor = "rgba(0, 0, 0, 0.45)";
   context.shadowBlur = Math.round(width * 0.018);
   context.shadowOffsetY = Math.round(width * 0.006);
 
-  const lines = wrapCanvasText(context, headline, width - padding * 2).slice(0, 3);
-  const startY = height - padding - lineHeight * (lines.length - 1);
-  lines.forEach((line, index) => {
-    context.fillText(line, padding, startY + index * lineHeight);
+  const textWidth = width - padding * 2;
+  const headlineFit = fitCanvasText(context, headline, textWidth, {
+    maxSize: Math.max(46, Math.round(width * 0.064)),
+    minSize: Math.max(30, Math.round(width * 0.036)),
+    maxLines: 2,
+    weight: 700,
+    family: 'Georgia, "Noto Serif KR", serif',
+    fallbackCharacters: 28,
   });
+  const subtitleFit = subtitle
+    ? fitCanvasText(context, subtitle, textWidth, {
+        maxSize: Math.max(24, Math.round(width * 0.034)),
+        minSize: Math.max(18, Math.round(width * 0.023)),
+        maxLines: 2,
+        weight: 600,
+        family: '"Noto Sans KR", Arial, sans-serif',
+        lineHeightRatio: 1.32,
+        fallbackCharacters: 44,
+      })
+    : { lines: [], lineHeight: 0, font: "" };
+  const gap = subtitleFit.lines.length ? Math.round(width * 0.018) : 0;
+  const totalHeight =
+    headlineFit.lineHeight * headlineFit.lines.length + subtitleFit.lineHeight * subtitleFit.lines.length + gap;
+  let y = height - padding - totalHeight + headlineFit.lineHeight;
+
+  context.font = headlineFit.font;
+  context.fillStyle = "#ffffff";
+  headlineFit.lines.forEach((line) => {
+    context.fillText(line, padding, y);
+    y += headlineFit.lineHeight;
+  });
+
+  if (subtitleFit.lines.length) {
+    y += gap;
+    context.font = subtitleFit.font;
+    context.fillStyle = "rgba(255, 255, 255, 0.88)";
+    subtitleFit.lines.forEach((line) => {
+      context.fillText(line, padding, y);
+      y += subtitleFit.lineHeight;
+    });
+  }
 
   return new Promise((resolve, reject) => {
     canvas.toBlob((blob) => {
@@ -419,6 +538,67 @@ async function copyMergedPoster() {
   }
   const blob = await buildMergedPosterBlob();
   await navigator.clipboard.write([new ClipboardItem({ [blob.type]: blob })]);
+}
+
+function normalizeParagraphs(value) {
+  return `${value || ""}`
+    .replace(/\r\n/g, "\n")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function formatPhotoOrder(photoOrder) {
+  if (!Array.isArray(photoOrder) || !photoOrder.length) {
+    return "";
+  }
+  return ["사진 순서 추천", ...photoOrder.map((item, index) => `${index + 1}. ${item}`)].join("\n");
+}
+
+function formatBlogSection(section, index) {
+  const title = normalizeParagraphs(section?.title || `Section ${index + 1}`);
+  const photo = normalizeParagraphs(section?.photo || "");
+  const body = normalizeParagraphs(section?.body || "");
+  return [title, photo ? `[사진 삽입: ${photo}]` : "", body].filter(Boolean).join("\n\n");
+}
+
+function buildNaverBlogPasteText(input, recommendation, copy, publishHashtags) {
+  if (input.copy.channel !== "naver_blog") {
+    return "";
+  }
+  const title = normalizeParagraphs(recommendation.blog_title || recommendation.publish_title || copy.headlines?.[0]);
+  const thumbnail = normalizeParagraphs(recommendation.thumbnail_photo || "");
+  const thumbnailReason = normalizeParagraphs(recommendation.thumbnail_reason || "");
+  const sections = Array.isArray(recommendation.blog_sections) ? recommendation.blog_sections : [];
+  const sectionText = sections.map(formatBlogSection).filter(Boolean).join("\n\n");
+  const body = normalizeParagraphs(recommendation.publish_body || copy.body_copies?.[0] || "");
+  const hashtags = normalizeParagraphs(publishHashtags || copy.hashtags?.join(" ") || "");
+  const photoOrder = formatPhotoOrder(recommendation.photo_order);
+  const thumbnailBlock = thumbnail
+    ? [`[대표 사진 삽입: ${thumbnail}]`, thumbnailReason ? `대표 사진 이유: ${thumbnailReason}` : ""]
+        .filter(Boolean)
+        .join("\n")
+    : "";
+  return [
+    title,
+    thumbnailBlock,
+    sectionText || body,
+    photoOrder,
+    hashtags ? `해시태그\n${hashtags}` : "",
+  ]
+    .filter(Boolean)
+    .join("\n\n")
+    .trim();
+}
+
+async function copyNaverBlogPasteText() {
+  if (!latestNaverBlogPasteText) {
+    throw new Error("복사할 네이버 블로그 원고가 아직 없습니다.");
+  }
+  if (!navigator.clipboard?.writeText) {
+    throw new Error("현재 브라우저에서 텍스트 복사를 지원하지 않습니다.");
+  }
+  await navigator.clipboard.writeText(latestNaverBlogPasteText);
 }
 
 function buildContextLine(input) {
@@ -946,6 +1126,8 @@ function renderResult(input, result) {
   const publishHashtags = recommendation.publish_hashtags?.length
     ? recommendation.publish_hashtags.join(" ")
     : hashtags;
+  const posterTitle = splitPosterTitle(recommendation.overlay_headline || recommendation.publish_title || headline);
+  latestNaverBlogPasteText = buildNaverBlogPasteText(input, recommendation, copy, publishHashtags);
   setText("#overlay-headline", recommendation.overlay_headline || headline);
   setText("#instagram-caption", recommendation.caption || recommendation.publish_body || copy.body_copies[0]);
   setText("#publish-cta", recommendation.publish_cta || copy.ctas[0]);
@@ -982,13 +1164,22 @@ function renderResult(input, result) {
   setText("#blog-layout", blogLayout);
   const blogLayoutElement = $("#blog-layout");
   const blogLayoutLabel = $("#blog-layout-label");
+  const blogCopyPreview = $("#naver-blog-copy-preview");
+  const blogCopyLabel = $("#naver-blog-copy-label");
   if (blogLayoutElement) blogLayoutElement.hidden = !blogLayout;
   if (blogLayoutLabel) blogLayoutLabel.hidden = !blogLayout;
+  if (blogCopyPreview) {
+    blogCopyPreview.textContent = latestNaverBlogPasteText;
+    blogCopyPreview.hidden = !latestNaverBlogPasteText;
+  }
+  if (blogCopyLabel) blogCopyLabel.hidden = !latestNaverBlogPasteText;
+  if (copyNaverBlogButton) copyNaverBlogButton.hidden = !latestNaverBlogPasteText;
   setText("#channel-writing", recommendation.writing_direction);
   setText("#channel-image", recommendation.image_direction);
   setText("#channel-placement", recommendation.placement_tip);
   setText("#image-insert-guide", recommendation.image_insert_guide);
-  setText("#poster-headline", recommendation.overlay_headline || recommendation.publish_title || headline);
+  setText("#poster-headline", posterTitle.headline);
+  setText("#poster-subtitle", posterTitle.subtitle);
   setText("#safety-copy", copy.safety_notes[0] || "금지 표현이 발견되지 않았습니다.");
   setText("#result-copy-model", `${copy.model} · ${formatLatencySeconds(copy.latency_ms)}`);
   setText("#result-image-model", `${image.model} · ${formatLatencySeconds(image.latency_ms)}`);
@@ -1102,12 +1293,18 @@ addProductButton?.addEventListener("click", addProductRow);
 
 resetButton.addEventListener("click", () => {
   form.reset();
+  latestNaverBlogPasteText = "";
   clearReferencePreview();
   resetPipeline();
   updateModelHelp();
   runState.textContent = "대기";
   runState.className = "run-state";
   payloadPreview.textContent = "아직 생성된 데이터가 없습니다.";
+  const blogCopyPreview = $("#naver-blog-copy-preview");
+  const blogCopyLabel = $("#naver-blog-copy-label");
+  if (blogCopyPreview) blogCopyPreview.hidden = true;
+  if (blogCopyLabel) blogCopyLabel.hidden = true;
+  if (copyNaverBlogButton) copyNaverBlogButton.hidden = true;
   showEmptyState();
   generateButton.disabled = false;
   generateButton.firstElementChild.textContent = "광고 콘텐츠 생성";
@@ -1186,6 +1383,18 @@ copyPosterButton?.addEventListener("click", async () => {
     copyPosterButton.textContent = "복사 완료";
     window.setTimeout(() => {
       copyPosterButton.textContent = "이미지+글자 복사";
+    }, 1600);
+  } catch (error) {
+    window.alert(error.message);
+  }
+});
+
+copyNaverBlogButton?.addEventListener("click", async () => {
+  try {
+    await copyNaverBlogPasteText();
+    copyNaverBlogButton.textContent = "블로그 원고 복사 완료";
+    window.setTimeout(() => {
+      copyNaverBlogButton.textContent = "네이버 블로그 원고 복사";
     }, 1600);
   } catch (error) {
     window.alert(error.message);
