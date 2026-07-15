@@ -524,6 +524,71 @@ function normalizeParagraphs(value) {
     .trim();
 }
 
+function isInstructionLikeBlogText(value) {
+  const text = normalizeParagraphs(value);
+  if (!text) {
+    return true;
+  }
+  const instructionPatterns = [
+    /문체로/,
+    /소개합니다/,
+    /작성합니다/,
+    /구성합니다/,
+    /강조 포인트/,
+    /type=/i,
+    /대표사진 추천/,
+    /사진 순서 추천 이유/,
+    /추천 사진 순서/,
+    /업로드 사진/,
+    /정보 전달력/,
+  ];
+  return instructionPatterns.some((pattern) => pattern.test(text));
+}
+
+function hasUsableBlogSections(sections) {
+  if (!Array.isArray(sections) || !sections.length) {
+    return false;
+  }
+  return sections.some((section) => {
+    const body = normalizeParagraphs(section?.body || "");
+    return body.length >= 60 && !isInstructionLikeBlogText(body);
+  });
+}
+
+function buildFallbackNaverBlogBody(input, recommendation, publishHashtags) {
+  const businessName = normalizeParagraphs(input.copy.business_name || "매장");
+  const products = input.copy.product_names?.length ? input.copy.product_names.join(", ") : "대표 메뉴";
+  const region = normalizeParagraphs(input.copy.region || "");
+  const tradeArea = normalizeParagraphs(input.copy.trade_area || "");
+  const productPrice = normalizeParagraphs(input.copy.product_price || "");
+  const featureLines = (input.copy.features || [])
+    .map(normalizeParagraphs)
+    .filter((item) => item && !item.includes(":"))
+    .slice(0, 3);
+  const placeLine = [region, tradeArea].filter(Boolean).join(" ");
+  const thumbnail = normalizeParagraphs(recommendation.thumbnail_photo || "사진 1");
+  const featureText = featureLines.length
+    ? featureLines.join(" ")
+    : `${products}의 맛과 분위기를 차분하게 느낄 수 있습니다.`;
+  const priceLine = productPrice ? `가격과 구성은 ${productPrice} 기준으로 확인할 수 있습니다.` : "";
+  const hashtags = normalizeParagraphs(publishHashtags || "");
+
+  return [
+    `${businessName} ${products} 소개`,
+    `[대표 사진 삽입: ${thumbnail}]`,
+    `${placeLine ? `${placeLine}에서 만날 수 있는 ` : ""}${businessName}의 ${products}을 소개합니다. 사진으로 보이는 메뉴의 첫인상과 매장의 분위기를 중심으로, 방문 전에 궁금할 만한 내용을 정리했습니다.`,
+    `대표 메뉴`,
+    `[사진 삽입: ${thumbnail}]`,
+    `${products}은 ${businessName}에서 자연스럽게 추천하기 좋은 메뉴입니다. ${featureText}`,
+    priceLine,
+    `방문 안내`,
+    `${businessName}에 방문한다면 ${products}을 먼저 확인해보세요. 메뉴 선택이 고민될 때 참고하기 좋고, 사진으로 남기기에도 부담 없는 구성입니다.`,
+    hashtags ? `해시태그\n${hashtags}` : "",
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+}
+
 function formatPhotoOrder(photoOrder) {
   if (!Array.isArray(photoOrder) || !photoOrder.length) {
     return "";
@@ -535,6 +600,9 @@ function formatBlogSection(section, index) {
   const title = normalizeParagraphs(section?.title || `Section ${index + 1}`);
   const photo = normalizeParagraphs(section?.photo || "");
   const body = normalizeParagraphs(section?.body || "");
+  if (isInstructionLikeBlogText(body)) {
+    return "";
+  }
   return [title, photo ? `[사진 삽입: ${photo}]` : "", body].filter(Boolean).join("\n\n");
 }
 
@@ -546,8 +614,10 @@ function buildNaverBlogPasteText(input, recommendation, copy, publishHashtags) {
   const thumbnail = normalizeParagraphs(recommendation.thumbnail_photo || "");
   const thumbnailReason = normalizeParagraphs(recommendation.thumbnail_reason || "");
   const sections = Array.isArray(recommendation.blog_sections) ? recommendation.blog_sections : [];
-  const sectionText = sections.map(formatBlogSection).filter(Boolean).join("\n\n");
+  const sectionText = hasUsableBlogSections(sections) ? sections.map(formatBlogSection).filter(Boolean).join("\n\n") : "";
   const body = normalizeParagraphs(recommendation.publish_body || copy.body_copies?.[0] || "");
+  const fallbackBody = buildFallbackNaverBlogBody(input, recommendation, publishHashtags);
+  const usableBody = body.length >= 180 && !isInstructionLikeBlogText(body) ? body : fallbackBody;
   const hashtags = normalizeParagraphs(publishHashtags || copy.hashtags?.join(" ") || "");
   const photoOrder = formatPhotoOrder(recommendation.photo_order);
   const thumbnailBlock = thumbnail
@@ -558,7 +628,7 @@ function buildNaverBlogPasteText(input, recommendation, copy, publishHashtags) {
   return [
     title,
     thumbnailBlock,
-    sectionText || body,
+    sectionText || usableBody,
     photoOrder,
     hashtags ? `해시태그\n${hashtags}` : "",
   ]
