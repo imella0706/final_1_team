@@ -20,7 +20,7 @@ Open an Ubuntu WSL terminal and run:
 
 ```bash
 sudo apt update
-sudo apt install -y git git-lfs sox libsox-dev python3.10 python3.10-venv
+sudo apt install -y git git-lfs build-essential sox libsox-dev python3.10 python3.10-dev python3.10-venv
 cd /mnt/c/Users/ASUS/Downloads/finalproject12/final_1_team/services/cosyvoice
 bash setup.sh
 ```
@@ -79,3 +79,46 @@ Invoke-WebRequest http://127.0.0.1:50000/v1/tts `
 ```
 
 The first generation loads the model and is slower than later requests.
+
+## Troubleshooting
+
+If installation previously stopped while building `openai-whisper` with
+`ModuleNotFoundError: No module named 'pkg_resources'`, pull the updated setup
+script and run it again:
+
+```bash
+cd /mnt/c/Users/ASUS/Downloads/finalproject12/final_1_team/services/cosyvoice
+bash setup.sh
+```
+
+The script keeps `setuptools` below version 81 and builds the CosyVoice-pinned
+Whisper release without an isolated build environment. The existing repository
+and virtual environment are reused.
+
+If `pyworld` fails with `x86_64-linux-gnu-g++: No such file or directory`, install
+the native build tools and run setup again:
+
+```bash
+sudo apt update
+sudo apt install -y build-essential python3.10-dev
+bash setup.sh
+```
+
+After installation, verify the final environment rather than intermediate pip
+resolver warnings:
+
+```bash
+VENV="$HOME/.local/share/brandmate-cosyvoice/venv"
+"$VENV/bin/pip" check
+"$VENV/bin/python" -c 'import torch; print(torch.cuda.is_available())'
+```
+
+If model loading fails with `CUDA_HOME does not exist, unable to compile CUDA
+op(s)`, remove the optional DeepSpeed training package and restart the service:
+
+```bash
+VENV="$HOME/.local/share/brandmate-cosyvoice/venv"
+"$VENV/bin/pip" uninstall -y deepspeed
+"$VENV/bin/python" -c 'from transformers import Qwen2ForCausalLM; print("Transformers import OK")'
+bash start.sh
+```

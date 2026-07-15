@@ -29,3 +29,21 @@ def test_voice_path_uses_default_voice(tmp_path) -> None:
 
     assert voice_name == "default"
     assert voice_path == default_voice
+
+
+def test_normalize_korean_tts_text_handles_advertising_numbers() -> None:
+    text = "평일 오전 11시부터 오후 2시까지 6,500원 메뉴를 10% 할인합니다."
+
+    normalized = SERVER.normalize_korean_tts_text(text)
+
+    assert normalized == (
+        "평일 오전 열한 시부터 오후 두 시까지 육천오백 원 메뉴를 십 퍼센트 할인합니다."
+    )
+
+
+def test_normalize_korean_tts_text_handles_time_and_counters() -> None:
+    text = "오전 11:30에 음료 2잔과 디저트 3개를 준비합니다."
+
+    normalized = SERVER.normalize_korean_tts_text(text)
+
+    assert normalized == "오전 열한 시 삼십 분에 음료 두 잔과 디저트 세 개를 준비합니다."

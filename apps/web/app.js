@@ -49,11 +49,14 @@ const downloadVoiceButton = $("#download-voice-button");
 
 const openAiVoiceOptions = [
   ["coral", "Coral · 밝고 자연스러움"],
-  ["marin", "Marin · 부드럽고 선명함"],
-  ["cedar", "Cedar · 안정적이고 깊음"],
   ["nova", "Nova · 활기차고 친근함"],
   ["alloy", "Alloy · 균형 잡힌 중성"],
   ["onyx", "Onyx · 낮고 차분함"],
+  ["shimmer", "Shimmer · 부드럽고 밝음"],
+  ["echo", "Echo · 또렷하고 안정적"],
+  ["ash", "Ash · 차분하고 자연스러움"],
+  ["sage", "Sage · 따뜻하고 신뢰감 있음"],
+  ["fable", "Fable · 표현력이 풍부함"],
 ];
 
 let hasGeneratedAd = false;

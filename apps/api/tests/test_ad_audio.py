@@ -189,6 +189,7 @@ def test_cosyvoice_generation_returns_local_wav(monkeypatch) -> None:
 
 def test_cosyvoice_failure_falls_back_to_openai(monkeypatch) -> None:
     requested_urls: list[str] = []
+    requested_payloads: list[dict[str, object]] = []
 
     class FakeAsyncClient:
         def __init__(self, **kwargs) -> None:
@@ -201,8 +202,9 @@ def test_cosyvoice_failure_falls_back_to_openai(monkeypatch) -> None:
             del args
 
         async def post(self, url, *, json, headers=None):
-            del json, headers
+            del headers
             requested_urls.append(url)
+            requested_payloads.append(json)
             if "cosyvoice.test" in url:
                 return httpx.Response(
                     503,
@@ -227,7 +229,9 @@ def test_cosyvoice_failure_falls_back_to_openai(monkeypatch) -> None:
         FakeAsyncClient,
     )
 
-    result = asyncio.run(generate_ad_audio(AdAudioRequest(input="폴백 테스트")))
+    result = asyncio.run(
+        generate_ad_audio(AdAudioRequest(input="폴백 테스트", voice="default"))
+    )
 
     assert result.provider == "openai"
     assert result.requested_provider == "cosyvoice"
@@ -236,3 +240,6 @@ def test_cosyvoice_failure_falls_back_to_openai(monkeypatch) -> None:
         "http://cosyvoice.test:50000/v1/tts",
         "https://api.openai.com/v1/audio/speech",
     ]
+    assert requested_payloads[0]["voice"] == "default"
+    assert requested_payloads[1]["voice"] == "coral"
+    assert result.voice == "coral"

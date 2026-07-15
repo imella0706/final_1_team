@@ -15,6 +15,108 @@ from pydantic import BaseModel, Field
 
 SERVICE_DIR = Path(__file__).resolve().parent
 VOICE_NAME_PATTERN = re.compile(r"^[A-Za-z0-9._-]+$")
+SINO_DIGITS = ("영", "일", "이", "삼", "사", "오", "육", "칠", "팔", "구")
+NATIVE_ONES = ("", "한", "두", "세", "네", "다섯", "여섯", "일곱", "여덟", "아홉")
+NATIVE_TENS = {
+    1: "열",
+    2: "스물",
+    3: "서른",
+    4: "마흔",
+    5: "쉰",
+    6: "예순",
+    7: "일흔",
+    8: "여든",
+    9: "아흔",
+}
+
+
+def _sino_korean_under_10000(value: int) -> str:
+    parts: list[str] = []
+    for divisor, unit in ((1000, "천"), (100, "백"), (10, "십")):
+        digit, value = divmod(value, divisor)
+        if digit:
+            parts.append(("" if digit == 1 else SINO_DIGITS[digit]) + unit)
+    if value:
+        parts.append(SINO_DIGITS[value])
+    return "".join(parts)
+
+
+def _sino_korean_integer(value: int) -> str:
+    if value == 0:
+        return SINO_DIGITS[0]
+    if value < 0:
+        return "마이너스 " + _sino_korean_integer(-value)
+    parts: list[str] = []
+    groups: list[int] = []
+    while value:
+        value, group = divmod(value, 10000)
+        groups.append(group)
+    large_units = ("", "만", "억", "조")
+    for index in range(len(groups) - 1, -1, -1):
+        group = groups[index]
+        if group:
+            parts.append(_sino_korean_under_10000(group) + large_units[index])
+    return "".join(parts)
+
+
+def _native_korean_integer(value: int) -> str:
+    if not 1 <= value <= 99:
+        return _sino_korean_integer(value)
+    if value == 20:
+        return "스무"
+    tens, ones = divmod(value, 10)
+    return (NATIVE_TENS.get(tens, "") + NATIVE_ONES[ones]).strip()
+
+
+def _decimal_korean(raw_value: str) -> str:
+    integer, dot, decimal = raw_value.replace(",", "").partition(".")
+    spoken = _sino_korean_integer(int(integer))
+    if dot:
+        spoken += " 점 " + " ".join(SINO_DIGITS[int(digit)] for digit in decimal)
+    return spoken
+
+
+def normalize_korean_tts_text(text: str) -> str:
+    normalized = re.sub(r"(?<!\d)1\s*\+\s*1(?!\d)", "원 플러스 원", text)
+    normalized = re.sub(
+        r"(?<!\d)(\d{1,2}):(\d{2})(?!\d)",
+        lambda match: (
+            f"{_native_korean_integer(int(match.group(1)))} 시 "
+            f"{_sino_korean_integer(int(match.group(2)))} 분"
+        ),
+        normalized,
+    )
+    normalized = re.sub(
+        r"(?<!\d)(\d{1,2})\s*시",
+        lambda match: f"{_native_korean_integer(int(match.group(1)))} 시",
+        normalized,
+    )
+    normalized = re.sub(
+        r"(?<!\d)(\d{1,2})\s*분",
+        lambda match: f"{_sino_korean_integer(int(match.group(1)))} 분",
+        normalized,
+    )
+    normalized = re.sub(
+        r"(?<![\d.])([\d,]+(?:\.\d+)?)\s*%",
+        lambda match: f"{_decimal_korean(match.group(1))} 퍼센트",
+        normalized,
+    )
+    normalized = re.sub(
+        r"(?<!\d)([\d,]+)\s*원",
+        lambda match: f"{_sino_korean_integer(int(match.group(1).replace(',', '')))} 원",
+        normalized,
+    )
+    normalized = re.sub(
+        r"(?<!\d)(\d+)\s*(개|명|잔|병|번|가지|세트)",
+        lambda match: f"{_native_korean_integer(int(match.group(1)))} {match.group(2)}",
+        normalized,
+    )
+    normalized = re.sub(
+        r"(?<!\d)(\d+)\s*(년|월|일|초)",
+        lambda match: f"{_sino_korean_integer(int(match.group(1)))} {match.group(2)}",
+        normalized,
+    )
+    return normalized
 
 
 class TTSRequest(BaseModel):
@@ -92,6 +194,7 @@ class CosyVoiceEngine:
         parts = [
             "You are a helpful assistant.",
             instructions or "한국어 광고 성우처럼 밝고 자연스럽게 말하세요.",
+            "숫자, 시간, 가격과 단위를 영어로 바꾸지 말고 한국어로 읽으세요.",
         ]
         if speed > 1.05:
             parts.append(f"기본보다 약 {round((speed - 1) * 100)}% 빠르게 말하세요.")
@@ -117,13 +220,14 @@ class CosyVoiceEngine:
         model = self._ensure_model()
         resolved_voice, voice_path = self._voice_path(request.voice)
         instruction = self._instruction(request.instructions, request.speed)
+        tts_text = normalize_korean_tts_text(request.input)
 
         with self._generation_lock:
             try:
                 chunks = [
                     result["tts_speech"]
                     for result in model.inference_instruct2(
-                        request.input,
+                        tts_text,
                         instruction,
                         str(voice_path),
                         stream=False,

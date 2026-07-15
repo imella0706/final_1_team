@@ -19,6 +19,19 @@ class AudioModelProviderError(RuntimeError):
     pass
 
 
+OPENAI_TTS_VOICES = {
+    "alloy",
+    "ash",
+    "coral",
+    "echo",
+    "fable",
+    "nova",
+    "onyx",
+    "sage",
+    "shimmer",
+}
+
+
 def _secret_value(secret: object | None) -> str | None:
     if secret is None:
         return None
@@ -32,6 +45,14 @@ def _tts_models() -> list[str]:
         *settings.openai_tts_fallback_models.split(","),
     ]
     return list(dict.fromkeys(model.strip() for model in candidates if model.strip()))
+
+
+def _openai_voice(requested_voice: str | None) -> str:
+    candidate = (requested_voice or settings.openai_tts_voice).strip().lower()
+    if candidate in OPENAI_TTS_VOICES:
+        return candidate
+    configured = settings.openai_tts_voice.strip().lower()
+    return configured if configured in OPENAI_TTS_VOICES else "coral"
 
 
 def _media_type(response_format: str, response: httpx.Response) -> str:
@@ -128,7 +149,7 @@ async def _generate_openai_audio(
                 payload: dict[str, object] = {
                     "model": model,
                     "input": request.input,
-                    "voice": request.voice or settings.openai_tts_voice,
+                    "voice": _openai_voice(request.voice),
                     "response_format": response_format,
                     "speed": request.speed,
                 }
