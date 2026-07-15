@@ -2,5 +2,42 @@ node_modules/
 dist/
 .env
 .DS_Store
+.env.*
+!.env.example
+!.env.gcp.example
+
+# Python
 __pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.venv/
+*.egg-info/
+*.log
+
+# Next.js
+.next/
+coverage/
+
+# Generated/user assets
+storage/
+uploads/
+outputs/
+*.sqlite3
+*.sqlite
+
+# Local / large datasets
+# [Design Intent] Keep large dataset files out of Git while allowing DVC
+# pointer files under data/ to be committed.
+/data/**
+!/data/**/
+!/data/**/*.dvc
+
+# Editors and OS
+.idea/
+.vscode/
+Thumbs.db
+
+outputs
 tests/

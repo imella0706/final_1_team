@@ -1,0 +1,1 @@
+"""Advertising copy generation domain."""

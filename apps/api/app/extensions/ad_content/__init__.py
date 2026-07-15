@@ -1,0 +1,1 @@
+"""Ad content extension package."""
