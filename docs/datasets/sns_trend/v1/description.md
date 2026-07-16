@@ -94,10 +94,79 @@ gs://ssakda/projects/brandmate/data/
         query_ranked_candidates/
           query_ranked_candidates.json
           query_ranked_candidates.csv
+        docs/
+          manifest.json
+          description.md
 ```
 
 데이터셋 패키지로 정식 등록할 때는 processed artifact 내부에 아래 문서 사본을 추가합니다.
+안녕하세요 1조 여러분.
+데이터 버전관리를 위해 팀 공통으로 지켜야 할 데이터셋 공유 규칙을 전달드립니다.
 
+데이터셋 공유 시 아래 4가지를 같이 준비해주세요.
+
+1. 데이터 파일
+2. manifest.json
+3. description.md
+4. 데이터셋을 다시 만들 수 있는 관련 코드 또는 노트북 경로
+
+자세한 내용은 아래 문서를 참고해주세요.
+
+Git 문서: docs/DATASET_SUBMISSION_GUIDE.md
+
+manifest.json과 description.md는 직접 처음부터 작성하지 않아도 됩니다.
+
+AI에게 docs/DATASET_SUBMISSION_GUIDE.md 파일과 본인 데이터셋 정보를 같이 넣고,
+
+“이 기준에 맞춰 manifest.json과 description.md 초안을 만들어줘. 모르는 값은 TODO로 남겨줘.”
+
+“그리고 final_1_team/docs/GCS_MLOPS_ONBOARDING.md 참고해서 gcs구조도 추천해주라. 내 데이터셋은 어떻게 정리하면 될까.” 
+
+라고 요청하면 됩니다.
+
+단, AI가 만든 결과는 초안입니다.
+TODO로 남은 항목은 데이터셋 담당자가 직접 확인해서 채워 넣어야 합니다.
+AI가 모르는 값을 추측해서 채우는 것은 금지합니다.
+
+DATASET_SUBMISSION_GUIDE.md에는 공통 manifest.json 형식이 정리되어 있습니다.
+
+공통 필드만 채우고 끝내지 말고, 본인이 담당하는 데이터셋 특징에 맞는 전용 필드도 manifest.json에 추가해주세요.
+
+예:
+
+- SNS 트렌드 데이터셋: platform, crawl_period, text_cleaning, pii_policy, trend_category
+- AIHub 이미지 데이터셋: image_processing, category_mapping, retrieval, embedding, faiss_index
+- 평가 데이터셋: evaluation_policy, sampling_rule, fixed_seed, metric_target
+
+description.md에는 아래 항목을 포함해주세요.
+
+특히 ★ 표시된 항목은 파일 목록만 보고는 정확히 알 수 없으므로, 최종 공유 전 데이터셋 담당자가 직접 확인해주세요.
+
+1. 데이터셋 목적
+2. 파일 목록
+3. row/image 개수
+4. 용량
+5. ★ 원본 출처
+6. 데이터 단계(raw / curated / processed)
+7. ★ 선별 기준
+8. ★ 전처리 기준
+9. ★ 생성 스크립트 또는 노트북 경로
+10. ★ 현재 한계
+11. ★ 다음 버전 계획
+
+큰 데이터 파일은 Git에 올리지 말고 GCS/DVC로 관리합니다.
+
+Git에는 아래 항목만 올립니다.
+
+- manifest.json
+- description.md
+- 관련 코드 또는 노트북 경로
+- DVC pointer 파일(.dvc, dvc.yaml, dvc.lock)
+
+실제 데이터 파일은 GCS/DVC로 관리합니다.
+
+작업하시다가 궁금한 부분이 있다면 저에게 DM 부탁드립니다.
+감사합니다.
 ```text
 data/processed/sns_trend/v1/query_ranked_candidates/docs/
   manifest.json

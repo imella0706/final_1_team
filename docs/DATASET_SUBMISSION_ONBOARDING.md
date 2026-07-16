@@ -239,6 +239,80 @@ processed/sns/v1/
 }
 ```
 
+### Manifest 작성 예시
+
+아래 예시는 SNS 트렌드 데이터셋 기준 예시입니다.
+다른 데이터셋은 그대로 복사하지 말고, 공통 형식은 유지하되 본인 데이터셋에 필요한 항목을 추가해서 작성해주세요.
+AI가 모르는 값은 추측하지 말고 `TODO`로 남겨주세요.
+
+```json
+{
+  "dataset_name": "sns_trend",
+  "version": "v1",
+  "dataset_stage": "processed",
+  "status": "baseline",
+  "owner": "Chaebin",
+  "created_at": "2026-07-16",
+  "source": {
+    "provider": "manual_crawl",
+    "source_name": "sns_trend_week_2026-W28",
+    "source_url": "multiple_sources",
+    "source_split": "none",
+    "raw_uploaded_to_gcs": true,
+    "annotation_preserved": "none",
+    "platforms": ["youtube", "gogumafarm", "careet", "naver"],
+    "crawl_period": {
+      "timezone": "Asia/Seoul",
+      "start_date": "2026-07-07",
+      "end_date": "2026-07-09",
+      "week": "2026-W28"
+    }
+  },
+  "curation": {
+    "selected_count": "TODO",
+    "target_size_gb": "none",
+    "actual_size_gb": "TODO",
+    "selection_policy": "null/중복/불필요 컬럼 제거 후 플랫폼별 후보 데이터 정리",
+    "category_balanced": "none",
+    "quality_filters": ["null 제거", "중복 제거", "불필요 컬럼 제거"],
+    "path_mapping_available": true
+  },
+  "processing": {
+    "input_dataset": "sns_trend_curated_v1",
+    "artifact_name": "query_ranked_candidates",
+    "target_use": "retrieval",
+    "preprocessing_steps": [
+      "platform별 후보 통합",
+      "query 기준 score 계산",
+      "ranking 결과 구조화",
+      "JSON 결과를 CSV로 flatten"
+    ],
+    "output_files": [
+      "query_ranked_candidates.json",
+      "query_ranked_candidates.csv"
+    ],
+    "input_platforms": ["youtube", "gogumafarm", "careet", "naver"],
+    "result_platforms": ["gogumafarm", "naver", "youtube"]
+  },
+  "storage": {
+    "gcs_path": "gs://ssakda/projects/brandmate/data/processed/sns_trend/v1/query_ranked_candidates/",
+    "local_example_path": "data/processed/sns_trend/v1/query_ranked_candidates/",
+    "dvc_tracked": false
+  },
+  "reproducibility": {
+    "generation_script_available": true,
+    "generation_script_path": "TODO",
+    "random_seed": "none",
+    "can_rebuild": "partial"
+  },
+  "limitations": [
+    "현재 artifact는 특정 query 기준 ranking 결과입니다.",
+    "curated 데이터는 현재 DVC로 추적하지 않고 GCS 경로와 metadata로 계보를 관리합니다."
+  ],
+  "next_version_plan": "주기적 크롤링 자동화와 query별 ranking artifact 확장"
+}
+```
+
 ### 필드 설명
 
 | 필드 | 의미 | 작성 예시 |
@@ -293,66 +367,121 @@ processed/sns/v1/
   예: `retrieval`, `embedding`, `faiss_index`, `image_processing`, `text_processing`, `evaluation_policy`
 - 추가 section을 만들 때는 왜 필요한지 `description.md`에도 같이 설명합니다.
 
+### AI 초안 생성 프롬프트
+
+AI로 `manifest.json`과 `description.md` 초안을 만들 때는
+[DATASET_METADATA_DRAFT_PROMPT.md](./DATASET_METADATA_DRAFT_PROMPT.md)를 사용합니다.
+
+AI 결과는 초안입니다. `TODO` 항목과 원본 출처, 선별 기준, 전처리 기준, 현재 한계, 다음 버전 계획은 데이터셋 담당자가 직접 검수합니다.
+
 ## 6. Description 공통 형식
 
-`description.md`는 사람이 읽는 설명 문서입니다. 아래 구조를 기본으로 사용합니다.
+- `description.md`는 사람이 읽는 설명 문서입니다. 아래 구조를 기본으로 사용합니다.
+- 실제 description.md 작성 시 `TODO` 항목을 본인 데이터셋 정보로 채워주세요.
+- 아래 공통 형식은 실제 description.md에 복사해서 사용할 수 있는 기본 구조입니다.
+- DVC 추적 상태는 데이터셋 담당자 작성 항목이 아닙니다. MLOps/인프라 담당자가 최종 등록 후 `manifest.json`의 `storage.dvc_tracked`에서 관리합니다.
 
 ```md
 # {dataset_name} {version} Description
 
 ## Summary
-- 데이터셋을 한 문단으로 요약합니다.
-- 이 데이터셋을 어디에 쓰는지 설명합니다.
+(데이터셋이 무엇인지 설명하고, 어디에 활용되는지 적습니다. 한 문장으로 끝내도 되고, 필요한 경우 여러 문장으로 설명해도 됩니다.)
+
+- 데이터셋 개요: TODO
+- 활용 방식: TODO
 
 ## Dataset Stage
-- raw / curated / processed 중 어느 단계인지 적습니다.
-- 왜 그렇게 판단했는지 근거를 적습니다.
+- 단계: (raw / curated / processed 중 하나를 작성합니다.)
+- 판단 근거: (해당 단계를 선택한 이유를 작성합니다.)
+
+## Files
+- 주요 파일 목록: (주요 파일 또는 디렉터리 이름을 작성합니다.)
+- row/image 개수: (row 수 또는 이미지 장수를 작성합니다.)
+- 전체 용량: (데이터셋 전체 용량을 작성합니다.)
+- 파일별 역할: (각 주요 파일이 어떤 용도인지 작성합니다.)
 
 ## Source
-- 원본 제공처:
-- 원본 데이터셋 이름:
-- 원본 URL:
-- 사용 split:
-- raw 원본 GCS 업로드 여부:
-- 원본 annotation/label 보존 여부:
+- 원본 제공처: (원본 제공처를 작성합니다.)
+- 원본 데이터셋 이름: (원본 데이터셋 또는 수집 작업 이름을 작성합니다.)
+- 원본 URL: (원본 URL을 작성합니다. 없으면 `없음` 또는 `TODO`로 표시합니다.)
+- 사용 split: (사용한 split을 작성합니다. 해당 없으면 `없음`으로 표시합니다.)
+- raw 원본 GCS 업로드 여부: (업로드했다면 `예`, 아니면 `아니오`를 작성합니다.)
+- 원본 annotation/label 보존 여부: (보존 여부를 작성합니다.)
 
 ## Curation
-- 선별 개수:
-- 목표 용량:
-- 실제 용량:
-- 선별 기준:
-- 제외 기준:
-- 카테고리 균형 여부:
-- 원본 경로와 최종 경로 매핑 가능 여부:
+- 선별 기준: (데이터를 선택한 기준을 작성합니다.)
+- 제외 기준: (제외하거나 필터링한 기준을 작성합니다.)
+- 카테고리 균형 여부: (균형 적용 여부와 방식을 작성합니다.)
+- 원본 경로와 최종 경로 매핑 가능 여부: (매핑 가능 여부와 매핑 파일 위치를 작성합니다.)
 
 ## Processing
-- 입력 데이터셋:
-- 사용 목적:
-- 전처리 단계:
-- 생성 파일:
-- 사용한 모델/도구:
-- 모델/평가/검색/API에서 사용하는 방식:
+- 입력 데이터셋: (입력 raw 또는 curated 데이터셋 경로/이름을 작성합니다.)
+- 사용 목적: (training / evaluation / generation / api / retrieval / analysis 중 사용 목적을 작성합니다.)
+- 전처리 기준: (전처리의 목적과 적용 기준을 작성합니다.)
+- 전처리 단계: (실행한 전처리 단계를 순서대로 작성합니다.)
+- 생성 파일: (생성한 주요 파일을 작성합니다.)
+- 사용한 모델/도구: (사용 모델, 라이브러리, 서비스 또는 도구를 작성합니다.)
+- 모델/평가/검색/API에서 사용하는 방식: (실제 소비 파이프라인과 사용 방식을 작성합니다.)
 
 ## Dataset-Specific Fields
-- 공통 manifest에 없는 데이터셋 전용 정보를 설명합니다.
-- 예: retrieval, embedding, faiss_index, image_processing, text_processing, evaluation_policy
+(공통 manifest에 없는 데이터셋 전용 정보를 설명합니다. 예: retrieval, embedding, faiss_index, image_processing, text_processing, evaluation_policy)
 
 ## Storage
-- GCS path:
-- local example path:
-- DVC tracking 여부:
+- GCS 업로드 예정 경로: (승인 후 업로드할 GCS 경로를 작성합니다. 아직 경로가 정해지지 않았다면 추측하지 말고 `TODO`로 남깁니다.)
+- local example path: (로컬 예시 경로를 작성합니다.)
 
 ## Reproducibility
-- 데이터셋 생성 스크립트 또는 노트북 경로:
-- random seed:
-- 같은 결과를 다시 만들 수 있는지:
+- 데이터셋 생성 스크립트 또는 노트북 경로: (재생성 코드 또는 노트북 경로를 작성합니다.)
+- random seed: (사용한 seed를 작성합니다. 랜덤 과정이 없으면 `없음`으로 표시합니다.)
+- 같은 결과를 다시 만들 수 있는지: (가능 / 부분 가능 / 불가능과 그 이유를 작성합니다.)
 
 ## Limitations
-- 현재 데이터셋의 한계를 적습니다.
+(현재 데이터셋의 한계를 작성합니다.)
 
 ## Next Version Plan
-- 다음 버전에서 보강할 내용을 적습니다.
+(다음 버전에서 보강할 내용을 작성합니다.)
 ```
+
+### Description 작성 예시
+
+아래는 SNS 트렌드 processed 데이터셋의 작성 예시입니다. 실제 description.md에는 예시 값을 그대로 복사하지 말고, 본인 데이터셋의 확인된 값으로 작성해주세요.
+
+```md
+## Summary
+
+- 데이터셋 개요: YouTube, 고구마팜, 캐릿, 네이버에서 수집한 SNS/콘텐츠 트렌드 후보 데이터입니다.
+- 활용 방식: 광고 문구 생성과 밈 기반 프롬프트 조립을 위한 트렌드 후보 검색/랭킹에 활용합니다.
+
+## Dataset Stage
+- 단계: processed
+- 판단 근거: 특정 query를 기준으로 후보를 점수화하고 ranking 결과로 구조화했기 때문에 실제 프롬프트/RAG 파이프라인에서 바로 사용할 수 있는 processed 산출물입니다.
+
+## Files
+- 주요 파일 목록:
+  - query_ranked_candidates.json
+  - query_ranked_candidates.csv
+- row/image 개수: 5 rows
+- 전체 용량: TODO
+- 파일별 역할:
+  - query_ranked_candidates.json: query, selected_card_id, ranking results를 포함한 원본 구조화 결과입니다.
+  - query_ranked_candidates.csv: Airflow 검증과 사람이 확인하기 쉽도록 JSON을 flat table 형태로 펼친 파일입니다.
+```
+
+위 공통 형식은 공유 전 검수해야 하는 핵심 항목을 모두 포함합니다.
+
+| 검수 항목 | description.md 위치 |
+| --- | --- |
+| 데이터셋 목적 | `Summary` |
+| 파일 목록 | `Files` |
+| row/image 개수 | `Files` |
+| 용량 | `Files` |
+| 원본 출처 | `Source` |
+| 데이터 단계 | `Dataset Stage` |
+| 선별 기준 | `Curation` |
+| 전처리 기준 | `Processing` |
+| 생성 스크립트 또는 노트북 경로 | `Reproducibility` |
+| 현재 한계 | `Limitations` |
+| 다음 버전 계획 | `Next Version Plan` |
 
 `description.md`의 목적은 사람에게 맥락을 전달하는 것입니다. `manifest.json`에 구조화된 값이 있더라도, 왜 그렇게 선별/전처리했는지와 현재 한계는 문장으로 설명합니다.
 
