@@ -1,0 +1,65 @@
+db_versions:
+  small_5gb:
+    output_name: "5gb"
+    target_size_gb: 5
+    max_images: 2000
+    min_per_business_category: 150
+    max_per_business_category: 700
+    min_per_product_group: 30
+    max_per_product_group: 250
+
+  medium_10gb:
+    output_name: "10gb"
+    target_size_gb: 10
+    max_images: 4000
+    min_per_business_category: 300
+    max_per_business_category: 1300
+    min_per_product_group: 50
+    max_per_product_group: 450
+
+  large_20gb:
+    output_name: "20gb"
+    target_size_gb: 20
+    max_images: 8000
+    min_per_business_category: 500
+    max_per_business_category: 2500
+    min_per_product_group: 80
+    max_per_product_group: 800
+
+business_category_balance:
+  required_categories:
+    - "cafe"
+    - "bakery"
+    - "dessert"
+    - "restaurant"
+    - "pub"
+
+  sampling_weight:
+    cafe: 0.20
+    bakery: 0.18
+    dessert: 0.18
+    restaurant: 0.30
+    pub: 0.14
+
+selection_priority:
+  - quality_score
+  - business_category_balance
+  - product_group_diversity
+  - visual_diversity_score
+  - caption_quality_score
+  - duplicate_score
+  - prompt_keyword_quality
+
+size_control:
+  image_copy_mode: "copy"
+  stop_when_target_size_reached: true
+  size_tolerance_mb: 200
+
+final_db_outputs:
+  include_images: true
+  include_metadata: true
+  include_prompt_metadata: true
+  include_embeddings: true
+  include_faiss_index: true
+  include_mapping_csv: true
+  include_summary_json: true
