@@ -62,9 +62,9 @@ gs://ssakda/projects/brandmate/data/
             careet_articles_20260708.csv
             careet_articles_20260709.csv
           naver/
-            naver_blog_카페.csv
-            naver_datalab_카페.csv
-            naver_news_카페.csv
+            naver_blog_cafe.csv
+            naver_datalab_cafe.csv
+            naver_news_cafe.csv
 
   curated/
     sns_trend/
@@ -103,6 +103,15 @@ data/processed/sns_trend/v1/query_ranked_candidates/docs/
   manifest.json
   description.md
 ```
+
+GCS에 올리는 파일명은 쉘, Airflow, GCS CLI에서 안정적으로 다루기 위해 영어/숫자/underscore 중심으로 정리합니다.
+로컬 원본 파일명이 한글을 포함한 경우, GCS 표준 위치에서는 아래처럼 바꿉니다.
+
+| 로컬 원본 파일명 | GCS 표준 파일명 |
+| --- | --- |
+| `naver_blog_카페.csv` | `naver_blog_cafe.csv` |
+| `naver_datalab_카페.csv` | `naver_datalab_cafe.csv` |
+| `naver_news_카페.csv` | `naver_news_cafe.csv` |
 
 ## Processing
 
