@@ -1,0 +1,18 @@
+{
+  "input_candidate_count": 7351,
+  "selected_representative_count": 1036,
+  "excluded_candidate_count": 6315,
+  "unique_food_count": 541,
+  "front_image_count": 522,
+  "side_image_count": 514,
+  "foods_with_front_and_side": 495,
+  "foods_with_only_one_view": 46,
+  "bbox_40_70_selected_count": 749,
+  "bbox_40_70_selected_ratio": 0.722972972972973,
+  "average_center_score": 0.9436934336120393,
+  "average_blur_score": 291.3626430546937,
+  "average_resolution_pixels": 9036821.39092664,
+  "output_parquet": "C:\\aihub-food-ad-rag\\data\\metadata\\diverse_sampling\\selected_representatives.parquet",
+  "output_csv": "C:\\aihub-food-ad-rag\\data\\metadata\\diverse_sampling\\selected_representatives.csv",
+  "excluded_csv": "C:\\aihub-food-ad-rag\\data\\metadata\\diverse_sampling\\excluded_candidates.csv"
+}

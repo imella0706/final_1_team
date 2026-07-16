@@ -1,0 +1,80 @@
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg-info/
+.eggs/
+dist/
+build/
+
+.venv/
+venv/
+env/
+myenv/
+conda-env/
+
+.ipynb_checkpoints/
+
+.env
+.env.*
+!.env.example
+
+logs/
+*.log
+outputs/logs/
+
+data/raw/
+data/filtered/
+data/cleaned/
+data/tagged/
+data/embeddings/
+data/final_db/
+
+*.parquet
+*.npy
+*.npz
+*.index
+*.faiss
+*.pkl
+*.pt
+*.pth
+*.safetensors
+
+outputs/samples/
+outputs/reports/*.html
+
+.DS_Store
+Thumbs.db
+
+.vscode/
+.idea/
+
+# =========================
+# Large files
+# =========================
+/data.zip
+*.zip
+*.7z
+*.rar
+*.tar
+*.tar.gz
+
+# =========================
+# Python cache
+# =========================
+.pytest_cache/
+.mypy_cache/
+.cache/
+.history/
+
+# =========================
+# FAISS
+# =========================
+*.ivf
+*.bin
+
+# =========================
+# Windows
+# =========================
+desktop.ini

@@ -1,0 +1,19 @@
+{
+  "input_rows": 7351,
+  "unique_food_count": 541,
+  "view_type_distribution": {
+    "side": 5278,
+    "front": 2073
+  },
+  "bbox_found_count": 7351,
+  "bbox_missing_count": 0,
+  "bbox_40_70_count": 3482,
+  "bbox_ratio_statistics": {
+    "mean": 0.39593759170059123,
+    "median": 0.39399792234695696,
+    "min": 0.038411873933972766,
+    "max": 0.8896091001792906
+  },
+  "output_metadata": "C:\\aihub-food-ad-rag\\data\\metadata\\diverse_sampling\\diverse_candidate_metadata.parquet",
+  "output_preview": "C:\\aihub-food-ad-rag\\data\\metadata\\diverse_sampling\\diverse_candidate_preview.csv"
+}
