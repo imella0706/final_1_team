@@ -30,7 +30,6 @@ const referenceCutoutToggle = $("#reference-cutout");
 const downloadPosterButton = $("#download-poster-button");
 const copyPosterButton = $("#copy-poster-button");
 const copyNaverBlogButton = $("#copy-naver-blog-button");
-const blogOptions = $("#blog-options");
 const referenceImageLabel = $("#reference-image-label");
 const productList = $("#product-list");
 const addProductButton = $("#add-product-button");
@@ -408,6 +407,14 @@ function splitPosterTitle(title) {
   return { headline: cleanTitle, subtitle: "" };
 }
 
+function buildShortPosterHeadline(input) {
+  const region = `${input?.copy?.region || ""}`.trim();
+  const localArea = region.match(/[가-힣0-9]+(?:동|읍|면|리|가)/g)?.at(-1) || "";
+  const businessType = displayValue("businessType", input?.copy?.business_type || "").trim();
+  const businessName = `${input?.copy?.business_name || ""}`.trim();
+  return [localArea, businessType, businessName].filter(Boolean).join(" ");
+}
+
 function fitCanvasText(context, text, maxWidth, options) {
   const minSize = options.minSize || 28;
   const maxLines = options.maxLines || 2;
@@ -551,18 +558,19 @@ function normalizeParagraphs(value) {
     .trim();
 }
 
-function formatPhotoOrder(photoOrder) {
-  if (!Array.isArray(photoOrder) || !photoOrder.length) {
-    return "";
-  }
-  return ["사진 순서 추천", ...photoOrder.map((item, index) => `${index + 1}. ${item}`)].join("\n");
-}
-
-function formatBlogSection(section, index) {
-  const title = normalizeParagraphs(section?.title || `Section ${index + 1}`);
-  const photo = normalizeParagraphs(section?.photo || "");
-  const body = normalizeParagraphs(section?.body || "");
-  return [title, photo ? `[사진 삽입: ${photo}]` : "", body].filter(Boolean).join("\n\n");
+function normalizeNaverBlogBody(value) {
+  return normalizeParagraphs(value)
+    .split("\n")
+    .filter(
+      (line) =>
+        !/^\[(?:대표\s*사진\s*추천|대표사진\s*추천|추천\s*사진\s*순서|사진\s*순서\s*추천(?:\s*이유)?)\s*[-:：]/.test(
+          line.trim(),
+        ),
+    )
+    .join("\n")
+    .replace(/\[사진\s*\d+\s*-\s*매장 내부 또는 전경\]/g, "[사진 2 - 매장 내부 또는 전경]")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
 }
 
 function buildNaverBlogPasteText(input, recommendation, copy, publishHashtags) {
@@ -570,25 +578,11 @@ function buildNaverBlogPasteText(input, recommendation, copy, publishHashtags) {
     return "";
   }
   const title = normalizeParagraphs(recommendation.blog_title || recommendation.publish_title || copy.headlines?.[0]);
-  const thumbnail = normalizeParagraphs(recommendation.thumbnail_photo || "");
-  const thumbnailReason = normalizeParagraphs(recommendation.thumbnail_reason || "");
-  const sections = Array.isArray(recommendation.blog_sections) ? recommendation.blog_sections : [];
-  const sectionText = sections.map(formatBlogSection).filter(Boolean).join("\n\n");
-  const body = normalizeParagraphs(recommendation.publish_body || copy.body_copies?.[0] || "");
+  const body = normalizeNaverBlogBody(recommendation.publish_body || copy.body_copies?.[0] || "");
   const hashtags = normalizeParagraphs(publishHashtags || copy.hashtags?.join(" ") || "");
-  const photoOrder = formatPhotoOrder(recommendation.photo_order);
-  const thumbnailBlock = thumbnail
-    ? [`[대표 사진 삽입: ${thumbnail}]`, thumbnailReason ? `대표 사진 이유: ${thumbnailReason}` : ""]
-        .filter(Boolean)
-        .join("\n")
-    : "";
-  return [
-    title,
-    thumbnailBlock,
-    sectionText || body,
-    photoOrder,
-    hashtags ? `해시태그\n${hashtags}` : "",
-  ]
+  const hasTitle = title && body.startsWith(title);
+  const hasHashtags = hashtags && body.includes(hashtags);
+  return [hasTitle ? "" : title, body, hasHashtags ? "" : hashtags]
     .filter(Boolean)
     .join("\n\n")
     .trim();
@@ -911,7 +905,6 @@ async function updateReferencePreview() {
 
 function updateChannelMode() {
   const isBlog = channelSelect?.value === "naver_blog";
-  if (blogOptions) blogOptions.hidden = !isBlog;
   if (referenceImageLabel) {
     referenceImageLabel.textContent = isBlog ? "블로그 사진 여러 장(선택)" : "참고 이미지(선택)";
   }
@@ -978,13 +971,13 @@ async function readForm() {
       region: `${region || ""}`.trim(),
       trade_area: `${tradeArea || ""}`.trim(),
       audience_detail: `${audienceDetail || ""}`.trim(),
-      blog_purpose: channel === "naver_blog" ? data.get("blogPurpose") : null,
-      blog_emphasis: channel === "naver_blog" ? data.getAll("blogEmphasis") : [],
-      blog_style: channel === "naver_blog" ? data.get("blogStyle") : null,
-      seo_keywords: channel === "naver_blog" ? commaList(data.get("seoKeywords") || "") : [],
-      blog_length: channel === "naver_blog" ? data.get("blogLength") : null,
-      additional_request:
-        channel === "naver_blog" ? `${data.get("additionalRequest") || ""}`.trim() : null,
+      blog_purpose: null,
+      blog_emphasis: [],
+      blog_style: null,
+      seo_keywords: [],
+      blog_length: null,
+      additional_request: null,
+      operating_info: `${data.get("operatingInfo") || ""}`.trim() || null,
     },
     audience: {
       gender,
@@ -1129,16 +1122,20 @@ function renderResult(input, result) {
   const publishHashtags = recommendation.publish_hashtags?.length
     ? recommendation.publish_hashtags.join(" ")
     : hashtags;
-  const posterTitle = splitPosterTitle(recommendation.overlay_headline || recommendation.publish_title || headline);
+  const shortPosterHeadline =
+    buildShortPosterHeadline(input) || recommendation.overlay_headline || recommendation.publish_title || headline;
+  const posterTitle = splitPosterTitle(shortPosterHeadline);
   latestNaverBlogPasteText = buildNaverBlogPasteText(input, recommendation, copy, publishHashtags);
-  setText("#overlay-headline", recommendation.overlay_headline || headline);
+  setText("#overlay-headline", shortPosterHeadline);
   setText("#instagram-caption", recommendation.caption || recommendation.publish_body || copy.body_copies[0]);
   setText("#publish-cta", recommendation.publish_cta || copy.ctas[0]);
   setText("#publish-hashtags", publishHashtags);
   setText("#publish-title", recommendation.publish_title || headline);
   setText(
     "#publish-body",
-    recommendation.publish_body ||
+    input.copy.channel === "naver_blog"
+      ? latestNaverBlogPasteText
+      : recommendation.publish_body ||
       [recommendation.caption || copy.body_copies[0], recommendation.publish_cta || copy.ctas[0], publishHashtags]
         .filter(Boolean)
         .join("\n\n"),
@@ -1159,7 +1156,6 @@ function renderResult(input, result) {
     recommendation.thumbnail_photo
       ? `썸네일: ${recommendation.thumbnail_photo}\n추천 이유: ${recommendation.thumbnail_reason || ""}`
       : "",
-    recommendation.photo_order?.length ? `사진 순서: ${recommendation.photo_order.join(" → ")}` : "",
     blogSections,
   ]
     .filter(Boolean)

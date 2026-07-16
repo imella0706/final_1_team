@@ -128,6 +128,7 @@ class AdCopyRequest(BaseModel):
     seo_keywords: list[str] = Field(default_factory=list, max_length=10)
     blog_length: str | None = Field(default=None, max_length=40)
     additional_request: str | None = Field(default=None, max_length=500)
+    operating_info: str | None = Field(default=None, max_length=300)
     blog_photo_notes: list[str] = Field(default_factory=list, max_length=10)
 
     @model_validator(mode="before")

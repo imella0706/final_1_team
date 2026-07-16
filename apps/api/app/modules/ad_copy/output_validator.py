@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+import re
 
 from app.modules.ad_copy.schemas import (
     AdCopyContent,
@@ -151,71 +152,154 @@ def _build_blog_package(
     cta: str,
     hashtags: list[str],
 ) -> dict[str, object]:
-    title = f"{request.business_name} {products} 소개"
-    purpose = request.blog_purpose or "가게 소개"
-    style = request.blog_style or "정보형"
-    length = request.blog_length or "보통"
-    seo_keywords = request.seo_keywords or []
-    emphasis = request.blog_emphasis or []
     photo_notes = request.blog_photo_notes or []
-    thumbnail_photo = photo_notes[0].split(":", 1)[0] if photo_notes else "사진 없음"
-    thumbnail_reason = (
-        "업로드 사진 중 첫인상과 정보 전달력이 가장 좋은 사진으로 추천합니다."
-        if photo_notes
-        else "업로드된 사진이 없어 대표 메뉴나 매장 분위기가 잘 보이는 사진 촬영을 추천합니다."
+    photo_order = [_photo_label(note, index + 1) for index, note in enumerate(photo_notes)]
+    products_list = request.product_names
+    product_text = _join_korean_products(products_list)
+    region = request.region or _feature_value(request.features, "지역")
+    region_label = region.split()[-1] if region else ""
+    feature_sentence = " ".join(
+        feature
+        for feature in _sales_features(request.features)
+        if not any(keyword in feature for keyword in ("운영", "시간", "런치"))
     )
-    photo_order = [
-        note.split(",", 1)[0].strip()
-        for note in photo_notes
-    ] or ["사진 없음"]
+    situation = request.situation.value
+    title_suffix, opening, visit_guidance = _blog_situation_copy(
+        situation, request.business_name, product_text
+    )
+    title = f"{region_label + ' ' if region_label else ''}카페 {request.business_name}, {title_suffix}"
+    menu_photo_marker = f"[{photo_order[0]} - {product_text}]" if photo_order else ""
+    space_photo_marker = (
+        f"[{photo_order[1]} - 매장 내부 또는 전경]" if len(photo_order) > 1 else ""
+    )
+    price_details = [
+        f"{product} {_product_price(product, request.product_price)}".strip()
+        for product in products_list
+        if _product_price(product, request.product_price)
+    ]
+    menu_body = f"{product_text}는 {request.business_name}에서 준비한 메뉴입니다."
+    if price_details:
+        menu_body += f" 가격은 {', '.join(price_details)}입니다."
+    menu_body += " 방문하신 날의 여유로운 시간과 함께 자연스럽게 즐겨 보세요."
+
     sections = [
         {
-            "title": "도입부",
-            "photo": photo_order[0],
-            "body": f"{style} 문체로 {request.business_name}의 분위기와 {products}을(를) 자연스럽게 소개합니다.",
+            "title": "인사말",
+            "photo": photo_order[0] if photo_order else "",
+            "body": opening,
         },
         {
-            "title": "대표 메뉴",
-            "photo": photo_order[1] if len(photo_order) > 1 else photo_order[0],
-            "body": " ".join([body, f"강조 포인트: {', '.join(emphasis)}" if emphasis else ""]).strip(),
+            "title": f"{product_text}를 소개합니다",
+            "photo": photo_order[0] if photo_order else "",
+            "body": menu_body,
         },
         {
-            "title": "방문 안내",
-            "photo": photo_order[-1],
-            "body": cta,
+            "title": "편안하게 머물다 가실 수 있는 공간",
+            "photo": photo_order[1] if len(photo_order) > 1 else "",
+            "body": " ".join(
+                part
+                for part in [
+                    f"{request.business_name}은 편안하게 머물며 메뉴를 즐길 수 있는 공간입니다.",
+                    feature_sentence,
+                    visit_guidance,
+                ]
+                if part
+            ),
         },
     ]
-    if length == "길게":
-        sections.insert(
-            -1,
-            {
-                "title": f"{purpose} 핵심 포인트",
-                "photo": photo_order[-1],
-                "body": "SEO 키워드와 매장 정보를 자연스럽게 연결해 본문 중간에 배치합니다.",
-            },
-        )
+
+    store_info = ["📍 매장 안내"]
+    if region:
+        store_info.append(f"위치 : {region}")
+    if price_details:
+        store_info.append(f"추천 메뉴 : {', '.join(price_details)}")
+    else:
+        store_info.append(f"추천 메뉴 : {product_text}")
+    if request.operating_info:
+        store_info.append(f"운영 안내 : {request.operating_info}")
+
     publish_body = "\n\n".join(
         [
             title,
-            f"대표 이미지: {thumbnail_photo}",
-            f"검색 키워드: {', '.join(seo_keywords)}" if seo_keywords else "",
-            *[
-                f"{section['title']}\n({section['photo']})\n{section['body']}"
-                for section in sections
-            ],
+            f"안녕하세요.\n{request.business_name}입니다.",
+            opening,
+            menu_photo_marker,
+            sections[1]["title"],
+            sections[1]["body"],
+            sections[2]["title"],
+            space_photo_marker,
+            sections[2]["body"],
+            "감사합니다.",
+            "\n".join(store_info),
             " ".join(hashtags),
         ]
     )
     return {
         "blog_title": title,
-        "thumbnail_photo": thumbnail_photo,
-        "thumbnail_reason": thumbnail_reason,
+        "thumbnail_photo": photo_order[0] if photo_order else "",
+        "thumbnail_reason": "",
         "photo_order": photo_order,
         "blog_sections": sections,
         "publish_body": publish_body,
-        "promotion_template": "제목\n대표 이미지\n도입부\n매장/메뉴 소개\n방문 안내\n해시태그",
-        "image_insert_guide": f"{purpose} 목적에 맞게 추천 사진 순서대로 본문 사이에 배치하세요.",
+        "promotion_template": "",
+        "image_insert_guide": "사진이 있는 경우 메뉴 또는 매장 소개 문단 다음에 배치하세요.",
     }
+
+
+def _join_korean_products(products: list[str]) -> str:
+    if len(products) <= 1:
+        return products[0] if products else "대표 메뉴"
+    return f"{', '.join(products[:-1])}와 {products[-1]}"
+
+
+def _product_price(product: str, product_price: str | None) -> str:
+    if not product_price:
+        return ""
+    match = re.search(rf"{re.escape(product)}\s*[:：-]?\s*(\d[\d,]*원)", product_price)
+    return match.group(1) if match else ""
+
+
+def _photo_label(note: str, fallback_index: int) -> str:
+    match = re.search(r"사진\s*\d+", note)
+    return match.group(0).replace("  ", " ") if match else f"사진 {fallback_index}"
+
+
+def _blog_situation_copy(
+    situation: str, business_name: str, products: str
+) -> tuple[str, str, str]:
+    copies = {
+        "new_menu": (
+            f"새롭게 준비한 {products}를 소개합니다",
+            f"오늘은 {business_name}에서 새롭게 준비한 {products}를 소개해 드립니다.",
+            "새로운 메뉴가 궁금하셨다면 매장에서 직접 만나보세요.",
+        ),
+        "discount": (
+            f"{products} 세트 메뉴 할인 소식을 전합니다",
+            f"오늘은 {business_name}의 {products} 세트 메뉴 할인 소식을 안내해 드립니다.",
+            "할인 적용 메뉴와 기간은 방문 전 매장 안내를 확인해 주세요.",
+        ),
+        "event": (
+            f"{products}와 함께하는 이벤트를 안내합니다",
+            f"오늘은 {business_name}에서 준비한 {products} 관련 이벤트 소식을 전해 드립니다.",
+            "이벤트 참여 방법과 기간은 매장 안내에 맞춰 확인해 주세요.",
+        ),
+        "delivery": (
+            f"집에서도 즐길 수 있는 {products}를 소개합니다",
+            f"오늘은 {business_name}의 {products}를 배달로 즐기는 방법을 소개해 드립니다.",
+            "편안한 자리에서 메뉴를 즐기고 싶을 때 배달 주문을 확인해 보세요.",
+        ),
+        "takeout": (
+            f"가볍게 포장해 즐기기 좋은 {products}를 소개합니다",
+            f"오늘은 {business_name}의 {products}를 포장으로 즐기는 방법을 소개해 드립니다.",
+            "바쁜 하루 중에도 포장으로 편하게 메뉴를 만나보세요.",
+        ),
+        "visit": (
+            f"매장에서 즐기기 좋은 {products}를 소개합니다",
+            f"오늘은 {business_name}에서 직접 즐기기 좋은 {products}를 소개해 드립니다.",
+            "여유로운 시간이 필요할 때 매장에 들러 메뉴를 만나보세요.",
+        ),
+    }
+    return copies.get(situation, copies["visit"])
 
 
 def build_fallback_copy(request: AdCopyRequest, warnings: list[str]) -> AdCopyContent:

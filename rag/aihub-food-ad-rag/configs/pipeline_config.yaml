@@ -1,0 +1,79 @@
+project:
+  name: "aihub-food-ad-rag"
+  description: "AI Hub 음식 이미지 데이터를 광고 생성용 Advertisement Retrieval DB로 변환하는 파이프라인"
+
+runtime:
+  os: "windows"
+  terminal: "cmd"
+  python_version: "3.10+"
+  raw_dataset_size_gb: 70
+
+paths:
+  raw_dir: "data/raw"
+  raw_images_dir: "data/raw/images"
+  raw_annotations_dir: "data/raw/annotations"
+
+  metadata_dir: "data/metadata"
+  raw_metadata_path: "data/metadata/raw_metadata.parquet"
+  category_stats_path: "data/metadata/category_stats.csv"
+  category_enriched_metadata_path: "data/metadata/category_enriched_metadata.parquet"
+  quality_filtered_metadata_path: "data/metadata/quality_filtered_metadata.parquet"
+  deduplicated_metadata_path: "data/metadata/deduplicated_metadata.parquet"
+  tagged_metadata_path: "data/metadata/tagged_metadata.parquet"
+
+  filtered_dir: "data/filtered"
+  cleaned_dir: "data/cleaned"
+  tagged_dir: "data/tagged"
+  embeddings_dir: "data/embeddings"
+  final_db_dir: "data/final_db"
+
+category_mapping:
+  config_path: "configs/category_map.yaml"
+  business_category_column: "business_category"
+  product_group_column: "product_group"
+  product_name_column: "product_name"
+
+quality_filter:
+  min_width: 300
+  min_height: 300
+  blur_threshold: 100
+  allowed_extensions:
+    - ".jpg"
+    - ".jpeg"
+    - ".png"
+    - ".webp"
+
+duplicate_filter:
+  phash_threshold: 5
+  clip_similarity_threshold: 0.98
+
+caption_tagging:
+  model_name: "Salesforce/blip-image-captioning-base"
+  batch_size: 4
+  device: "cuda"
+  fallback_device: "cpu"
+
+clip_embedding:
+  model_name: "ViT-B-32"
+  pretrained: "openai"
+  batch_size: 16
+  device: "cuda"
+  fallback_device: "cpu"
+
+faiss:
+  index_type: "IndexFlatIP"
+  normalize_embeddings: true
+
+final_db:
+  versions:
+    - "5gb"
+    - "10gb"
+    - "20gb"
+  expected_outputs:
+    - "images"
+    - "metadata.parquet"
+    - "prompt_metadata.parquet"
+    - "embeddings.npy"
+    - "faiss.index"
+    - "mapping.csv"
+    - "summary.json"
