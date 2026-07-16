@@ -27,19 +27,68 @@
 | 데이터셋 생성 스크립트 경로 | O | X | X | 재현 코드는 Git에서 리뷰하고 버전관리 |
 | `manifest.json` | O | O | X | Git은 리뷰/이력 관리, GCS는 데이터셋 패키지 설명용 |
 | `description.md` | O | O | X | Git은 리뷰/이력 관리, GCS는 사람이 데이터셋을 바로 이해하기 위한 설명용 |
-| 실제 데이터셋 | X | O | O | 대용량 데이터는 Git에 올리지 않음 |
-| 이미지/Parquet/Embedding/FAISS | X | O | O | 대용량 산출물은 GCS에 저장하고 DVC로 버전 추적 |
+| landing/raw 데이터 | X | O | 필요 시 | 계속 수집되는 원본 입고 데이터는 우선 GCS에 보관 |
+| curated 데이터 | X | O | 필요 시 | 공식 baseline 후보 풀로 고정할 때만 DVC 추적 |
+| processed 데이터 | X | O | O | 모델/평가/검색/API가 바로 쓰는 공식 산출물은 DVC로 버전 추적 |
+| 이미지/Parquet/Embedding/FAISS | X | O | O | 대용량 processed 산출물은 GCS에 저장하고 DVC로 버전 추적 |
 | DVC metadata 파일 | O | X | X | `.dvc`, `dvc.yaml`, `dvc.lock`은 Git에서 관리 |
 
 짧게 정리하면 아래 정책입니다.
 
 ```text
 스크립트는 Git only
-데이터는 GCS/DVC
+데이터는 GCS
+공식 processed 산출물은 DVC
 설명 문서는 Git + GCS
 ```
 
-## 3. 데이터 단계
+### DVC 추적 기준
+
+DVC는 모든 중간 데이터를 무조건 등록하는 도구가 아닙니다.
+Git commit과 실험/서비스에 사용한 데이터 버전을 연결해야 할 때 사용합니다.
+
+| 데이터 종류 | DVC 기본 정책 | 이유 |
+| --- | --- | --- |
+| `landing` | 기본적으로 DVC 추적하지 않음 | 주기적으로 계속 들어오는 입고 데이터라 매 실행마다 DVC 버전을 만들면 관리 비용이 커짐 |
+| `raw` | 필요 시에만 DVC 추적 | 외부 원본 전체를 장기 재현해야 하거나 원본 삭제 위험이 있을 때만 추적 |
+| `curated` | 공식 baseline 후보 풀로 고정할 때만 DVC 추적 | 후보 풀 단계는 바뀔 수 있으므로 모든 임시본을 DVC로 잡지 않음 |
+| `processed` | 공식 산출물은 DVC 추적 | 모델/평가/검색/API가 직접 소비하므로 코드 버전과 데이터 버전을 연결해야 함 |
+| `eval` | 공식 평가셋이면 DVC 추적 | 평가 기준이 바뀌면 성능 비교가 깨지므로 버전 고정 필요 |
+
+현재 프로젝트의 기본 운영 기준은 아래와 같습니다.
+
+```text
+landing/raw = GCS 보관 중심
+curated = 공식 baseline으로 고정할 때만 DVC
+processed = 실험/서비스에서 바로 쓰는 공식 산출물이면 DVC 필수
+```
+
+## 3. 역할과 등록 흐름
+
+데이터셋 등록은 MLOps/인프라 담당자가 전부 대신 처리하는 구조로 운영하지 않습니다.
+MLOps 담당자는 구조와 규칙을 만들고, 데이터셋 담당자는 자기 데이터를 그 규칙에 맞춰 등록합니다.
+
+| 역할 | 책임 |
+| --- | --- |
+| MLOps/인프라 담당자 | GCS 폴더 구조 설계, raw/curated/processed 기준 정의, manifest/description 템플릿 제공, DVC 등록 방식 정의, Airflow 기준 설계, 예시 데이터셋 등록 |
+| 데이터셋 담당자 | 본인 데이터 단계 판단, 데이터 파일 정리, manifest/description 작성, 생성 코드 또는 노트북 경로 제출, 원본 출처/선별 기준/한계 직접 검수 |
+| MLOps/인프라 담당자 | PR 또는 등록 결과 리뷰, 폴더 구조/manifest/DVC pointer가 규칙에 맞는지 확인 |
+
+권장 등록 흐름은 아래와 같습니다.
+
+```text
+1. 데이터셋 담당자가 v1/v2 등 버전별 폴더 구조 초안을 만든다.
+2. 데이터셋 담당자가 raw / curated / processed 단계를 판단한다.
+3. 데이터셋 담당자가 manifest.json, description.md, 생성 코드 경로를 준비한다.
+4. MLOps/인프라 담당자가 폴더 구조, 데이터 단계, metadata 필드를 1차 검수한다.
+5. 검수 후 데이터셋 담당자가 GCS 업로드와 DVC 등록을 수행한다.
+6. MLOps/인프라 담당자가 PR에서 .dvc pointer와 metadata를 최종 리뷰한다.
+```
+
+초기 운영에서는 MLOps/인프라 담당자가 예시 데이터셋 1~2개를 같이 등록해 기준을 잡습니다.
+이후 반복 등록은 데이터셋 담당자가 수행하고, MLOps/인프라 담당자는 리뷰어 역할로 전환합니다.
+
+## 4. 데이터 단계
 
 | 단계 | 의미 | 예시 |
 | --- | --- | --- |
@@ -55,6 +104,12 @@
 모델/파이프라인이 바로 사용할 수 있도록 바꾼 것 = processed
 ```
 
+중요한 기준은 "처리를 했는가"가 아니라 "어디에서 소비되는 데이터인가"입니다.
+null 제거, 중복 제거, 불필요 컬럼 제거, source별 정리, 후보 keyword 추출처럼
+프로젝트에 쓸 후보 데이터를 고르고 정리하는 작업은 curated 단계로 봅니다.
+반면 score/ranking 계산, query 결과 구조화, embedding 생성, FAISS index 생성,
+RAG/LLM 입력용 변환처럼 프로젝트 파이프라인에서 바로 소비할 수 있는 산출물은 processed 단계로 봅니다.
+
 SNS 데이터 기준으로 보면 아래처럼 판단합니다.
 
 ```text
@@ -62,13 +117,15 @@ raw/sns/
 = 처음 크롤링한 전체 원본 HTML, 이미지, 원문 JSON, 스크린샷
 
 curated/sns/v1/
-= 사람이 보고 "이건 밈/트렌드 데이터로 쓸 수 있다"고 고른 subset
+= 사람이 보거나 규칙으로 걸러 "이건 밈/트렌드 데이터로 쓸 수 있다"고 정리한 subset
+= null/중복/불필요 컬럼 제거, source별 정리, 후보 keyword 추출 데이터
 
 processed/sns/v1/
-= 모델/API가 바로 읽을 수 있게 만든 jsonl/parquet/csv
+= 모델/API/RAG/LLM이 바로 읽을 수 있게 만든 jsonl/parquet/csv
+= signal scored ranking, query ranked candidates, embedding, FAISS index, prompt input dataset
 ```
 
-## 4. Manifest 공통 형식
+## 5. Manifest 공통 형식
 
 `manifest.json`은 아래 공통 형식을 기본으로 사용합니다.
 
@@ -124,7 +181,7 @@ processed/sns/v1/
 
 | 필드 | 의미 | 작성 예시 |
 | --- | --- | --- |
-| `dataset_name` | 데이터셋 이름입니다. 버전과 산출물 종류는 넣지 않습니다. | `sns_meme_trend`, `aihub_food_image_text` |
+| `dataset_name` | 데이터셋 이름입니다. 버전과 산출물 종류는 넣지 않습니다. | `sns_trend`, `aihub_food_image_text` |
 | `version` | 데이터셋 버전입니다. 같은 목적의 데이터셋이 바뀌면 `v2`, `v3`로 올립니다. | `v1` |
 | `dataset_stage` | 데이터 단계입니다. 원본 전체면 `raw`, 선별본이면 `curated`, 모델이 바로 쓰는 가공본이면 `processed`입니다. | `curated` |
 | `status` | 현재 버전의 운영 상태입니다. 첫 기준점은 `baseline`, 안정화된 버전은 `stable`, 더 이상 쓰지 않으면 `deprecated`입니다. | `baseline` |
@@ -174,7 +231,7 @@ processed/sns/v1/
   예: `retrieval`, `embedding`, `faiss_index`, `image_processing`, `text_processing`, `evaluation_policy`
 - 추가 section을 만들 때는 왜 필요한지 `description.md`에도 같이 설명합니다.
 
-## 5. Description 공통 형식
+## 6. Description 공통 형식
 
 `description.md`는 사람이 읽는 설명 문서입니다. 아래 구조를 기본으로 사용합니다.
 
@@ -237,7 +294,7 @@ processed/sns/v1/
 
 `description.md`의 목적은 사람에게 맥락을 전달하는 것입니다. `manifest.json`에 구조화된 값이 있더라도, 왜 그렇게 선별/전처리했는지와 현재 한계는 문장으로 설명합니다.
 
-## 6. 공유 전 검수 항목
+## 7. 공유 전 검수 항목
 
 데이터셋 공유 전 아래 항목은 담당자가 최종 확인합니다.
 
@@ -257,9 +314,11 @@ processed/sns/v1/
 
 특히 원본 출처, 선별 기준, 전처리 기준, 현재 한계, 다음 버전 계획은 AI가 파일 목록만 보고 정확히 알 수 없습니다.
 
-## 7. GCS 위치
+## 8. GCS 위치
 
-최종 GCS 폴더 구조와 업로드 명령어는 [GCS_MLOPS_ONBOARDING.md](./GCS_MLOPS_ONBOARDING.md)를 따릅니다.
+최종 GCS 폴더 구조와 DVC 운영 절차는 MLOps/인프라 담당자용 문서인
+[GCS_MLOPS_ONBOARDING.md](./GCS_MLOPS_ONBOARDING.md)를 따릅니다.
+데이터셋 담당자는 아래 원칙만 지키면 됩니다.
 
 `manifest.storage.gcs_path`에는 아래 규칙에 맞는 경로를 적습니다.
 
@@ -270,4 +329,43 @@ gs://ssakda/projects/brandmate/data/manifests/{dataset_name}_{version}.json
 ```
 
 - 용량 정보는 폴더명에 넣지 않습니다. 용량은 manifest에 기록합니다.
-- 데이터셋 이름과 processed 산출물 이름은 분리합니다. 예를 들어 AIHub 음식 이미지 및 정보소개 텍스트 데이터로 음식 설명용 데이터를 만들었다면 `dataset_name`은 `aihub_food_image_text`, `artifact_name`은 `food_description_data`로 기록합니다.
+- 데이터셋 이름과 processed 산출물 이름은 분리합니다. 예를 들어 AIHub 음식 이미지 및 정보소개 텍스트 데이터로 음식 설명용 데이터를 만들었다면 `dataset_name`은 `aihub_food_image_text`, processed 산출물 이름인 `artifact_name`은 `food_description_data`로 기록합니다.
+- 데이터 파일만 올리지 말고, 데이터 패키지 안에 `docs/manifest.json`, `docs/description.md` 사본을 함께 둡니다.
+
+팀원이 GCS에 직접 업로드하거나 내려받아야 할 때는 아래 명령을 사용합니다.
+
+```bash
+# [Design Intent] 로컬 데이터 패키지를 사람이 확인 가능한 GCS 경로에 업로드한다.
+gcloud storage rsync --recursive \
+  data/{stage}/{dataset_name}/v1/{artifact_name} \
+  gs://ssakda/projects/brandmate/data/{stage}/{dataset_name}/v1/{artifact_name}
+
+# [Design Intent] GCS에 등록된 데이터 패키지를 로컬로 내려받는다.
+gcloud storage rsync --recursive \
+  gs://ssakda/projects/brandmate/data/{stage}/{dataset_name}/v1/{artifact_name} \
+  data/{stage}/{dataset_name}/v1/{artifact_name}
+```
+
+DVC 등록은 팀 숙련도에 따라 운영 단계를 나눕니다.
+초기에는 MLOps/인프라 담당자가 같이 처리하고, 반복 운영에서는 데이터셋 담당자가 `dvc add`까지 수행합니다.
+`dvc push`, DVC remote 복구, 권한 문제는 MLOps/인프라 담당자가
+[GCS_MLOPS_ONBOARDING.md](./GCS_MLOPS_ONBOARDING.md)에 따라 최종 확인합니다.
+
+### 주간 수집 데이터 partition 기준
+
+트렌드 데이터처럼 주기적으로 수집되는 데이터는 `landing` 영역에 주차 단위로 저장합니다.
+
+```text
+gs://ssakda/projects/brandmate/data/landing/sns_trend/week=YYYY-Www/
+```
+
+주차는 ISO week 기준을 사용하며, 서비스 기준 시간대는 `Asia/Seoul`입니다.
+
+```text
+week=2026-W28
+= Asia/Seoul 기준 2026년 ISO 28주차
+= 2026-07-06 월요일 00:00 ~ 2026-07-12 일요일 23:59:59 KST
+```
+
+Airflow 실행 환경은 UTC일 수 있지만, 데이터 partition은 한국 서비스 기준에 맞춰
+`Asia/Seoul` 기준으로 계산합니다.

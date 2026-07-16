@@ -40,3 +40,7 @@ outputs/
 Thumbs.db
 
 outputs
+
+# Airflow local runtime artifacts
+airflow/logs/
+airflow/mock_gcs/logs/
