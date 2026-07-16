@@ -1,0 +1,106 @@
+{
+  "dataset_name": "sns_trend",
+  "version": "v1",
+  "dataset_stage": "processed",
+  "status": "baseline",
+  "owner": "Chaebin",
+  "created_at": "2026-07-16",
+  "source": {
+    "provider": "manual_crawl",
+    "source_name": "YouTube, Gogumafarm, Careet, Naver SNS/content trend crawl",
+    "source_url": "multiple",
+    "source_split": "none",
+    "raw_uploaded_to_gcs": "TODO",
+    "annotation_preserved": "none",
+    "collection_period": "2026-07-07 ~ 2026-07-09",
+    "landing_partition": "week=2026-W28",
+    "timezone": "Asia/Seoul",
+    "platforms": [
+      "youtube",
+      "gogumafarm",
+      "careet",
+      "naver"
+    ]
+  },
+  "curation": {
+    "selected_count": "TODO",
+    "target_size_gb": "none",
+    "actual_size_gb": "TODO",
+    "selection_policy": "Platform-level cleaned candidates and keyword terms were prepared from crawled trend data. Null values, duplicates, and unnecessary columns were removed where applicable.",
+    "category_balanced": "none",
+    "quality_filters": [
+      "null removal",
+      "duplicate removal",
+      "unnecessary column removal",
+      "platform-level keyword extraction"
+    ],
+    "path_mapping_available": true,
+    "curated_inputs": [
+      "data/curated/sns_trend/v1/platform_cleaned/",
+      "data/curated/sns_trend/v1/keyword_terms/"
+    ]
+  },
+  "processing": {
+    "input_dataset": "sns_trend curated platform_cleaned and keyword_terms",
+    "artifact_name": "query_ranked_candidates",
+    "target_use": "retrieval",
+    "preprocessing_steps": [
+      "merge candidates from youtube, gogumafarm, careet, and naver",
+      "match query terms against candidate titles, contexts, and metadata",
+      "calculate signal-based score",
+      "rank candidates by query relevance and recency",
+      "export nested JSON result",
+      "export flat CSV result for Airflow-friendly validation"
+    ],
+    "output_files": [
+      "query_ranked_candidates.json",
+      "query_ranked_candidates.csv"
+    ]
+  },
+  "query_ranked_candidates": {
+    "query": "니가 좋아 밈을 활용한 여름 카페 신메뉴 숏폼 광고",
+    "selected_card_id": "gogumafarm:1bf390d89536004b",
+    "result_count": 5,
+    "sources_in_results": [
+      "gogumafarm",
+      "naver",
+      "youtube"
+    ],
+    "csv_columns": [
+      "query",
+      "selected_card_id",
+      "rank",
+      "score",
+      "matched_terms",
+      "reasons",
+      "card_id",
+      "title",
+      "source",
+      "published_date",
+      "source_url",
+      "summary",
+      "context",
+      "signal",
+      "metadata_json"
+    ]
+  },
+  "storage": {
+    "gcs_path": "gs://ssakda/projects/brandmate/data/processed/sns_trend/v1/query_ranked_candidates/",
+    "manifest_gcs_path": "gs://ssakda/projects/brandmate/data/manifests/sns_trend_v1.json",
+    "local_example_path": "data/processed/sns_trend/v1/query_ranked_candidates/",
+    "dvc_tracked": false
+  },
+  "reproducibility": {
+    "generation_script_available": "TODO",
+    "generation_script_path": "TODO",
+    "random_seed": "none",
+    "can_rebuild": "TODO"
+  },
+  "limitations": [
+    "This artifact is generated from a single demo query, so it is not a full global trend ranking dataset.",
+    "Only the top ranked candidates for the query are included.",
+    "Instagram data is not included because collection was blocked by policy or access limitations.",
+    "Some source URLs or platform-specific metadata may be empty depending on the source."
+  ],
+  "next_version_plan": "Create a broader weekly sns_trend release with stable platform schema, full global ranking, and optional query-specific ranked candidate exports."
+}

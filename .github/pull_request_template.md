@@ -1,5 +1,5 @@
 # PR 타입
-- [ ] feat
+- [ ] feature
 - [ ] fix
 - [ ] docs
 - [ ] refactor

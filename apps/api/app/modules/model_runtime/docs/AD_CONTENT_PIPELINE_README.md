@@ -9,9 +9,10 @@ Browser
   -> Input Validator Python
   -> Marketing + Copy + Visual 생성 LLM 1회 호출
   -> Output Validator Python
+  -> Product Visualizer fallback Python
   -> Prompt Normalizer Python
   -> Image Generation Model
-  -> Image Validator Python
+  -> Image Validator Python (enabled일 때만)
   -> 최종 결과 반환
 ```
 
@@ -81,7 +82,7 @@ LLM은 한 번의 호출로 아래 세 가지를 생성합니다.
 - `headlines`, `body_copies`, `ctas`
 - `visual_brief`
 
-해시태그는 생성하지 않으며, 출력 JSON에도 `hashtags` 필드를 포함하지 않습니다.
+현재 non-blog 채널 prompt는 `hashtags`와 `channel_recommendation.publish_hashtags` 생성을 요구합니다. 출력 schema도 `hashtags` 필드를 포함합니다.
 
 ## 3. Output Validator
 
@@ -97,7 +98,7 @@ app/modules/ad_copy/output_validator.py
 - 모든 `features`가 `body_copies` 안에 원문 그대로 포함되어야 함
 - `prohibited_terms`가 광고 문구나 visual brief에 포함되면 실패
 - `visual_brief.products_to_show`에 모든 상품명이 포함되어야 함
-- LLM이 `hashtags`를 반환하면 parsing 단계에서 제거
+- `hashtags` 필드는 schema에 포함되며, 금지어 검증 대상에 포함
 
 검증 실패 시:
 
@@ -116,11 +117,10 @@ app/extensions/ad_content/product_visualizer.py
 
 역할:
 
-- 이미지 생성 모델이 상품명을 잘못 해석하지 않도록 상품명을 시각 정보 JSON으로 변환
-- 사용자가 선택한 광고 문구 LLM을 그대로 사용해 자동 생성
-- 선택적으로 공식/라이선스가 명확한 reference image source를 조회하고, 이미지 자체가 아니라 추출된 시각 특징만 DB에 저장
-- 특정 상품명 사전에 의존하지 않고 입력 상품명, 특징, visual brief를 바탕으로 추론
-- 실패 시 입력값 기반 fallback을 생성해 파이프라인을 계속 진행
+- 현재 통합 요청 경로에서는 입력값 기반 fallback ProductVisualization을 생성
+- 상품명을 `original_name`, `english_name`, `category`, `visual_description`, `serving_style`, `must_show`, `must_not_replace_with` 구조로 맞춤
+- 이미지 생성 모델이 입력 상품을 다른 상품으로 대체하지 않도록 최소한의 identity lock 정보를 제공
+- LLM 기반 상품 시각 분석, reference source 검색, Product Visual DB 저장 코드는 존재하지만 현재 `visualize()`의 조기 fallback 때문에 실행되지 않음
 
 입력:
 
@@ -160,7 +160,7 @@ Visual Brief
 
 ### Product Visual Database
 
-기본값은 꺼져 있습니다.
+코드와 설정은 있지만 현재 통합 요청 경로에서는 실행되지 않습니다. `ProductVisualizer.visualize()`가 즉시 fallback을 반환하기 때문입니다.
 
 ```env
 BRANDMATE_REFERENCE_SEARCH_ENABLED=false
@@ -171,7 +171,7 @@ BRANDMATE_PEXELS_API_KEY=
 BRANDMATE_UNSPLASH_ACCESS_KEY=
 ```
 
-동작 방식:
+의도했던 동작 방식:
 
 ```text
 Product Visualizer
@@ -234,7 +234,7 @@ app/extensions/ad_content/image_prompt.py
 이를 줄이기 위해 normalizer는 다음을 수행합니다.
 
 - 입력된 상품명 원문을 `Required exact product identities`로 고정
-- Product Visualizer의 상품별 시각 설명을 최종 prompt에 연결
+- 현재는 Product Visualizer fallback이 만든 상품별 기본 시각 설명을 최종 prompt에 연결
 - 음식, 음료, 물건, 패키지, 소품 등 어떤 상품이 들어와도 입력 상품만 주요 피사체로 등장하도록 명시
 - Product Visualizer의 `must_not_replace_with`와 입력 목록에 없는 대체 상품, 관련 없는 음식, 관련 없는 음료, 관련 없는 물건을 negative prompt에 추가
 - `Korean local cafe background`처럼 글자 생성을 유도할 수 있는 배경 표현을 피하고, `plain softly blurred interior`, `no signs`, `no posters`, `no menu boards`로 정규화
@@ -266,7 +266,7 @@ dalle_compatible
 app/extensions/ad_content/image_validator.py
 ```
 
-초기 버전은 옵션 hook입니다.
+이미지 검증은 옵션 hook입니다.
 
 ```env
 BRANDMATE_IMAGE_VALIDATION_ENABLED=false
@@ -274,7 +274,7 @@ BRANDMATE_IMAGE_VALIDATOR_MODEL_NAME=
 BRANDMATE_IMAGE_VALIDATION_THRESHOLD=0.24
 ```
 
-`BRANDMATE_IMAGE_VALIDATION_ENABLED=true`일 때 CLIP 같은 이미지-텍스트 유사도 모델을 연결할 수 있는 위치를 제공합니다. 현재는 특정 CLIP 모델을 코드에 고정하지 않고 설정값으로 확장하도록 분리했습니다.
+`BRANDMATE_IMAGE_VALIDATION_ENABLED=true`이고 OpenAI-compatible vision API key가 있을 때 생성 이미지를 VLM에 전달해 상품 누락, 왜곡, 읽을 수 있는 글자, 로고, unsupported visual element를 검사합니다. 기본값은 false라서 일반 실행에서는 검증을 건너뜁니다.
 
 ## 최종 응답 구조
 
@@ -318,5 +318,5 @@ BRANDMATE_IMAGE_VALIDATION_THRESHOLD=0.24
 - 특정 이미지 생성 모델명을 normalizer 코드에 고정하지 않습니다.
 - 사용자가 입력한 상품명과 특징은 삭제하지 않습니다.
 - 금지 표현은 광고 문구, visual brief, image prompt, negative prompt에 포함되지 않도록 검증합니다.
-- 해시태그는 생성하지 않습니다.
+- 해시태그는 `hashtags`와 채널별 `publish_hashtags`에 분리해 저장하고, 금지어 검증 대상에 포함합니다.
 - visual brief는 enum 기반 구조를 유지합니다.

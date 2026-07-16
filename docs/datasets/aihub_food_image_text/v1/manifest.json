@@ -3,7 +3,7 @@
   "version": "v1",
   "dataset_stage": "processed",
   "status": "baseline",
-  "owner": "TODO",
+  "owner": "Giwoo",
   "created_at": "2026-07-13",
   "source": {
     "provider": "AIHub",
