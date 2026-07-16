@@ -253,18 +253,6 @@ h1 em {
   background: #f7f5ff;
 }
 
-.channel-blog-options {
-  margin: 4px 0 24px;
-  padding: 14px;
-  border: 1px solid #d8d1c7;
-  border-radius: 8px;
-  background: #fffaf2;
-}
-
-.channel-blog-options[hidden] {
-  display: none;
-}
-
 .model-field label,
 legend,
 .field > label {
