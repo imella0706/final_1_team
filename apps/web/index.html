@@ -171,67 +171,6 @@
               </select>
             </fieldset>
 
-            <div class="channel-blog-options" id="blog-options" hidden>
-              <fieldset>
-                <legend>블로그 글 목적</legend>
-                <div class="choice-grid three">
-                  <label><input type="radio" name="blogPurpose" value="가게 소개" checked /><span>가게 소개</span></label>
-                  <label><input type="radio" name="blogPurpose" value="대표 메뉴 소개" /><span>대표 메뉴</span></label>
-                  <label><input type="radio" name="blogPurpose" value="신메뉴 소개" /><span>신메뉴</span></label>
-                  <label><input type="radio" name="blogPurpose" value="이벤트 홍보" /><span>이벤트</span></label>
-                  <label><input type="radio" name="blogPurpose" value="계절 메뉴 소개" /><span>계절 메뉴</span></label>
-                  <label><input type="radio" name="blogPurpose" value="방문 후기 스타일" /><span>방문 후기</span></label>
-                  <label><input type="radio" name="blogPurpose" value="브랜드 이야기" /><span>브랜드 이야기</span></label>
-                  <label><input type="radio" name="blogPurpose" value="오픈 안내" /><span>오픈 안내</span></label>
-                  <label><input type="radio" name="blogPurpose" value="재방문 유도" /><span>재방문 유도</span></label>
-                </div>
-              </fieldset>
-              <fieldset>
-                <legend>강조할 내용</legend>
-                <div class="choice-grid five">
-                  <label><input type="checkbox" name="blogEmphasis" value="맛" checked /><span>맛</span></label>
-                  <label><input type="checkbox" name="blogEmphasis" value="가격" /><span>가격</span></label>
-                  <label><input type="checkbox" name="blogEmphasis" value="분위기" checked /><span>분위기</span></label>
-                  <label><input type="checkbox" name="blogEmphasis" value="위치" /><span>위치</span></label>
-                  <label><input type="checkbox" name="blogEmphasis" value="접근성" /><span>접근성</span></label>
-                  <label><input type="checkbox" name="blogEmphasis" value="신메뉴" /><span>신메뉴</span></label>
-                  <label><input type="checkbox" name="blogEmphasis" value="이벤트" /><span>이벤트</span></label>
-                  <label><input type="checkbox" name="blogEmphasis" value="가성비" /><span>가성비</span></label>
-                  <label><input type="checkbox" name="blogEmphasis" value="디저트" /><span>디저트</span></label>
-                  <label><input type="checkbox" name="blogEmphasis" value="커피" /><span>커피</span></label>
-                </div>
-              </fieldset>
-              <fieldset>
-                <legend>글 스타일</legend>
-                <div class="choice-grid four">
-                  <label><input type="radio" name="blogStyle" value="정보형" checked /><span>정보형</span></label>
-                  <label><input type="radio" name="blogStyle" value="후기형" /><span>후기형</span></label>
-                  <label><input type="radio" name="blogStyle" value="감성형" /><span>감성형</span></label>
-                  <label><input type="radio" name="blogStyle" value="전문가형" /><span>전문가형</span></label>
-                  <label><input type="radio" name="blogStyle" value="친근한 말투" /><span>친근한 말투</span></label>
-                  <label><input type="radio" name="blogStyle" value="부모님 대상" /><span>부모님 대상</span></label>
-                  <label><input type="radio" name="blogStyle" value="20대 대상" /><span>20대 대상</span></label>
-                </div>
-              </fieldset>
-              <div class="field">
-                <label for="seo-keywords">검색 키워드</label>
-                <input id="seo-keywords" name="seoKeywords" value="연남동 카페, 연남동 디저트, 크림빵 맛집" maxlength="200" />
-                <small>쉼표로 구분하세요. 비워두면 지역과 상품명 중심으로 작성합니다.</small>
-              </div>
-              <fieldset>
-                <legend>글 길이</legend>
-                <div class="choice-grid three">
-                  <label><input type="radio" name="blogLength" value="짧게" /><span>짧게</span></label>
-                  <label><input type="radio" name="blogLength" value="보통" checked /><span>보통</span></label>
-                  <label><input type="radio" name="blogLength" value="길게" /><span>길게</span></label>
-                </div>
-              </fieldset>
-              <div class="field">
-                <label for="additional-request">추가 요청</label>
-                <textarea id="additional-request" name="additionalRequest" rows="3" placeholder="예: 예약 가능합니다. 주차 가능합니다. 매일 직접 만듭니다."></textarea>
-              </div>
-            </div>
-
             <div class="field">
               <label for="business-name">상호명 <b>필수</b></label>
               <input id="business-name" name="businessName" value="오후의 조각" maxlength="100" required />
@@ -257,6 +196,12 @@
               <label for="features">강조할 특징</label>
               <textarea id="features" name="features" rows="3">매일 아침 직접 만드는 디저트
 평일 오전 11시부터 오후 2시까지 런치 세트 운영</textarea>
+            </div>
+
+            <div class="field">
+              <label for="operating-info">운영 안내</label>
+              <input id="operating-info" name="operatingInfo" placeholder="예: 평일 오전 11시 ~ 오후 2시 런치 세트 운영" maxlength="300" />
+              <small>입력한 내용만 네이버 블로그 원고의 매장 안내에 표시됩니다.</small>
             </div>
 
             <div class="field">
@@ -370,6 +315,11 @@
                       <pre id="promotion-template"></pre>
                       <span id="blog-layout-label">블로그 구성</span>
                       <pre id="blog-layout"></pre>
+                      <span id="naver-blog-copy-label" hidden>네이버 블로그 복붙 원고</span>
+                      <pre class="naver-blog-copy-preview" id="naver-blog-copy-preview" hidden></pre>
+                      <button class="text-button naver-blog-copy-button" id="copy-naver-blog-button" type="button" hidden>
+                        네이버 블로그 원고 복사
+                      </button>
                     </div>
                     <strong>글과 사진 배치 추천</strong>
                     <p id="channel-writing"></p>
@@ -389,6 +339,7 @@
                     <img id="generated-image" alt="생성된 광고 이미지" />
                     <figcaption class="poster-copy">
                       <strong id="poster-headline"></strong>
+                      <small id="poster-subtitle"></small>
                     </figcaption>
                   </figure>
                   <div class="image-actions">
@@ -408,6 +359,6 @@
       </div>
     </main>
 
-    <script src="./app.js?v=product-compat-20260714"></script>
+    <script src="./app.js?v=channel-output-format-20260715"></script>
   </body>
 </html>

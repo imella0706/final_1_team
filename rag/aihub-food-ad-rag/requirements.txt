@@ -1,0 +1,63 @@
+# =========================
+# Environment / Utilities
+# =========================
+python-dotenv==1.0.1
+tqdm==4.66.5
+PyYAML==6.0.2
+joblib==1.4.2
+
+# =========================
+# Data Processing
+# =========================
+numpy==1.26.4
+pandas==2.2.2
+pyarrow==17.0.0
+polars==1.5.0
+
+# =========================
+# Image Processing
+# =========================
+Pillow==10.4.0
+opencv-python==4.10.0.84
+imagehash==4.3.1
+
+# =========================
+# Visualization
+# =========================
+matplotlib==3.9.2
+plotly==5.23.0
+
+# =========================
+# Deep Learning / Vision-Language Models
+# =========================
+torch==2.4.1
+torchvision==0.19.1
+open-clip-torch==2.26.1
+transformers==4.44.2
+accelerate==0.34.2
+sentencepiece==0.2.0
+
+# =========================
+# Vector Search
+# =========================
+faiss-cpu==1.8.0.post1
+
+# =========================
+# API Server
+# =========================
+fastapi==0.112.2
+uvicorn==0.30.6
+pydantic==2.8.2
+
+# =========================
+# OCR - Optional
+# =========================
+easyocr==1.7.1
+
+# =========================
+# Notebook / Development
+# =========================
+jupyterlab==4.2.5
+ipykernel==6.29.5
+black==24.8.0
+ruff==0.6.3
