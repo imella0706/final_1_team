@@ -26,11 +26,12 @@
     "target_size_gb": 5.0,
     "actual_size_gb": 4.997950611636043,
     "actual_size_bytes": 5366508606,
-    "selection_policy": "Selected from AIHub validation split until approximately 5GB after quality filtering.",
+    "selection_policy": "Selected 952 images from the AIHub validation split as a 5GB baseline retrieval DB after quality filtering and duplicate removal.",
     "category_balanced": false,
     "quality_filters": [
       "blur score filtering",
       "low-resolution image filtering",
+      "image open/existence validation",
       "pHash duplicate filtering",
       "CLIP similarity duplicate filtering"
     ],
@@ -43,17 +44,22 @@
     "artifact_name": "food_description_data",
     "target_use": "retrieval",
     "preprocessing_steps": [
-      "metadata normalization",
-      "caption generation or caption assignment",
-      "category mapping",
-      "CLIP embedding generation",
+      "JSON metadata parsing and normalization",
+      "business category and product group mapping",
+      "image quality filtering",
+      "duplicate removal",
+      "caption and prompt keyword assignment",
+      "CLIP image embedding generation",
       "FAISS index generation",
-      "CSV and Parquet export"
+      "CSV and Parquet export",
+      "LLM prompt payload JSON export"
     ],
     "output_files": [
+      "db_management_inventory.csv",
       "embeddings.npy",
       "faiss.index",
       "images/",
+      "llm_prompt_payloads.json",
       "mapping.csv",
       "metadata.csv",
       "metadata.parquet",
@@ -64,23 +70,23 @@
   },
   "food_description_data": {
     "purpose": "Processed artifact used to help the LLM/API describe food images with menu, category, caption, and retrieval metadata.",
-    "caption_method": "TODO",
-    "category_mapping_rule": "TODO",
+    "caption_method": "caption and prompt keyword fields produced by the caption tagging stage; exact runtime model/version is not encoded in this v1 manifest.",
+    "category_mapping_rule": "rule/keyword based mapping into business_category and product_group for BrandMate ad retrieval use cases.",
     "embedding": {
       "enabled": true,
-      "model": "TODO",
+      "model": "OpenCLIP ViT-B-32 (512-dimensional image embeddings)",
       "shape": [
         952,
         512
       ],
-      "normalized": "TODO"
+      "normalized": true
     },
     "retrieval": {
       "enabled": true,
       "method": "embedding_search",
       "index_file": "faiss.index",
-      "faiss_index_type": "TODO",
-      "similarity_metric": "TODO"
+      "faiss_index_type": "IndexFlatIP",
+      "similarity_metric": "inner_product_on_normalized_embeddings"
     }
   },
   "statistics": {
@@ -165,6 +171,37 @@
         "text_for_embedding",
         "retrieval_text",
         "ad_prompt_hint"
+      ],
+      "db_management_inventory.csv": [
+        "final_image_id",
+        "final_image_path",
+        "final_image_file_name",
+        "image_path",
+        "original_food_name",
+        "product_name",
+        "food_code",
+        "business_category",
+        "product_group",
+        "caption",
+        "prompt_keywords",
+        "text_for_embedding",
+        "embedding_id",
+        "embedding_array_index",
+        "final_image_size_bytes",
+        "final_image_exists"
+      ],
+      "llm_prompt_payloads.json": [
+        "final_image_id",
+        "reference_image_path",
+        "business_category",
+        "product_group",
+        "product_name",
+        "original_food_name",
+        "food_code",
+        "caption",
+        "prompt_keywords",
+        "retrieval_text",
+        "ad_prompt_hint"
       ]
     },
     "path_mapping": {
@@ -184,19 +221,33 @@
     "gcs_path": "gs://ssakda/projects/brandmate/data/processed/aihub_food_image_text/v1/food_description_data/",
     "manifest_gcs_path": "gs://ssakda/projects/brandmate/data/manifests/aihub_food_image_text_v1.json",
     "local_example_path": "data/processed/aihub_food_image_text/v1/food_description_data/",
-    "dvc_tracked": true
+    "dvc_tracked": true,
+    "local_source_project_path": "C:\\aihub-food-ad-rag\\data\\final_db\\5gb"
   },
   "reproducibility": {
-    "generation_script_available": "TODO",
-    "generation_script_path": "TODO",
-    "random_seed": "TODO",
-    "can_rebuild": "TODO"
+    "generation_script_available": true,
+    "generation_script_path": [
+      "C:\\aihub-food-ad-rag\\src\\01_parse_metadata.py",
+      "C:\\aihub-food-ad-rag\\src\\02_eda_report.py",
+      "C:\\aihub-food-ad-rag\\src\\03_build_category_groups.py",
+      "C:\\aihub-food-ad-rag\\src\\04_quality_filter.py",
+      "C:\\aihub-food-ad-rag\\src\\05_remove_duplicates.py",
+      "C:\\aihub-food-ad-rag\\src\\06_caption_tagging.py",
+      "C:\\aihub-food-ad-rag\\src\\07_clip_embedding.py",
+      "C:\\aihub-food-ad-rag\\src\\08_build_faiss.py",
+      "C:\\aihub-food-ad-rag\\src\\09_make_final_db.py",
+      "C:\\aihub-food-ad-rag\\src\\15_export_final_db_assets.py"
+    ],
+    "random_seed": "none",
+    "can_rebuild": "partial",
+    "rebuild_notes": "Same structure can be rebuilt from the same AIHub validation files and scripts, but caption/model runtime and local file ordering may affect exact payload text or row order."
   },
   "limitations": [
     "Category distribution was not intentionally balanced for BrandMate target domains.",
     "Cafe and bakery scenarios may require more cake, dessert, bakery, beverage, and brunch images.",
     "Dataset was created under time constraints using approximately 5GB target size.",
-    "Original AIHub annotation files were not preserved in this artifact."
+    "Original AIHub annotation files were not preserved in this artifact.",
+    "This v1 manifest describes only the 5gb baseline DB."
   ],
-  "next_version_plan": "Create v2 with stronger cafe, bakery, dessert, beverage, and brunch coverage."
+  "next_version_plan": "Create a separate next version with stronger cafe, bakery, dessert, beverage, and brunch coverage. This v1 manifest remains scoped to the 5gb baseline DB only."
 }
