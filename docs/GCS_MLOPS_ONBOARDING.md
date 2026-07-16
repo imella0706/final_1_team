@@ -1,4 +1,5 @@
 # BrandMate GCS / DVC Onboarding
+update: 2026.07.17
 
 이 문서는 MLOps/인프라 담당자가 BrandMate 데이터셋, 모델 비교 실험, 웹서비스 생성 결과,
 로그를 GCS와 DVC로 운영하기 위한 기준입니다.
@@ -6,6 +7,8 @@
 일반 데이터셋 담당자가 새 데이터셋을 공유할 때는 이 문서 전체를 먼저 볼 필요가 없습니다.
 데이터 단계 판단, 제출물, manifest/description 작성 기준은
 [BrandMate Dataset Submission Onboarding](./DATASET_SUBMISSION_ONBOARDING.md)을 따릅니다.
+데이터셋 담당자가 GCS 폴더 구조 초안을 만들 때도 먼저 `DATASET_SUBMISSION_ONBOARDING.md`의
+GCS 위치 규칙을 기준으로 잡습니다.
 이 문서는 bucket 구조, 권한, DVC remote, 업로드/복구 절차를 관리해야 할 때 참고합니다.
 
 데이터셋을 새로 만들거나 GCS에 업로드하기 전에는 데이터셋 제출 규격을 먼저 확인합니다.

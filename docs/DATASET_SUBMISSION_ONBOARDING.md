@@ -1,4 +1,5 @@
 # BrandMate Dataset Submission Guide
+update: 2026.07.17
 
 이 문서는 BrandMate 팀원이 데이터셋을 만들고 공유할 때 지켜야 하는 공통 규칙입니다.
 
@@ -27,7 +28,8 @@
 | 데이터셋 생성 스크립트 경로 | O | X | X | 재현 코드는 Git에서 리뷰하고 버전관리 |
 | `manifest.json` | O | O | X | Git은 리뷰/이력 관리, GCS는 데이터셋 패키지 설명용 |
 | `description.md` | O | O | X | Git은 리뷰/이력 관리, GCS는 사람이 데이터셋을 바로 이해하기 위한 설명용 |
-| landing/raw 데이터 | X | O | 필요 시 | 계속 수집되는 원본 입고 데이터는 우선 GCS에 보관 |
+| 직접 수집한 landing/raw 데이터 | X | O | 필요 시 | SNS 크롤링처럼 팀이 직접 수집한 원본 입고 데이터는 GCS에 보관 |
+| 공식 URL로 재확보 가능한 대용량 raw 데이터 | X | 링크로 대체 | X | AIHub 등 공식 제공처에서 다시 받을 수 있는 대용량 raw는 팀프로젝트 비용 문제로 GCS에 올리지 않고 출처 URL과 재현 방법을 기록 |
 | curated 데이터 | X | O | 필요 시 | 공식 baseline 후보 풀로 고정할 때만 DVC 추적 |
 | processed 데이터 | X | O | O | 모델/평가/검색/API가 바로 쓰는 공식 산출물은 DVC로 버전 추적 |
 | 이미지/Parquet/Embedding/FAISS | X | O | O | 대용량 processed 산출물은 GCS에 저장하고 DVC로 버전 추적 |
@@ -44,6 +46,9 @@
 
 ### DVC 추적 기준
 
+> 이 문서는 데이터셋 담당자가 DVC 대상 여부를 판단하기 위한 정책만 설명합니다.
+> 실제 DVC 명령어와 remote 운영 절차는 [GCS_MLOPS_ONBOARDING.md](./GCS_MLOPS_ONBOARDING.md)를 따릅니다.
+
 DVC는 모든 중간 데이터를 무조건 등록하는 도구가 아닙니다.
 Git commit과 실험/서비스에 사용한 데이터 버전을 연결해야 할 때 사용합니다.
 
@@ -58,15 +63,45 @@ Git commit과 실험/서비스에 사용한 데이터 버전을 연결해야 할
 현재 프로젝트의 기본 운영 기준은 아래와 같습니다.
 
 ```text
-landing/raw = GCS 보관 중심
+직접 수집한 landing/raw = GCS 보관 중심
+공식 URL로 재확보 가능한 대용량 raw = 링크와 재현 방법으로 대체 가능
 curated = 공식 baseline으로 고정할 때만 DVC
 processed = 실험/서비스에서 바로 쓰는 공식 산출물이면 DVC 필수
+```
+
+### 팀프로젝트 DVC 운영 범위
+
+현재 팀프로젝트 기간과 운영 복잡도를 고려해 DVC 추적 대상은 공식 `processed` 산출물로 한정합니다.
+`curated` 데이터는 GCS에 보관하고, `processed` manifest의 `processing.input_dataset`,
+`curation.curated_inputs`, `reproducibility.generation_script_path`에 입력 경로와 생성 코드를 기록합니다.
+
+이 판단을 한 이유는 아래와 같습니다.
+
+- 프로젝트 기간이 2026-07-30까지로 제한되어 있어 `curated`까지 DVC로 고정하면 등록/검수/충돌 해결 비용이 커집니다.
+- `landing`과 `curated`는 수집과 정리 과정에서 자주 바뀌므로 모든 중간본을 DVC로 추적하면 pointer가 과도하게 늘어납니다.
+- 팀원이 DVC에 익숙하지 않은 상태에서 raw/curated/processed를 모두 추적하면 운영 실수가 생기기 쉽습니다.
+- 실험과 서비스 재현성에 직접 영향을 주는 것은 최종적으로 모델/API/RAG가 소비하는 `processed` 산출물입니다.
+- 따라서 현재 단계에서는 `processed`를 우선 고정하고, `curated` 계보는 GCS 경로와 manifest/description 문서로 추적합니다.
+
+이 구조의 한계도 명확히 기록합니다.
+
+- 현재 구조에서는 `processed` 산출물이 어떤 `curated` 경로에서 생성되었는지는 추적할 수 있습니다.
+- 하지만 `curated` 데이터 자체의 DVC hash까지 고정하지는 않습니다.
+- 따라서 완전한 DVC lineage, 즉 `curated` hash → `processed` hash 연결은 다음 운영 고도화 범위로 둡니다.
+
+추후 운영 고도화 시에는 아래 구조로 확장합니다.
+
+```text
+curated DVC 추적
+→ processed DVC 추적
+→ dvc.yaml / dvc.lock으로 curated → processed lineage 고정
 ```
 
 ## 3. 역할과 등록 흐름
 
 데이터셋 등록은 MLOps/인프라 담당자가 전부 대신 처리하는 구조로 운영하지 않습니다.
 MLOps 담당자는 구조와 규칙을 만들고, 데이터셋 담당자는 자기 데이터를 그 규칙에 맞춰 등록합니다.
+다만 현재 팀프로젝트 범위에서는 DVC 등록과 DVC remote 업로드는 MLOps/인프라 담당자가 관리합니다.
 
 | 역할 | 책임 |
 | --- | --- |
@@ -81,12 +116,35 @@ MLOps 담당자는 구조와 규칙을 만들고, 데이터셋 담당자는 자�
 2. 데이터셋 담당자가 raw / curated / processed 단계를 판단한다.
 3. 데이터셋 담당자가 manifest.json, description.md, 생성 코드 경로를 준비한다.
 4. MLOps/인프라 담당자가 폴더 구조, 데이터 단계, metadata 필드를 1차 검수한다.
-5. 검수 후 데이터셋 담당자가 GCS 업로드와 DVC 등록을 수행한다.
-6. MLOps/인프라 담당자가 PR에서 .dvc pointer와 metadata를 최종 리뷰한다.
+5. 검수 후 데이터셋 담당자가 승인된 구조대로 GCS에 업로드한다.
+6. MLOps/인프라 담당자가 공식 processed 산출물을 DVC로 등록한다.
+7. MLOps/인프라 담당자가 .dvc pointer, manifest, description을 최종 PR 리뷰한다.
 ```
 
 초기 운영에서는 MLOps/인프라 담당자가 예시 데이터셋 1~2개를 같이 등록해 기준을 잡습니다.
-이후 반복 등록은 데이터셋 담당자가 수행하고, MLOps/인프라 담당자는 리뷰어 역할로 전환합니다.
+이후 팀원의 데이터셋 관리 숙련도가 충분하고 충돌 위험이 낮아졌을 때는 데이터셋 담당자도 DVC 등록을 수행할 수 있습니다.
+그 전까지는 DVC 등록, `dvc push`, DVC remote 권한/복구는 MLOps/인프라 담당자가 관리합니다.
+
+### 초기 DVC 중앙 관리 원칙
+
+현재 팀프로젝트 초기 단계에서는 DVC 등록과 `dvc push`를 MLOps/인프라 담당자가 중앙에서 관리합니다.
+
+DVC는 단순 데이터 업로드 도구가 아니라 Git commit과 데이터 hash를 연결하는 버전관리 절차입니다.
+데이터셋 구조, `manifest.json`, `description.md`가 아직 자주 바뀌는 단계에서 각 데이터셋 담당자가 직접
+`dvc add`와 `dvc push`를 수행하면 아래 문제가 생길 수 있습니다.
+
+- `.dvc` pointer 충돌
+- GCS readable path와 DVC remote의 데이터 불일치
+- Git에 실제 데이터 파일을 잘못 추가하는 실수
+- metadata 수정 후 DVC pointer를 갱신하지 않아 Git commit과 데이터 버전이 어긋나는 문제
+- 여러 사람이 같은 processed artifact를 수정하면서 어떤 데이터 버전이 공식인지 불명확해지는 문제
+
+따라서 초기에는 데이터셋 담당자가 폴더 구조 초안, metadata 작성, 생성 코드 경로 정리, GCS 업로드까지 수행하고, MLOps/인프라 담당자가 최종 검수 후 DVC 등록과 `.dvc` pointer 갱신을 처리합니다.
+
+이 정책은 데이터셋 담당자의 작업을 제한하려는 목적이 아니라, 데이터 구조가 안정화되기 전까지
+데이터 버전 충돌과 복구 비용을 줄이기 위한 운영 기준입니다.
+
+데이터셋 구조가 안정화되고 팀원이 DVC 운영 흐름에 익숙해진 뒤에는 데이터셋 담당자도 DVC 등록을 수행할 수 있도록 전환할 예정입니다. 
 
 ## 4. 데이터 단계
 
@@ -105,8 +163,12 @@ MLOps 담당자는 구조와 규칙을 만들고, 데이터셋 담당자는 자�
 ```
 
 중요한 기준은 "처리를 했는가"가 아니라 "어디에서 소비되는 데이터인가"입니다.
-null 제거, 중복 제거, 불필요 컬럼 제거, source별 정리, 후보 keyword 추출처럼
+
+팀 컨벤션상 null 제거, 중복 제거, 불필요 컬럼 제거, source별 정리, 후보 keyword 추출처럼
 프로젝트에 쓸 후보 데이터를 고르고 정리하는 작업은 curated 단계로 봅니다.
+
+기술적으로는 전처리라고 볼 수 있어도, 실제 모델/API/RAG 파이프라인이 바로 소비하는 최종 산출물이 아니면 우리 팀에서는 curated로 분류합니다.
+
 반면 score/ranking 계산, query 결과 구조화, embedding 생성, FAISS index 생성,
 RAG/LLM 입력용 변환처럼 프로젝트 파이프라인에서 바로 소비할 수 있는 산출물은 processed 단계로 봅니다.
 
@@ -316,21 +378,51 @@ processed/sns/v1/
 
 ## 8. GCS 위치
 
-최종 GCS 폴더 구조와 DVC 운영 절차는 MLOps/인프라 담당자용 문서인
+데이터셋 담당자가 새 데이터셋 폴더 구조를 잡을 때는 이 섹션을 기준으로 합니다.
+즉, 팀원이 `raw`, `curated`, `processed` 중 어디에 둘지 판단하고 `manifest.storage.gcs_path`를 작성할 때는
+이 문서를 먼저 봅니다.
+
+MLOps/인프라 담당자용 전체 bucket 구조, DVC remote, 권한, 업로드/복구 절차는
 [GCS_MLOPS_ONBOARDING.md](./GCS_MLOPS_ONBOARDING.md)를 따릅니다.
-데이터셋 담당자는 아래 원칙만 지키면 됩니다.
+
+| 상황 | 먼저 볼 문서 |
+| --- | --- |
+| 데이터셋 담당자가 자기 데이터의 폴더 구조 초안을 만들 때 | `DATASET_SUBMISSION_ONBOARDING.md` |
+| `raw / curated / processed` 단계를 판단할 때 | `DATASET_SUBMISSION_ONBOARDING.md` |
+| `manifest.json`, `description.md`를 작성할 때 | `DATASET_SUBMISSION_ONBOARDING.md` |
+| 실제 GCS bucket 전체 구조, 권한, DVC remote를 관리할 때 | `GCS_MLOPS_ONBOARDING.md` |
+| `dvc add`, `dvc push`, DVC pointer 갱신 기준을 확인할 때 | `GCS_MLOPS_ONBOARDING.md` |
 
 `manifest.storage.gcs_path`에는 아래 규칙에 맞는 경로를 적습니다.
 
 ```text
-gs://ssakda/projects/brandmate/data/curated/{source}/v{version}/
-gs://ssakda/projects/brandmate/data/processed/{source}/v{version}/{artifact_name}/
+gs://ssakda/projects/brandmate/data/curated/{dataset_name}/v{version}/
+gs://ssakda/projects/brandmate/data/processed/{dataset_name}/v{version}/{artifact_name}/
 gs://ssakda/projects/brandmate/data/manifests/{dataset_name}_{version}.json
 ```
 
 - 용량 정보는 폴더명에 넣지 않습니다. 용량은 manifest에 기록합니다.
 - 데이터셋 이름과 processed 산출물 이름은 분리합니다. 예를 들어 AIHub 음식 이미지 및 정보소개 텍스트 데이터로 음식 설명용 데이터를 만들었다면 `dataset_name`은 `aihub_food_image_text`, processed 산출물 이름인 `artifact_name`은 `food_description_data`로 기록합니다.
 - 데이터 파일만 올리지 말고, 데이터 패키지 안에 `docs/manifest.json`, `docs/description.md` 사본을 함께 둡니다.
+
+### Git metadata 원본과 GCS metadata 사본 구분
+
+metadata 파일명은 어디에 있든 항상 `manifest.json`, `description.md`로 유지합니다.
+파일명을 `git_manifest.json`, `gcs_manifest.json`처럼 나누지 않습니다.
+
+위치에 따라 역할이 다릅니다.
+
+| 위치 | 역할 | 수정 기준 |
+| --- | --- | --- |
+| `docs/datasets/{dataset_name}/{version}/manifest.json` | Git에서 관리하는 공식 metadata 원본 | 데이터셋 담당자가 수정하고 PR 리뷰 |
+| `docs/datasets/{dataset_name}/{version}/description.md` | Git에서 관리하는 공식 설명 문서 원본 | 데이터셋 담당자가 수정하고 PR 리뷰 |
+| `data/{stage}/{dataset_name}/{version}/{artifact_name}/docs/manifest.json` | GCS 데이터 패키지 안에 포함되는 metadata 사본 | 공식 원본 확인 후 MLOps 담당자가 동기화 |
+| `data/{stage}/{dataset_name}/{version}/{artifact_name}/docs/description.md` | GCS 데이터 패키지 안에 포함되는 설명 문서 사본 | 공식 원본 확인 후 MLOps 담당자가 동기화 |
+
+Git의 `docs/datasets/...` 아래 파일이 공식 원본입니다.
+GCS 데이터 패키지 내부 `docs/` 아래 파일은 데이터 파일 옆에 붙여두는 사본입니다.
+
+수정은 Git 원본에서 먼저 진행하고, 검수 후 GCS 사본에 반영합니다.
 
 팀원이 GCS에 직접 업로드하거나 내려받아야 할 때는 아래 명령을 사용합니다.
 
@@ -345,11 +437,6 @@ gcloud storage rsync --recursive \
   gs://ssakda/projects/brandmate/data/{stage}/{dataset_name}/v1/{artifact_name} \
   data/{stage}/{dataset_name}/v1/{artifact_name}
 ```
-
-DVC 등록은 팀 숙련도에 따라 운영 단계를 나눕니다.
-초기에는 MLOps/인프라 담당자가 같이 처리하고, 반복 운영에서는 데이터셋 담당자가 `dvc add`까지 수행합니다.
-`dvc push`, DVC remote 복구, 권한 문제는 MLOps/인프라 담당자가
-[GCS_MLOPS_ONBOARDING.md](./GCS_MLOPS_ONBOARDING.md)에 따라 최종 확인합니다.
 
 ### 주간 수집 데이터 partition 기준
 

@@ -61,7 +61,13 @@
     "query": "니가 좋아 밈을 활용한 여름 카페 신메뉴 숏폼 광고",
     "selected_card_id": "gogumafarm:1bf390d89536004b",
     "result_count": 5,
-    "sources_in_results": [
+    "input_platforms": [
+      "youtube",
+      "gogumafarm",
+      "careet",
+      "naver"
+    ],
+    "result_platforms": [
       "gogumafarm",
       "naver",
       "youtube"

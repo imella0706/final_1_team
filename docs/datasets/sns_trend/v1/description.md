@@ -33,6 +33,77 @@
 - 이모지 처리: 이모지 자체가 밈 표현일 수 있어 일괄 제거하지 않았습니다.
 - 사람 검수 개입: TODO
 
+## Folder and File Mapping
+
+`sns_trend v1`은 기존 임시 폴더인 `data/Chaebin/`에 있던 파일을 아래 GCS/표준 위치로 재배치하는 구조입니다.
+
+| 기존 위치 | GCS/표준 위치 | 의미 |
+| --- | --- | --- |
+| `data/Chaebin/raw-첫 수집/` | `data/landing/sns_trend/week=2026-W28/raw/` | 크롤링해서 처음 들어온 입고 데이터 |
+| `data/Chaebin/curated-1차 가공/` | `data/curated/sns_trend/v1/platform_cleaned/` | null, 중복, 불필요 컬럼 제거 등 플랫폼별 1차 정리본 |
+| `data/Chaebin/curated-2차가공/` | `data/curated/sns_trend/v1/keyword_terms/` | 후보 키워드/밈 표현만 뽑은 목록 |
+| `data/Chaebin/4_merged.json` | `data/processed/sns_trend/v1/query_ranked_candidates/query_ranked_candidates.json` | 특정 query 기준으로 후보를 점수화/정렬한 nested JSON 결과 |
+| `data/Chaebin/query_ranked_candidates.csv` | `data/processed/sns_trend/v1/query_ranked_candidates/query_ranked_candidates.csv` | `query_ranked_candidates.json`을 Airflow 검증이 쉽도록 flat CSV로 펼친 파일 |
+
+표준 GCS 구조는 아래와 같습니다.
+
+```text
+gs://ssakda/projects/brandmate/data/
+  landing/
+    sns_trend/
+      week=2026-W28/
+        raw/
+          youtube/
+            youtube_keywords_2026-07-07.csv
+            youtube_keywords_2026-07-08.csv
+          gogumafarm/
+            gogumafarm_articles_20260709.csv
+          careet/
+            careet_articles_20260708.csv
+            careet_articles_20260709.csv
+          naver/
+            naver_blog_카페.csv
+            naver_datalab_카페.csv
+            naver_news_카페.csv
+
+  curated/
+    sns_trend/
+      v1/
+        platform_cleaned/
+          youtube/
+            youtube_keyword_trend_comparison.csv
+          gogumafarm/
+            gogumafarm_meme_terms_20260709.csv
+          careet/
+            careet_memes_20260708.csv
+            careet_memes_20260709.csv
+          naver/
+            naver_word_freq.csv
+
+        keyword_terms/
+          careet/
+            careet_meme_terms_20260708.json
+            careet_meme_terms_20260709.json
+            careet_meme_term_suspects_20260708.csv
+          gogumafarm/
+            gogumafarm_meme_terms_20260709.json
+
+  processed/
+    sns_trend/
+      v1/
+        query_ranked_candidates/
+          query_ranked_candidates.json
+          query_ranked_candidates.csv
+```
+
+데이터셋 패키지로 정식 등록할 때는 processed artifact 내부에 아래 문서 사본을 추가합니다.
+
+```text
+data/processed/sns_trend/v1/query_ranked_candidates/docs/
+  manifest.json
+  description.md
+```
+
 ## Processing
 
 - 입력 데이터셋: `sns_trend` curated `platform_cleaned`, `keyword_terms`
@@ -53,10 +124,17 @@
 - query: `니가 좋아 밈을 활용한 여름 카페 신메뉴 숏폼 광고`
 - selected_card_id: `gogumafarm:1bf390d89536004b`
 - result count: 5
-- result sources: gogumafarm, naver, youtube
+- input platforms: youtube, gogumafarm, careet, naver
+- result platforms: gogumafarm, naver, youtube
 
 `query_ranked_candidates.json`은 query와 ranked result를 보존하는 원본 구조입니다.
 `query_ranked_candidates.csv`는 Airflow에서 필수 컬럼, score, rank, source, URL 누락 여부 등을 검증하기 쉽게 펼친 flat table입니다.
+
+`input_platforms`는 query ranking 전에 후보로 넣은 플랫폼 전체입니다.
+`result_platforms`는 top 결과의 대표 `source`로 실제 등장한 플랫폼입니다.
+원본 JSON의 `metadata.also_seen_in`은 특정 밈/키워드가 다른 플랫폼에서도 함께 관측되었음을 나타내는 보조 metadata입니다.
+예를 들어 어떤 결과의 대표 `source`가 `gogumafarm`이어도, `metadata.also_seen_in`에 `careet`이 있으면 같은 밈/키워드가 Careet에서도 관측되었다는 뜻입니다.
+따라서 Careet은 이번 top result의 대표 source로는 나오지 않았지만, 일부 후보의 `also_seen_in` metadata에는 포함되어 있습니다.
 
 ## Storage
 
