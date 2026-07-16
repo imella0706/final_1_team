@@ -279,37 +279,38 @@ AI가 모르는 값은 추측하지 말고 `TODO`로 남겨주세요.
   },
   "processing": {
     "input_dataset": "sns_trend_curated_v1",
-    "artifact_name": "query_ranked_candidates",
+    "artifact_name": "cross_platform_signal_top_candidates",
     "target_use": "retrieval",
     "preprocessing_steps": [
       "platform별 후보 통합",
-      "query 기준 score 계산",
-      "ranking 결과 구조화",
+      "platform별 signal score 정량화",
+      "query 기준 후보 검색",
+      "상위 점수 후보 구조화",
       "JSON 결과를 CSV로 flatten"
     ],
     "output_files": [
-      "query_ranked_candidates.json",
-      "query_ranked_candidates.csv"
+      "cross_platform_signal_top_candidates.json",
+      "cross_platform_signal_top_candidates.csv"
     ],
     "input_platforms": ["youtube", "gogumafarm", "careet", "naver"],
     "result_platforms": ["gogumafarm", "naver", "youtube"]
   },
   "storage": {
-    "gcs_path": "gs://ssakda/projects/brandmate/data/processed/sns_trend/v1/query_ranked_candidates/",
-    "local_example_path": "data/processed/sns_trend/v1/query_ranked_candidates/",
+    "gcs_path": "gs://ssakda/projects/brandmate/data/processed/sns_trend/v1/cross_platform_signal_top_candidates/",
+    "local_example_path": "data/processed/sns_trend/v1/cross_platform_signal_top_candidates/",
     "dvc_tracked": false
   },
   "reproducibility": {
     "generation_script_available": true,
-    "generation_script_path": "TODO",
+    "generation_script_path": "demo/trend_ad/pipeline.py",
     "random_seed": "none",
     "can_rebuild": "partial"
   },
   "limitations": [
-    "현재 artifact는 특정 query 기준 ranking 결과입니다.",
+    "현재 export는 특정 demo query 기준 상위 후보 결과이며 전체 global ranking 데이터셋은 아닙니다.",
     "curated 데이터는 현재 DVC로 추적하지 않고 GCS 경로와 metadata로 계보를 관리합니다."
   ],
-  "next_version_plan": "주기적 크롤링 자동화와 query별 ranking artifact 확장"
+  "next_version_plan": "주기적 크롤링 자동화, cross-platform signal scoring 확장, score 기준 top-N 보존 정책 정의"
 }
 ```
 
@@ -454,17 +455,17 @@ AI 결과는 초안입니다. `TODO` 항목과 원본 출처, 선별 기준, 전
 
 ## Dataset Stage
 - 단계: processed
-- 판단 근거: 특정 query를 기준으로 후보를 점수화하고 ranking 결과로 구조화했기 때문에 실제 프롬프트/RAG 파이프라인에서 바로 사용할 수 있는 processed 산출물입니다.
+- 판단 근거: 여러 플랫폼 후보를 merge하고 signal score 기준으로 상위 후보 결과를 구조화했기 때문에 실제 프롬프트/RAG 파이프라인에서 바로 사용할 수 있는 processed 산출물입니다.
 
 ## Files
 - 주요 파일 목록:
-  - query_ranked_candidates.json
-  - query_ranked_candidates.csv
+  - cross_platform_signal_top_candidates.json
+  - cross_platform_signal_top_candidates.csv
 - row/image 개수: 5 rows
 - 전체 용량: TODO
 - 파일별 역할:
-  - query_ranked_candidates.json: query, selected_card_id, ranking results를 포함한 원본 구조화 결과입니다.
-  - query_ranked_candidates.csv: Airflow 검증과 사람이 확인하기 쉽도록 JSON을 flat table 형태로 펼친 파일입니다.
+  - cross_platform_signal_top_candidates.json: 여러 플랫폼 후보를 merge한 뒤 signal score 기준 상위 후보, query, selected_card_id를 포함한 원본 구조화 결과입니다.
+  - cross_platform_signal_top_candidates.csv: Airflow 검증과 사람이 확인하기 쉽도록 JSON을 flat table 형태로 펼친 파일입니다.
 ```
 
 위 공통 형식은 공유 전 검수해야 하는 핵심 항목을 모두 포함합니다.

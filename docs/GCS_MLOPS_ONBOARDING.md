@@ -116,7 +116,7 @@ gs://ssakda/
               food_description_data/
           sns_trend/
             v1/
-              query_ranked_candidates/
+              cross_platform_signal_top_candidates/
           food_101/
             v1/
           merged/
@@ -164,7 +164,7 @@ gs://ssakda/
 | `data/curated/sns_trend/v1/keyword_terms/` | 플랫폼별 데이터에서 후보 밈/트렌드 키워드와 표현만 뽑은 목록입니다. 아직 최종 파이프라인 입력이라기보다 후보 풀입니다. |
 | `data/curated/food_101/v1/` | Food-101 기반 음식 이미지 데이터 풀입니다. 카페/음식점 광고 이미지 보강이나 음식 도메인 평가에 사용합니다. |
 | `data/processed/{dataset_name}/v1/{artifact_name}/` | dataset별 curated 데이터를 모델/API/평가 파이프라인이 바로 쓸 수 있게 전처리한 산출물입니다. 예: `data/processed/aihub_food_image_text/v1/food_description_data/` |
-| `data/processed/sns_trend/v1/query_ranked_candidates/` | 특정 query를 기준으로 후보를 검색하고 score/ranking까지 계산한 processed 산출물입니다. 프롬프트/RAG 파이프라인에서 바로 소비할 수 있는 JSON/CSV를 둡니다. |
+| `data/processed/sns_trend/v1/cross_platform_signal_top_candidates/` | YouTube, Gogumafarm, Careet, Naver 후보를 merge한 뒤 source별 signal score를 정량화하고 상위 후보만 남긴 processed 산출물입니다. 현재 export는 demo query 기준 JSON/CSV이며, 프롬프트/RAG 파이프라인에서 바로 소비할 수 있습니다. |
 | `data/processed/merged/v1/` | dataset별 processed 데이터를 동일 schema로 맞춘 뒤 하나의 학습/비교실험 경로로 합친 통합 데이터셋입니다. manifest 없이 임의로 합치지 않습니다. |
 | `data/eval/smoke/` | 배포 직후 FastAPI, ComfyUI, model call이 살아있는지만 확인하는 최소 시험지입니다. 품질 평가용이 아니라 연결 확인용입니다. |
 | `data/eval/comparison/` | FLUX vs SDXL 등 모델/프롬프트/전처리 비교와 최종 리포트에 쓰는 고정 시험지입니다. 바꾸면 이전 실험과 비교가 깨집니다. |
