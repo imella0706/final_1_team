@@ -1,6 +1,12 @@
 # BrandMate GCS / DVC Onboarding
 
-이 문서는 BrandMate 데이터셋, 모델 비교 실험, 웹서비스 생성 결과, 로그를 GCS에 정리하는 기준입니다.
+이 문서는 MLOps/인프라 담당자가 BrandMate 데이터셋, 모델 비교 실험, 웹서비스 생성 결과,
+로그를 GCS와 DVC로 운영하기 위한 기준입니다.
+
+일반 데이터셋 담당자가 새 데이터셋을 공유할 때는 이 문서 전체를 먼저 볼 필요가 없습니다.
+데이터 단계 판단, 제출물, manifest/description 작성 기준은
+[BrandMate Dataset Submission Onboarding](./DATASET_SUBMISSION_ONBOARDING.md)을 따릅니다.
+이 문서는 bucket 구조, 권한, DVC remote, 업로드/복구 절차를 관리해야 할 때 참고합니다.
 
 데이터셋을 새로 만들거나 GCS에 업로드하기 전에는 데이터셋 제출 규격을 먼저 확인합니다.
 
@@ -66,7 +72,10 @@ gcloud storage ls gs://ssakda
 이 명령이 실패하면 먼저 IAM 권한을 확인해야 합니다. 일반 팀원은 최소한 `저장소 개체 뷰어`와
 `저장소 개체 생성자` 권한이 필요합니다.
 
-## 3. 최종 GCS 구조
+## 3. 현재 GCS 구조
+
+> 기준일: 2026-07-16
+> GCS 구조는 데이터셋 추가, Airflow 자동화 범위, DVC 운영 방식에 따라 변경될 수 있습니다.
 
 ```text
 gs://ssakda/
@@ -74,15 +83,27 @@ gs://ssakda/
     brandmate/
       data/
         landing/
-          processed/
-            sns_meme_trend/
-              week=YYYY-Www/
+          sns_trend/
+            week=2026-W28/
+              raw/
+                youtube/
+                gogumafarm/
+                careet/
+                naver/
 
         curated/
           aihub_food_image_text/
             v1/
-          sns/
+          sns_trend/
             v1/
+              platform_cleaned/
+                youtube/
+                gogumafarm/
+                careet/
+                naver/
+              keyword_terms/
+                careet/
+                gogumafarm/
           food_101/
             v1/
 
@@ -90,8 +111,9 @@ gs://ssakda/
           aihub_food_image_text/
             v1/
               food_description_data/
-          sns/
+          sns_trend/
             v1/
+              query_ranked_candidates/
           food_101/
             v1/
           merged/
@@ -133,11 +155,13 @@ gs://ssakda/
 
 | 경로 | 의미 |
 | --- | --- |
-| `data/landing/processed/sns_meme_trend/week=YYYY-Www/` | 팀원이 업로드하는 주간 밈 CSV 입고 구역입니다. 이미 선별/정제된 processed 후보이지만, 공식 데이터셋으로 승인되기 전 단계입니다. Airflow는 이 prefix를 검수 대상으로만 사용합니다. |
+| `data/landing/sns_trend/week=YYYY-Www/` | 팀원이 업로드하거나 크롤러가 생성한 주간 SNS 트렌드 데이터 입고 구역입니다. 공식 데이터셋으로 승인되기 전 단계이며 Airflow는 이 prefix를 검수 대상으로만 사용합니다. `week`는 `Asia/Seoul` 기준 ISO week입니다. |
 | `data/curated/aihub_food_image_text/v1/` | AIHub `비전영역 음식이미지 및 정보소개 텍스트 데이터` 원본에서 BrandMate에 쓸 샘플만 선별한 데이터 풀입니다. 학습/전처리/평가셋 후보를 뽑는 문제은행 역할입니다. |
-| `data/curated/sns/v1/` | SNS/트렌드 source에서 수집 후 BrandMate 목적에 맞게 정제한 데이터 풀입니다. 초기에는 source별 폴더를 나누기보다 통합 데이터셋 단위로 관리합니다. |
+| `data/curated/sns_trend/v1/platform_cleaned/` | YouTube, Gogumafarm, Careet, Naver처럼 플랫폼별로 null, 중복, 불필요 컬럼을 제거한 1차 정리본입니다. |
+| `data/curated/sns_trend/v1/keyword_terms/` | 플랫폼별 데이터에서 후보 밈/트렌드 키워드와 표현만 뽑은 목록입니다. 아직 최종 파이프라인 입력이라기보다 후보 풀입니다. |
 | `data/curated/food_101/v1/` | Food-101 기반 음식 이미지 데이터 풀입니다. 카페/음식점 광고 이미지 보강이나 음식 도메인 평가에 사용합니다. |
 | `data/processed/{dataset_name}/v1/{artifact_name}/` | dataset별 curated 데이터를 모델/API/평가 파이프라인이 바로 쓸 수 있게 전처리한 산출물입니다. 예: `data/processed/aihub_food_image_text/v1/food_description_data/` |
+| `data/processed/sns_trend/v1/query_ranked_candidates/` | 특정 query를 기준으로 후보를 검색하고 score/ranking까지 계산한 processed 산출물입니다. 프롬프트/RAG 파이프라인에서 바로 소비할 수 있는 JSON/CSV를 둡니다. |
 | `data/processed/merged/v1/` | dataset별 processed 데이터를 동일 schema로 맞춘 뒤 하나의 학습/비교실험 경로로 합친 통합 데이터셋입니다. manifest 없이 임의로 합치지 않습니다. |
 | `data/eval/smoke/` | 배포 직후 FastAPI, ComfyUI, model call이 살아있는지만 확인하는 최소 시험지입니다. 품질 평가용이 아니라 연결 확인용입니다. |
 | `data/eval/comparison/` | FLUX vs SDXL 등 모델/프롬프트/전처리 비교와 최종 리포트에 쓰는 고정 시험지입니다. 바꾸면 이전 실험과 비교가 깨집니다. |
@@ -465,8 +489,8 @@ Manifest/description은 두 종류로 나눕니다.
 ```text
 canonical docs:
   Git에서 리뷰하는 공식 문서입니다.
-  docs/datasets/{dataset_name}_{version}_manifest.json
-  docs/datasets/{dataset_name}_{version}_description.md
+  docs/datasets/{dataset_name}/{version}/manifest.json
+  docs/datasets/{dataset_name}/{version}/description.md
 
 package docs:
   GCS/DVC 데이터 패키지 안에 같이 들어가는 사본입니다.
@@ -477,7 +501,7 @@ package docs:
 팀원이 본인 로컬에서 새 데이터셋을 등록할 때는 아래 순서대로 진행합니다. 실제 업로드 명령은 GCS 인증, manifest 작성, DVC 설정이 끝난 뒤 실행합니다.
 
 1. 데이터셋 폴더를 `data/{stage}/{dataset_name}/v1/{artifact_name}/` 구조로 맞춥니다.
-2. Git 공식 문서인 `docs/datasets/{dataset_name}_v1_manifest.json`, `docs/datasets/{dataset_name}_v1_description.md`를 작성합니다.
+2. Git 공식 문서인 `docs/datasets/{dataset_name}/v1/manifest.json`, `docs/datasets/{dataset_name}/v1/description.md`를 작성합니다.
 3. 데이터 패키지 내부에 `docs/manifest.json`, `docs/description.md` 사본을 넣습니다.
 4. DVC가 처음이면 `dvc init`, `dvc remote add`를 먼저 설정합니다.
 5. GCS readable path에 실제 데이터 패키지를 `gcloud storage rsync`로 업로드합니다.
@@ -496,13 +520,14 @@ Airflow 세부 구축 계획은 [AIRFLOW_ONBOARDING.md](./AIRFLOW_ONBOARDING.md)
 
 Airflow는 사용자 트래픽 처리를 위한 도구가 아닙니다. 동시 접속자 수가 아니라 데이터 수집 주기, task 의존성,
 실패 재처리 필요성으로 도입 여부를 판단합니다. 단순한 1회성 데이터셋이면 `cron` 또는 수동 배치로도 충분하지만,
-BrandMate의 초기 Airflow MVP는 팀원이 업로드한 주간 processed 후보 CSV를 자동 검수하는 구조로 시작합니다.
+BrandMate의 초기 Airflow MVP는 팀원이 업로드한 주간 SNS 트렌드 후보 CSV를 자동 검수하는 구조로 시작합니다.
 DVC 등록과 공식 processed 데이터셋 승격은 기존 데이터셋 관리 절차를 따르며, Airflow가 직접 `dvc add`,
 `dvc push`, `git commit`을 실행하지 않습니다.
 
 GCS 관점의 핵심 원칙은 아래와 같습니다.
 
-- 팀원이 올리는 주간 processed 후보 CSV는 `data/landing/processed/sns_meme_trend/week=YYYY-Www/`에 둡니다.
+- 팀원이 올리는 주간 SNS 트렌드 후보 CSV는 `data/landing/sns_trend/week=YYYY-Www/`에 둡니다.
+- `week=YYYY-Www`는 `Asia/Seoul` 기준 ISO week로 계산합니다.
 - Airflow 초기 MVP는 landing CSV의 존재 여부, schema, 기본 품질만 검증합니다.
 - validation 결과와 Airflow error bundle은 `logs/data_pipeline/airflow/`에 저장합니다.
 - 공식 데이터셋으로 승인된 산출물만 `data/processed/{dataset_name}/v1/{artifact_name}/`에 저장하고 DVC로 추적합니다.
@@ -511,7 +536,7 @@ GCS 관점의 핵심 원칙은 아래와 같습니다.
 
 | Layer | 역할 | BrandMate 기준 |
 | --- | --- | --- |
-| Input Storage | 주간 processed 후보 CSV landing | `data/landing/processed/sns_meme_trend/week=YYYY-Www/` |
+| Input Storage | 주간 SNS 트렌드 후보 CSV landing | `data/landing/sns_trend/week=YYYY-Www/` |
 | Validation | 파일 존재, schema, 품질 검증 | Airflow가 validation task 실행 |
 | Validation Output | 검증 요약과 실패 로그 | `logs/data_pipeline/airflow/dag_id=.../week=YYYY-Www/` |
 | Official Dataset | 승인된 processed artifact 저장 | `data/processed/{dataset_name}/v1/{artifact_name}/` |
@@ -528,8 +553,8 @@ Manifest와 description 작성 기준은 [DATASET_SUBMISSION_ONBOARDING.md](./DA
 현재 AIHub 음식 이미지/텍스트 5GB processed artifact 기준 파일은 아래와 같습니다.
 
 ```text
-docs/datasets/aihub_food_image_text_v1_manifest.json
-docs/datasets/aihub_food_image_text_v1_description.md
+docs/datasets/aihub_food_image_text/v1/manifest.json
+docs/datasets/aihub_food_image_text/v1/description.md
 ```
 
 GCS에는 manifest를 `data/manifests/`에 올리고, 사람이 GCS 콘솔에서 바로 이해할 수 있도록
@@ -537,8 +562,8 @@ artifact prefix의 `docs/` 아래에도 `manifest.json`, `description.md` 복사
 
 ```text
 Git canonical:
-docs/datasets/aihub_food_image_text_v1_manifest.json
-docs/datasets/aihub_food_image_text_v1_description.md
+docs/datasets/aihub_food_image_text/v1/manifest.json
+docs/datasets/aihub_food_image_text/v1/description.md
 
 GCS package copy:
 gs://ssakda/projects/brandmate/data/processed/aihub_food_image_text/v1/food_description_data/docs/manifest.json
@@ -550,7 +575,7 @@ Manifest 업로드:
 ```bash
 # [Design Intent] 데이터셋 manifest를 GCS의 중앙 manifest 경로에 저장한다.
 gcloud storage cp \
-  docs/datasets/aihub_food_image_text_v1_manifest.json \
+  docs/datasets/aihub_food_image_text/v1/manifest.json \
   gs://ssakda/projects/brandmate/data/manifests/aihub_food_image_text_v1.json
 ```
 
@@ -559,7 +584,7 @@ Description 업로드:
 ```bash
 # [Design Intent] GCS artifact prefix 안에서도 사람이 데이터셋 설명을 바로 확인할 수 있게 한다.
 gcloud storage cp \
-  docs/datasets/aihub_food_image_text_v1_description.md \
+  docs/datasets/aihub_food_image_text/v1/description.md \
   gs://ssakda/projects/brandmate/data/processed/aihub_food_image_text/v1/food_description_data/docs/description.md
 ```
 
@@ -568,7 +593,7 @@ Artifact package 내부 `docs/manifest.json`도 함께 맞춥니다.
 ```bash
 # [Design Intent] 데이터 패키지 내부에서도 manifest와 description을 같은 이름으로 제공한다.
 gcloud storage cp \
-  docs/datasets/aihub_food_image_text_v1_manifest.json \
+  docs/datasets/aihub_food_image_text/v1/manifest.json \
   gs://ssakda/projects/brandmate/data/processed/aihub_food_image_text/v1/food_description_data/docs/manifest.json
 ```
 
@@ -622,8 +647,8 @@ gcloud storage rsync \
 dvc add data/processed/aihub_food_image_text/v1/food_description_data
 dvc push
 git add data/processed/aihub_food_image_text/v1/food_description_data.dvc .gitignore .dvc .dvcignore
-git add docs/datasets/aihub_food_image_text_v1_manifest.json
-git add docs/datasets/aihub_food_image_text_v1_description.md
+git add docs/datasets/aihub_food_image_text/v1/manifest.json
+git add docs/datasets/aihub_food_image_text/v1/description.md
 git commit -m "Track AIHub food image text v1 processed artifact"
 ```
 

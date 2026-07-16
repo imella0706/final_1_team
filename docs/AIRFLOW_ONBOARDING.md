@@ -13,7 +13,7 @@ Airflow는 크롤링 라이브러리도 아니고 전처리 엔진도 아닙니�
 | 영역 | 현재 역할 | Airflow 1차 적용 판단 |
 | --- | --- | --- |
 | 팀원 크롤링/정제 영역 | 여러 채널에서 후보 데이터를 수집하고 최신 트렌드 밈 CSV로 통합 | Airflow 밖에서 수행 |
-| GCS landing | 팀원이 업로드하는 통합 주간 processed 후보 CSV | Airflow 자동 검수 대상 |
+| GCS landing | 팀원이 업로드하는 통합 주간 SNS 트렌드 후보 CSV | Airflow 자동 검수 대상 |
 | Airflow | CSV 존재 여부, schema, 기본 품질 검증 | validation summary 저장 |
 | 데이터셋 관리자 | 검증 결과 확인 후 공식 processed 데이터셋/DVC 등록 | Airflow 밖에서 수행 |
 
@@ -163,11 +163,24 @@ trend_meme_2026-W29.csv
 GCS landing path:
 
 ```text
-# [Design Intent] 팀원이 올린 processed 후보 CSV를 공식 데이터셋 경로와 분리한다.
-gs://ssakda/projects/brandmate/data/landing/processed/sns_meme_trend/week=YYYY-Www/trend_meme_YYYY-Www.csv
+# [Design Intent] 팀원이 올린 SNS 트렌드 후보 CSV를 공식 데이터셋 경로와 분리한다.
+gs://ssakda/projects/brandmate/data/landing/sns_trend/week=YYYY-Www/trend_meme_YYYY-Www.csv
 ```
 
-통합 CSV는 이미 선별/정제된 processed 후보입니다. Airflow는 변환보다 검증을 우선합니다.
+통합 CSV는 이미 선별/정제된 SNS 트렌드 후보입니다. Airflow는 변환보다 검증을 우선합니다.
+
+주차 partition은 `Asia/Seoul` 기준 ISO week로 계산합니다. Airflow의 logical date나 worker
+환경은 UTC일 수 있으므로, landing prefix를 만들 때는 반드시 한국 서비스 시간대로 변환한 뒤
+`week=YYYY-Www` 값을 만듭니다.
+
+```python
+# [Design Intent] Airflow logical date가 UTC여도 한국 서비스 기준 주차로 landing prefix를 고정한다.
+from zoneinfo import ZoneInfo
+
+kst_date = logical_date.astimezone(ZoneInfo("Asia/Seoul"))
+iso_year, iso_week, _ = kst_date.isocalendar()
+week_key = f"{iso_year}-W{iso_week:02d}"
+```
 
 필수 컬럼:
 
@@ -210,7 +223,7 @@ CSV 기본 규칙:
 ## 6. 초기 MVP DAG 구조
 
 초기 MVP에서는 DVC, 공식 processed 데이터셋 등록, Parquet 변환, manifest draft 생성을 Airflow에 넣지
-않습니다. 팀원이 GCS landing에 올린 주간 processed 후보 CSV를 Airflow가 자동 검수하고,
+않습니다. 팀원이 GCS landing에 올린 주간 SNS 트렌드 후보 CSV를 Airflow가 자동 검수하고,
 검증 결과만 `logs/data_pipeline/airflow/`에 남깁니다.
 
 ```text
@@ -226,7 +239,7 @@ check_weekly_csv_exists
 입력 위치:
 
 ```text
-gs://ssakda/projects/brandmate/data/landing/processed/sns_meme_trend/week=YYYY-Www/trend_meme_YYYY-Www.csv
+gs://ssakda/projects/brandmate/data/landing/sns_trend/week=YYYY-Www/trend_meme_YYYY-Www.csv
 ```
 
 출력 위치:
@@ -314,8 +327,8 @@ check_weekly_csv_exists
 초기 MVP 입력:
 
 ```text
-# [Design Intent] 팀원이 올린 processed 후보 CSV는 공식 데이터셋과 분리된 landing prefix에 둔다.
-gs://ssakda/projects/brandmate/data/landing/processed/sns_meme_trend/week=YYYY-Www/trend_meme_YYYY-Www.csv
+# [Design Intent] 팀원이 올린 SNS 트렌드 후보 CSV는 공식 데이터셋과 분리된 landing prefix에 둔다.
+gs://ssakda/projects/brandmate/data/landing/sns_trend/week=YYYY-Www/trend_meme_YYYY-Www.csv
 ```
 
 초기 MVP 출력:
@@ -386,12 +399,12 @@ CSV/JSON 인입 시 최소한 아래 검증은 통과해야 합니다.
 ```jsonc
 // [Design Intent] validation result는 사람이 읽는 로그이면서 자동 검증 리포트로도 재사용 가능해야 한다.
 {
-  "dataset": "sns_meme_trend",
+  "dataset": "sns_trend",
   "period_type": "weekly",
   "period": "2026-W29",
   "status": "passed",
   "row_count": 325,
-  "input_path": "gs://ssakda/projects/brandmate/data/landing/processed/sns_meme_trend/week=2026-W29/trend_meme_2026-W29.csv",
+  "input_path": "gs://ssakda/projects/brandmate/data/landing/sns_trend/week=2026-W29/trend_meme_2026-W29.csv",
   "duplicate_url_rate": 0.031,
   "null_text_rate": 0.0,
   "checksum": "sha256:TODO"
@@ -470,7 +483,7 @@ Spark를 쓰지 않는 이유:
   "period": "2026-W29",
   "error_type": "SchemaValidationError",
   "error_message": "missing required column: trend_term",
-  "input_path": "gs://ssakda/projects/brandmate/data/landing/processed/sns_meme_trend/week=2026-W29/trend_meme_2026-W29.csv"
+  "input_path": "gs://ssakda/projects/brandmate/data/landing/sns_trend/week=2026-W29/trend_meme_2026-W29.csv"
 }
 ```
 
@@ -491,7 +504,7 @@ airflow/
     brandmate_meme_validation.py
     run_meme_validation.py
   mock_gcs/
-    data/landing/processed/sns_meme_trend/week=2026-W29/trend_meme_2026-W29.csv
+    data/landing/sns_trend/week=2026-W29/trend_meme_2026-W29.csv
 ```
 
 Airflow 없이 검증 로직만 먼저 확인:
@@ -549,7 +562,7 @@ airflow/mock_gcs/logs/data_pipeline/airflow/
 ```text
 # [Design Intent] Airflow 도입 범위를 mock CSV 자동 검수로 제한하고, GCS/DVC 연동 전 실행 가능성을 먼저 증명한다.
 DAG: brandmate_weekly_meme_csv_validation
-Input: airflow/mock_gcs/data/landing/processed/sns_meme_trend/week=2026-W29/trend_meme_2026-W29.csv
+Input: airflow/mock_gcs/data/landing/sns_trend/week=2026-W29/trend_meme_2026-W29.csv
 Output: airflow/mock_gcs/logs/data_pipeline/airflow/dag_id=brandmate_weekly_meme_csv_validation/week=2026-W29/validation_summary.json
 ```
 
@@ -592,7 +605,7 @@ POC 순서:
 예시 mock CSV:
 
 ```text
-# [Design Intent] mock CSV는 팀원이 업로드할 주간 processed 후보 CSV와 같은 형태로 만든다.
+# [Design Intent] mock CSV는 팀원이 업로드할 주간 SNS 트렌드 후보 CSV와 같은 형태로 만든다.
 id,collected_at,published_at,keyword,trend_term,text,url,engagement_count,source
 meme_2026w29_0001,2026-07-15T07:00:00+09:00,2026-07-14T23:10:00+09:00,밈,두바이 초콜릿,"두바이 초콜릿 이후 디저트 밈 확산",https://example.com/1,1200,careet
 meme_2026w29_0002,2026-07-15T07:00:00+09:00,2026-07-14T21:30:00+09:00,카페 트렌드,요아정,"요아정 소비 맥락을 활용한 카페 신메뉴 콘텐츠",https://example.com/2,3400,gogumafarm
