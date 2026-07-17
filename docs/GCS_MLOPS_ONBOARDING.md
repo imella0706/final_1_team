@@ -131,8 +131,6 @@ gs://ssakda/
             sns/
             food_101/
 
-        manifests/
-
       models/
         flux_schnell_gguf/
         sdxl/
@@ -170,7 +168,6 @@ gs://ssakda/
 | `data/eval/comparison/` | FLUX vs SDXL 등 모델/프롬프트/전처리 비교와 최종 리포트에 쓰는 고정 시험지입니다. 바꾸면 이전 실험과 비교가 깨집니다. |
 | `data/eval/final/` | comparison과 별도로 최종 발표용 평가셋을 잠그고 싶을 때만 쓰는 고정 시험지입니다. 현재는 비워둘 수 있습니다. |
 | `data/eval/source_split/{dataset_name}/` | AIHub, SNS, Food-101 등 dataset별로 성능이 어디서 약한지 따로 보는 시험지입니다. 전체 평균에 숨은 약점을 찾는 용도입니다. |
-| `data/manifests/` | 데이터셋 출처, 버전, 용량, 선별 기준, merge rule을 기록하는 장부입니다. 데이터만 올리고 manifest를 안 남기면 추적성이 깨집니다. |
 | `models/flux_schnell_gguf/` | FLUX GGUF 모델의 manifest, ComfyUI workflow, 설정 파일을 두는 곳입니다. 모델 weight 자체를 무조건 여기에 올린다는 뜻은 아닙니다. |
 | `models/sdxl/` | SDXL 비교실험용 manifest, workflow, 설정 파일을 두는 곳입니다. 새 모델을 추가하면 같은 방식으로 model folder를 추가합니다. |
 | `outputs/evaluations/` | 내부 터미널 평가 runner가 만든 report, metric, 평가 중 생성 이미지를 저장합니다. 실험 산출물이며 웹서비스 사용자 결과와 섞지 않습니다. |
@@ -475,7 +472,7 @@ gcloud storage ls gs://ssakda/dvc/brandmate/
 | 실제 데이터 파일 | X | O | O | 이미지, CSV, Parquet, embedding, FAISS index 같은 대용량 산출물입니다. Git에 올리지 않습니다. |
 | DVC pointer 파일 | O | X | X | `data/.../{artifact_name}.dvc` 파일입니다. Git commit과 DVC object를 연결합니다. |
 | DVC 내부 object | X | X | O | `gs://ssakda/dvc/brandmate/` 아래에 DVC가 해시 기반으로 저장합니다. 사람이 직접 수정하지 않습니다. |
-| canonical manifest/description | O | O | X | Git의 `docs/datasets/`가 공식 원본입니다. GCS `data/manifests/`에는 중앙 조회용 복사본을 둡니다. DVC 추적 대상은 아닙니다. |
+| canonical manifest/description | O | X | X | Git의 `docs/datasets/`가 공식 원본입니다. 현재 운영 범위에서는 GCS 중앙 manifest catalog를 만들지 않습니다. |
 | package docs | DVC pointer로만 추적 | O | O | artifact 내부 `docs/manifest.json`, `docs/description.md`입니다. 데이터 패키지 일부라 GCS readable path와 DVC remote에 같이 들어갑니다. |
 | 생성 스크립트/노트북 | O | X | X | 재현 코드는 Git에서 리뷰하고 버전관리합니다. |
 
@@ -499,6 +496,19 @@ package docs:
   GCS/DVC 데이터 패키지 안에 같이 들어가는 사본입니다.
   data/{stage}/{dataset_name}/{version}/{artifact_name}/docs/manifest.json
   data/{stage}/{dataset_name}/{version}/{artifact_name}/docs/description.md
+```
+
+`manifest.json`의 `storage.package_docs`에는 artifact root 기준 상대경로만 적습니다.
+Airflow는 `storage.gcs_path`와 이 상대경로를 조합해 package docs를 검증합니다.
+
+```json
+"storage": {
+  "gcs_path": "gs://ssakda/projects/brandmate/data/processed/sns_trend/v1/cross_platform_signal_top_candidates/",
+  "package_docs": {
+    "manifest_path": "docs/manifest.json",
+    "description_path": "docs/description.md"
+  }
+}
 ```
 
 팀원이 본인 로컬에서 새 데이터셋을 등록할 때는 아래 순서대로 진행합니다. 실제 업로드 명령은 GCS 인증, manifest 작성, DVC 설정이 끝난 뒤 실행합니다.
@@ -560,8 +570,9 @@ docs/datasets/aihub_food_image_text/v1/manifest.json
 docs/datasets/aihub_food_image_text/v1/description.md
 ```
 
-GCS에는 manifest를 `data/manifests/`에 올리고, 사람이 GCS 콘솔에서 바로 이해할 수 있도록
-artifact prefix의 `docs/` 아래에도 `manifest.json`, `description.md` 복사본을 둡니다.
+GCS에는 사람이 GCS 콘솔에서 바로 이해할 수 있도록 artifact prefix의 `docs/` 아래에
+`manifest.json`, `description.md` 복사본을 둡니다.
+현재 운영 범위에서는 `data/manifests/{dataset_name}_{version}.json` 중앙 catalog 사본을 만들지 않습니다.
 
 ```text
 Git canonical:
@@ -571,15 +582,6 @@ docs/datasets/aihub_food_image_text/v1/description.md
 GCS package copy:
 gs://ssakda/projects/brandmate/data/processed/aihub_food_image_text/v1/food_description_data/docs/manifest.json
 gs://ssakda/projects/brandmate/data/processed/aihub_food_image_text/v1/food_description_data/docs/description.md
-```
-
-Manifest 업로드:
-
-```bash
-# [Design Intent] 데이터셋 manifest를 GCS의 중앙 manifest 경로에 저장한다.
-gcloud storage cp \
-  docs/datasets/aihub_food_image_text/v1/manifest.json \
-  gs://ssakda/projects/brandmate/data/manifests/aihub_food_image_text_v1.json
 ```
 
 Description 업로드:
@@ -607,6 +609,10 @@ data/processed/aihub_food_image_text/v1/food_description_data/docs/
   manifest.json
   description.md
 ```
+
+중앙 manifest catalog는 보류합니다.
+나중에 Airflow/API가 dataset 이름과 version만으로 artifact 경로를 조회해야 하면 `data/manifests/`를 Git/GCS metadata로 도입합니다.
+이 경우에도 DVC 추적 대상은 processed artifact 중심으로 유지하고, `data/manifests/`는 DVC 대상에서 제외합니다.
 
 ## 11. DVC 설정
 
@@ -738,7 +744,7 @@ gs://ssakda/projects/brandmate/outputs/web_service_generated/YYYYMMDD/request_id
 - GCS 폴더명에는 `10gb` 같은 용량 정보를 넣지 않습니다. 용량은 manifest에 기록합니다.
 - dataset이 다르면 `curated/{dataset_name}/v1` 또는 `processed/{dataset_name}/v1/{artifact_name}`처럼 반드시 분리합니다.
 - `processed/merged/v1`은 schema와 merge rule이 합의된 통합 데이터셋만 둡니다.
-- `processed/merged/v1`을 만들 때는 반드시 `data/manifests/processed_merged_v1.json`을 함께 작성합니다.
+- `processed/merged/v1`을 만들 때는 artifact 내부 `docs/manifest.json`, `docs/description.md`를 반드시 함께 둡니다.
 - 평가 결과와 웹서비스 생성 결과를 섞지 않습니다.
 - DVC remote인 `gs://ssakda/dvc/brandmate/`는 직접 수정하지 않습니다.
 - 로그에는 API key, 개인정보, 원본 민감 정보를 남기지 않습니다.

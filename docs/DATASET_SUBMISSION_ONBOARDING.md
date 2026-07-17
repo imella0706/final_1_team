@@ -226,6 +226,10 @@ processed/sns/v1/
   "storage": {
     "gcs_path": "TODO",
     "local_example_path": "TODO",
+    "package_docs": {
+      "manifest_path": "docs/manifest.json",
+      "description_path": "docs/description.md"
+    },
     "dvc_tracked": false
   },
   "reproducibility": {
@@ -298,6 +302,10 @@ AI가 모르는 값은 추측하지 말고 `TODO`로 남겨주세요.
   "storage": {
     "gcs_path": "gs://ssakda/projects/brandmate/data/processed/sns_trend/v1/cross_platform_signal_top_candidates/",
     "local_example_path": "data/processed/sns_trend/v1/cross_platform_signal_top_candidates/",
+    "package_docs": {
+      "manifest_path": "docs/manifest.json",
+      "description_path": "docs/description.md"
+    },
     "dvc_tracked": false
   },
   "reproducibility": {
@@ -344,6 +352,8 @@ AI가 모르는 값은 추측하지 말고 `TODO`로 남겨주세요.
 | `processing.output_files` | 생성된 주요 파일 목록입니다. | `["metadata.csv", "images/", "summary.json"]` |
 | `storage.gcs_path` | GCS에 업로드될 위치입니다. | `gs://ssakda/projects/brandmate/data/processed/sns/v1/` |
 | `storage.local_example_path` | 로컬 예시 경로입니다. | `~/final_1_team/data/sns_meme_v1` |
+| `storage.package_docs.manifest_path` | artifact root 기준 package manifest 상대경로입니다. Airflow는 `storage.gcs_path`와 조합해 읽습니다. | `docs/manifest.json` |
+| `storage.package_docs.description_path` | artifact root 기준 package description 상대경로입니다. Airflow는 `storage.gcs_path`와 조합해 읽습니다. | `docs/description.md` |
 | `storage.dvc_tracked` | DVC로 추적하는지 여부입니다. | `false` |
 | `reproducibility.generation_script_available` | 재생성 스크립트가 있는지 여부입니다. | `true`, `false` |
 | `reproducibility.generation_script_path` | 재생성 스크립트나 노트북 경로입니다. | `scripts/build_sns_dataset.py`, `Colab URL` |
@@ -528,12 +538,12 @@ MLOps/인프라 담당자용 전체 bucket 구조, DVC remote, 권한, 업로드
 ```text
 gs://ssakda/projects/brandmate/data/curated/{dataset_name}/v{version}/
 gs://ssakda/projects/brandmate/data/processed/{dataset_name}/v{version}/{artifact_name}/
-gs://ssakda/projects/brandmate/data/manifests/{dataset_name}_{version}.json
 ```
 
 - 용량 정보는 폴더명에 넣지 않습니다. 용량은 manifest에 기록합니다.
 - 데이터셋 이름과 processed 산출물 이름은 분리합니다. 예를 들어 AIHub 음식 이미지 및 정보소개 텍스트 데이터로 음식 설명용 데이터를 만들었다면 `dataset_name`은 `aihub_food_image_text`, processed 산출물 이름인 `artifact_name`은 `food_description_data`로 기록합니다.
 - 데이터 파일만 올리지 말고, 데이터 패키지 안에 `docs/manifest.json`, `docs/description.md` 사본을 함께 둡니다.
+- 현재 운영 범위에서는 `data/manifests/{dataset_name}_{version}.json` 중앙 catalog 사본을 만들지 않습니다. 나중에 Airflow/API가 전체 dataset catalog를 자동 조회해야 할 때 별도 정책으로 도입합니다.
 
 ### Git metadata 원본과 GCS metadata 사본 구분
 
@@ -553,6 +563,10 @@ Git의 `docs/datasets/...` 아래 파일이 공식 원본입니다.
 GCS 데이터 패키지 내부 `docs/` 아래 파일은 데이터 파일 옆에 붙여두는 사본입니다.
 
 수정은 Git 원본에서 먼저 진행하고, 검수 후 GCS 사본에 반영합니다.
+
+`data/manifests/` 중앙 manifest catalog는 현재 운영 범위에서 제외합니다.
+Airflow는 검증 대상 artifact prefix를 알고 있다는 전제로, `storage.gcs_path`와 `storage.package_docs.*_path`를 조합해 artifact 내부 `docs/manifest.json`, `docs/description.md`를 읽습니다.
+나중에 dataset 이름과 version만으로 artifact 경로를 찾는 catalog가 필요해지면 `data/manifests/`를 Git/GCS metadata로 도입하고, DVC 추적 대상에서는 제외합니다.
 
 팀원이 GCS에 직접 업로드하거나 내려받아야 할 때는 아래 명령을 사용합니다.
 

@@ -105,10 +105,13 @@
   },
   "storage": {
     "gcs_path": "gs://ssakda/projects/brandmate/data/processed/sns_trend/v1/cross_platform_signal_top_candidates/",
-    "manifest_gcs_path": "gs://ssakda/projects/brandmate/data/manifests/sns_trend_v1.json",
     "local_example_path": "data/processed/sns_trend/v1/cross_platform_signal_top_candidates/",
     "local_source_path": "outputs/Chaebin/",
     "local_source_size_bytes": 1357527,
+    "package_docs": {
+      "manifest_path": "docs/manifest.json",
+      "description_path": "docs/description.md"
+    },
     "dvc_tracked": false
   },
   "reproducibility": {
