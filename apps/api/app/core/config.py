@@ -27,7 +27,8 @@ class Settings(BaseSettings):
     nvidia_base_url: str | None = None
     nvidia_api_key: SecretStr | None = None
     nvidia_llama_model: str | None = None
-    image_base_url: str = "https://router.huggingface.co/hf-inference"
+    hf_image_provider: str = "auto"
+    hf_image_edit_model: str = "black-forest-labs/FLUX.1-Kontext-dev"
     openai_base_url: str = "https://api.openai.com/v1"
     openai_api_key: SecretStr | None = None
     openai_chat_model: str = "gpt-5.5"
@@ -62,6 +63,8 @@ class Settings(BaseSettings):
     llama_base_url: str | None = None
     llama_model: str | None = None
     llama_api_key: SecretStr | None = None
+    internvl_base_url: str | None = None
+    internvl_api_key: SecretStr | None = None
     flux_model: str | None = None
     sdxl_model: str | None = None
     openjourney_model: str | None = None

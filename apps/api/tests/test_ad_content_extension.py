@@ -6,12 +6,13 @@ import pytest
 
 from app.core.config import settings
 from app.extensions.ad_content.main import app
-from app.extensions.ad_content.schemas import AdImageRequest, AdImageResponse
+from app.extensions.ad_content.schemas import AdImageRequest, AdImageResponse, VisionModel
 from app.extensions.ad_content.image_prompt import build_ad_image_prompt
-from app.extensions.ad_content.image_service import _image_endpoint, generate_ad_image
+from app.extensions.ad_content.image_service import generate_ad_image
 from app.extensions.ad_content.product_visualizer import ProductVisualization
 from app.extensions.ad_content.reference_search import search_reference_images
 from app.extensions.ad_content.reference_store import ProductVisualProfileStore
+from app.extensions.ad_content.vision_service import request_vision_completion
 from app.modules.ad_copy.schemas import AdCopyRequest
 from app.modules.ad_copy.schemas import AdCopyResponse
 from tests.api_client import get, post
@@ -33,6 +34,7 @@ def sample_content_request() -> dict[str, object]:
             "required_terms": [],
             "prohibited_terms": ["best"],
         },
+        "vision_model": "openai/gpt-5.4-mini",
         "image_model": "black-forest-labs/FLUX.1-schnell",
         "image_width": 1024,
         "image_height": 1280,
@@ -54,17 +56,167 @@ def test_image_model_catalog_is_exposed(monkeypatch) -> None:
     assert models_by_id["openai/gpt-image-1-mini"]["provider"] == "OpenAI"
     assert models_by_id["openai-responses/gpt-5.5"]["provider"] == "OpenAI Responses API"
     assert models_by_id["stabilityai/stable-diffusion-xl-base-1.0"]["provider"] == (
-        "Hugging Face Inference"
+        "Hugging Face Router"
     )
 
 
-def test_image_endpoint_uses_hugging_face_router_by_default(monkeypatch) -> None:
-    monkeypatch.delenv("BRANDMATE_IMAGE_BASE_URL", raising=False)
+def test_hugging_face_image_generation_uses_provider_routing(monkeypatch) -> None:
+    captured: dict[str, object] = {}
 
-    assert (
-        _image_endpoint("black-forest-labs/FLUX.1-schnell")
-        == "https://router.huggingface.co/hf-inference/models/black-forest-labs/FLUX.1-schnell"
+    class FakeImage:
+        def save(self, buffer, *, format):
+            captured["format"] = format
+            buffer.write(b"image")
+
+    class FakeInferenceClient:
+        def __init__(self, **kwargs):
+            captured["client"] = kwargs
+
+        def text_to_image(self, prompt, **kwargs):
+            captured["prompt"] = prompt
+            captured["request"] = kwargs
+            return FakeImage()
+
+    monkeypatch.setattr(settings, "image_provider", "huggingface")
+    monkeypatch.setattr(settings, "hf_image_provider", "auto")
+    monkeypatch.setattr(settings, "llm_api_key", SecretStr("hf-test-token"))
+    monkeypatch.setattr(
+        "app.extensions.ad_content.image_service.InferenceClient",
+        FakeInferenceClient,
     )
+
+    response = asyncio.run(
+        generate_ad_image(
+            AdImageRequest(
+                model="black-forest-labs/FLUX.1-schnell",
+                prompt="Make a cafe poster background",
+            )
+        )
+    )
+
+    assert captured["client"]["provider"] == "auto"
+    assert captured["client"]["api_key"] == "hf-test-token"
+    assert captured["request"]["model"] == "black-forest-labs/FLUX.1-schnell"
+    assert captured["format"] == "PNG"
+    assert response.image_base64 == "aW1hZ2U="
+
+
+def test_vision_model_catalog_separates_providers(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "openai_api_key", SecretStr("openai-test-token"))
+    monkeypatch.setattr(settings, "llm_api_key", SecretStr("hf-test-token"))
+    monkeypatch.setattr(settings, "internvl_base_url", None)
+
+    response = get(app, "/api/v1/ad-content/vision-models")
+
+    assert response.status_code == 200
+    models = {model["id"]: model for model in response.json()}
+    assert models["openai/gpt-5.4-mini"]["provider"] == "OpenAI"
+    assert models["Qwen/Qwen2.5-VL-7B-Instruct"]["enabled"] is True
+    assert models["Qwen/Qwen3-VL-2B-Instruct"]["enabled"] is True
+    assert models["Qwen/Qwen3-VL-4B-Instruct"]["enabled"] is True
+    assert models["Qwen/Qwen3-VL-8B-Instruct"]["enabled"] is False
+    assert models["OpenGVLab/InternVL3-2B"]["enabled"] is False
+    assert models["OpenGVLab/InternVL3-8B"]["availability"] == "configuration_required"
+
+
+def test_hugging_face_vision_request_sends_image_url(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    class FakeAsyncClient:
+        def __init__(self, **kwargs):
+            del kwargs
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            del args
+
+        async def post(self, url, *, headers, json):
+            captured["url"] = url
+            captured["headers"] = headers
+            captured["json"] = json
+            return httpx.Response(
+                200,
+                request=httpx.Request("POST", url),
+                json={"choices": [{"message": {"content": "사진 분석 결과"}}]},
+            )
+
+    monkeypatch.setattr(settings, "llm_base_url", "https://router.huggingface.co/v1")
+    monkeypatch.setattr(settings, "llm_api_key", SecretStr("hf-test-token"))
+    monkeypatch.setattr(
+        "app.extensions.ad_content.vision_service.httpx.AsyncClient",
+        FakeAsyncClient,
+    )
+
+    content, resolved = asyncio.run(
+        request_vision_completion(
+            VisionModel.QWEN_2_5_VL_7B,
+            [
+                {"type": "text", "text": "사진을 설명하세요."},
+                {
+                    "type": "image_url",
+                    "image_url": {"url": "data:image/png;base64,aW1hZ2U="},
+                },
+            ],
+            max_tokens=400,
+        )
+    )
+
+    assert content == "사진 분석 결과"
+    assert resolved.provider == "Hugging Face"
+    assert captured["url"] == "https://router.huggingface.co/v1/chat/completions"
+    assert captured["json"]["model"] == "Qwen/Qwen2.5-VL-7B-Instruct"
+    assert captured["json"]["messages"][0]["content"][1]["type"] == "image_url"
+    assert captured["json"]["max_tokens"] == 400
+
+def test_hugging_face_reference_image_uses_image_to_image(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    class FakeImage:
+        def save(self, buffer, *, format):
+            captured["format"] = format
+            buffer.write(b"edited-image")
+
+    class FakeInferenceClient:
+        def __init__(self, **kwargs):
+            captured["client"] = kwargs
+
+        def image_to_image(self, image, prompt, **kwargs):
+            captured["image"] = image
+            captured["prompt"] = prompt
+            captured["request"] = kwargs
+            return FakeImage()
+
+    monkeypatch.setattr(settings, "image_provider", "huggingface")
+    monkeypatch.setattr(settings, "hf_image_provider", "auto")
+    monkeypatch.setattr(
+        settings,
+        "hf_image_edit_model",
+        "black-forest-labs/FLUX.1-Kontext-dev",
+    )
+    monkeypatch.setattr(settings, "llm_api_key", SecretStr("hf-test-token"))
+    monkeypatch.setattr(
+        "app.extensions.ad_content.image_service.InferenceClient",
+        FakeInferenceClient,
+    )
+
+    response = asyncio.run(
+        generate_ad_image(
+            AdImageRequest(
+                model="black-forest-labs/FLUX.1-schnell",
+                prompt="Make a cafe poster background",
+                reference_image_data_url="data:image/png;base64,aW1hZ2U=",
+            )
+        )
+    )
+
+    assert captured["image"] == b"image"
+    assert "attached reference image as the primary visual source" in captured["prompt"]
+    assert captured["request"]["model"] == "black-forest-labs/FLUX.1-Kontext-dev"
+    assert captured["request"]["target_size"] == {"width": 1024, "height": 1280}
+    assert response.model == "black-forest-labs/FLUX.1-Kontext-dev"
+    assert response.image_base64 == "ZWRpdGVkLWltYWdl"
 
 
 def test_openai_image_generation_sends_reference_image_as_edit(monkeypatch) -> None:
@@ -258,8 +410,8 @@ def test_generate_content_orchestrates_copy_and_image_models(monkeypatch) -> Non
             latency_ms=456,
         )
 
-    async def fake_describe_reference_image(reference_image_data_url, copy_request):
-        del reference_image_data_url, copy_request
+    async def fake_describe_reference_image(reference_image_data_url, copy_request, vision_model):
+        del reference_image_data_url, copy_request, vision_model
         return "참고 이미지: 딸기 디저트와 음료가 함께 보이는 사진", {
             "reference_image_prompt": "mocked",
         }

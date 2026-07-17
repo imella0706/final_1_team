@@ -168,18 +168,16 @@ def test_model_catalog_contains_all_comparison_models() -> None:
 
     assert response.status_code == 200
     models = response.json()
-    assert len(models) == 8
+    assert len(models) == 6
     models_by_id = {model["id"]: model for model in models}
     assert models[0]["id"] == "Qwen/Qwen2.5-7B-Instruct"
     assert models[0]["provider"] == "huggingface"
     assert models_by_id["meta-llama/Llama-3.1-8B-Instruct"]["availability"] == "gated"
     assert models_by_id["nvidia/meta/llama-3.1-8b-instruct"]["provider"] == "nvidia"
-    assert models_by_id["openai/gpt-4.1-mini"]["provider"] == "openai"
-    assert models_by_id["openai/gpt-4.1-mini"]["recommended"] is True
     assert models_by_id["openai/gpt-5.4"]["provider"] == "openai"
-    assert models_by_id["openai/gpt-5.5"]["provider"] == "openai"
+    assert "openai/gpt-4.1-mini" not in models_by_id
+    assert "openai/gpt-5.5" not in models_by_id
     assert "google/gemma-2-9b-it" not in models_by_id
-    assert get_model_spec(AdModel.GPT_4_1_MINI).routed_model == "gpt-4.1-mini"
     assert (
         get_model_spec(AdModel.NVIDIA_LLAMA_3_1_8B).supports_structured_output
         is False
@@ -191,7 +189,7 @@ def test_generate_returns_clear_error_without_api_key(monkeypatch) -> None:
     monkeypatch.setattr(settings, "local_llm_api_key", None)
     monkeypatch.setattr(settings, "llm_api_key", None)
     request = sample_request()
-    request["model"] = "gpt-4.1-mini"
+    request["model"] = "gpt-5.4-mini"
     response = post(app, "/api/v1/ad-copies/generate", json=request)
 
     assert response.status_code == 503
@@ -231,26 +229,26 @@ def test_openai_model_uses_its_own_endpoint_and_api_key(monkeypatch) -> None:
 
     monkeypatch.setattr(settings, "openai_api_key", SecretStr("openai-test-token"))
     monkeypatch.setattr(settings, "openai_base_url", "https://openai.example/v1")
-    monkeypatch.setattr(settings, "openai_gpt_4_1_mini_model", "gpt-4.1-mini-test")
+    monkeypatch.setattr(settings, "openai_gpt_5_4_mini_model", "gpt-5.4-mini-test")
     monkeypatch.setattr(
         "app.modules.ad_copy.service.httpx.AsyncClient",
         FakeAsyncClient,
     )
     request = sample_request()
-    request["model"] = "gpt-4.1-mini"
+    request["model"] = "gpt-5.4-mini"
 
     response = post(app, "/api/v1/ad-copies/generate", json=request)
 
     assert response.status_code == 200
     assert response.json()["provider"] == "openai"
-    assert response.json()["routed_model"] == "gpt-4.1-mini"
+    assert response.json()["routed_model"] == "gpt-5.4-mini"
     assert captured_requests[0]["url"] == (
         "https://openai.example/v1/chat/completions"
     )
     assert captured_requests[0]["authorization"] == "Bearer openai-test-token"
-    assert captured_requests[0]["json"]["model"] == "gpt-4.1-mini-test"
-    assert captured_requests[0]["json"]["max_tokens"] == 2000
-    assert "max_completion_tokens" not in captured_requests[0]["json"]
+    assert captured_requests[0]["json"]["model"] == "gpt-5.4-mini-test"
+    assert captured_requests[0]["json"]["max_completion_tokens"] == 2000
+    assert "max_tokens" not in captured_requests[0]["json"]
     assert captured_requests[0]["json"]["response_format"]["type"] == "json_schema"
 
 
