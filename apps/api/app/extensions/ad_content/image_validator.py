@@ -1,10 +1,12 @@
 import json
 from dataclasses import dataclass
 
-import httpx
-
 from app.core.config import settings
-from app.extensions.ad_content.schemas import AdImageResponse
+from app.extensions.ad_content.schemas import AdImageResponse, VisionModel
+from app.extensions.ad_content.vision_service import (
+    VisionModelProviderError,
+    request_vision_completion,
+)
 from app.modules.ad_copy.schemas import AdCopyRequest
 
 
@@ -13,14 +15,6 @@ class ImageValidationResult:
     valid: bool
     warnings: list[str]
     regeneration_prompt_suffix: str | None = None
-
-
-def _secret_value(value) -> str | None:
-    if value is None:
-        return None
-    if hasattr(value, "get_secret_value"):
-        return value.get_secret_value() or None
-    return str(value) or None
 
 
 def _validation_prompt(copy_request: AdCopyRequest) -> str:
@@ -66,57 +60,30 @@ def _parse_validation(content: str) -> ImageValidationResult:
 async def validate_generated_image(
     image: AdImageResponse,
     copy_request: AdCopyRequest,
+    vision_model: VisionModel,
 ) -> ImageValidationResult:
     if not settings.image_validation_enabled:
         return ImageValidationResult(valid=True, warnings=[])
 
-    api_key = _secret_value(settings.openai_api_key)
-    if not api_key:
-        return ImageValidationResult(
-            valid=True,
-            warnings=[
-                "BRANDMATE_IMAGE_VALIDATION_ENABLED=true but BRANDMATE_OPENAI_API_KEY is missing; "
-                "skipped GPT Vision validation."
-            ],
-        )
-
-    model = settings.image_validator_model_name or settings.openai_vision_model
-    endpoint = f"{settings.openai_base_url.rstrip('/')}/chat/completions"
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json",
-    }
-    payload = {
-        "model": model,
-        "messages": [
-            {
-                "role": "user",
-                "content": [
-                    {"type": "text", "text": _validation_prompt(copy_request)},
-                    {
-                        "type": "image_url",
-                        "image_url": {
-                            "url": f"data:{image.media_type};base64,{image.image_base64}"
-                        },
-                    },
-                ],
-            }
-        ],
-        "temperature": 0,
-        "max_completion_tokens": 500,
-        "response_format": {"type": "json_object"},
-    }
-
     try:
-        async with httpx.AsyncClient(timeout=settings.llm_timeout_seconds) as client:
-            response = await client.post(endpoint, headers=headers, json=payload)
-            response.raise_for_status()
-            body = response.json()
-            content = body["choices"][0]["message"]["content"]
-    except (httpx.HTTPError, KeyError, IndexError, TypeError, ValueError) as error:
+        content, _ = await request_vision_completion(
+            vision_model,
+            [
+                {"type": "text", "text": _validation_prompt(copy_request)},
+                {
+                    "type": "image_url",
+                    "image_url": {
+                        "url": f"data:{image.media_type};base64,{image.image_base64}"
+                    },
+                },
+            ],
+            max_tokens=500,
+            json_mode=True,
+        )
+    except VisionModelProviderError as error:
         return ImageValidationResult(
             valid=True,
-            warnings=[f"OpenAI Vision validation skipped after provider error: {type(error).__name__}"],
+            warnings=[f"Vision validation skipped after provider error: {error}"],
         )
 
     return _parse_validation(content)

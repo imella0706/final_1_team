@@ -236,7 +236,7 @@ h1 em {
 
 .model-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 12px;
   margin-bottom: 24px;
 }
@@ -251,6 +251,11 @@ h1 em {
 .model-field.image {
   border-color: #beb8e9;
   background: #f7f5ff;
+}
+
+.model-field.vision {
+  border-color: #a9cfbf;
+  background: #f3fbf7;
 }
 
 .model-field label,

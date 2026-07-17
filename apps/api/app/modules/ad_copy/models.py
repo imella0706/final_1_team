@@ -47,16 +47,6 @@ MODEL_CATALOG = (
         supports_structured_output=False,
     ),
     ModelSpec(
-        id=AdModel.OPENAI_GPT_4_1_MINI,
-        name="OpenAI GPT 4.1 Mini",
-        size="mini",
-        provider="openai",
-        routed_model=AdModel.GPT_4_1_MINI.value,
-        availability=ModelAvailability.HOSTED,
-        note="이전 세대 GPT 테스트 기준선. 새 GPT 모델과 비교할 때 사용",
-        recommended=True,
-    ),
-    ModelSpec(
         id=AdModel.OPENAI_GPT_5_4_NANO,
         name="OpenAI GPT-5.4 Nano",
         size="nano",
@@ -82,15 +72,6 @@ MODEL_CATALOG = (
         routed_model=AdModel.GPT_5_4.value,
         availability=ModelAvailability.HOSTED,
         note="품질은 높게 유지하면서 GPT-5.5보다 비용을 낮춘 비교 후보",
-    ),
-    ModelSpec(
-        id=AdModel.OPENAI_GPT_5_5,
-        name="OpenAI GPT-5.5",
-        size="frontier",
-        provider="openai",
-        routed_model=AdModel.GPT_5_5.value,
-        availability=ModelAvailability.HOSTED,
-        note="최상위 OpenAI 문구 생성 모델",
     ),
 )
 
