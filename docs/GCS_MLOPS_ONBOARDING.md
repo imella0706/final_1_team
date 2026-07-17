@@ -500,6 +500,8 @@ package docs:
 
 `manifest.json`의 `storage.package_docs`에는 artifact root 기준 상대경로만 적습니다.
 Airflow는 `storage.gcs_path`와 이 상대경로를 조합해 package docs를 검증합니다.
+중앙 catalog가 나중에 생기더라도 artifact 내부 `docs/`를 대체하지 않습니다.
+catalog는 artifact root 목록을 찾기 위한 색인이고, 실제 dataset metadata는 각 artifact package 내부 `docs/manifest.json`, `docs/description.md`에서 읽습니다.
 
 ```json
 "storage": {
@@ -572,7 +574,7 @@ docs/datasets/aihub_food_image_text/v1/description.md
 
 GCS에는 사람이 GCS 콘솔에서 바로 이해할 수 있도록 artifact prefix의 `docs/` 아래에
 `manifest.json`, `description.md` 복사본을 둡니다.
-현재 운영 범위에서는 `data/manifests/{dataset_name}_{version}.json` 중앙 catalog 사본을 만들지 않습니다.
+현재 운영 범위에서는 `data/manifests/{dataset_name}_{version}.json` 같은 중앙 manifest 사본을 만들지 않습니다.
 
 ```text
 Git canonical:
@@ -611,8 +613,9 @@ data/processed/aihub_food_image_text/v1/food_description_data/docs/
 ```
 
 중앙 manifest catalog는 보류합니다.
-나중에 Airflow/API가 dataset 이름과 version만으로 artifact 경로를 조회해야 하면 `data/manifests/`를 Git/GCS metadata로 도입합니다.
-이 경우에도 DVC 추적 대상은 processed artifact 중심으로 유지하고, `data/manifests/`는 DVC 대상에서 제외합니다.
+나중에 Airflow/API가 dataset 이름과 version만으로 artifact 경로를 조회해야 하면 `data/catalog/datasets.json` 같은 catalog/index를 Git/GCS metadata로 도입합니다.
+이 경우에도 DVC 추적 대상은 processed artifact 중심으로 유지하고, catalog/index는 DVC 대상에서 제외합니다.
+catalog/index는 artifact 목록과 `artifact_root`를 찾기 위한 색인일 뿐이며, artifact 내부 `docs/manifest.json`, `docs/description.md`를 대체하지 않습니다.
 
 ## 11. DVC 설정
 

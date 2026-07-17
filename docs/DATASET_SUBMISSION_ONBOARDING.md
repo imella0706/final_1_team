@@ -543,7 +543,7 @@ gs://ssakda/projects/brandmate/data/processed/{dataset_name}/v{version}/{artifac
 - 용량 정보는 폴더명에 넣지 않습니다. 용량은 manifest에 기록합니다.
 - 데이터셋 이름과 processed 산출물 이름은 분리합니다. 예를 들어 AIHub 음식 이미지 및 정보소개 텍스트 데이터로 음식 설명용 데이터를 만들었다면 `dataset_name`은 `aihub_food_image_text`, processed 산출물 이름인 `artifact_name`은 `food_description_data`로 기록합니다.
 - 데이터 파일만 올리지 말고, 데이터 패키지 안에 `docs/manifest.json`, `docs/description.md` 사본을 함께 둡니다.
-- 현재 운영 범위에서는 `data/manifests/{dataset_name}_{version}.json` 중앙 catalog 사본을 만들지 않습니다. 나중에 Airflow/API가 전체 dataset catalog를 자동 조회해야 할 때 별도 정책으로 도입합니다.
+- 현재 운영 범위에서는 `data/manifests/{dataset_name}_{version}.json` 같은 중앙 manifest 사본을 만들지 않습니다. 나중에 Airflow/API가 전체 dataset 목록을 자동 조회해야 할 때는 `data/catalog/datasets.json` 같은 catalog/index를 별도 정책으로 도입합니다.
 
 ### Git metadata 원본과 GCS metadata 사본 구분
 
@@ -564,9 +564,16 @@ GCS 데이터 패키지 내부 `docs/` 아래 파일은 데이터 파일 옆에 
 
 수정은 Git 원본에서 먼저 진행하고, 검수 후 GCS 사본에 반영합니다.
 
-`data/manifests/` 중앙 manifest catalog는 현재 운영 범위에서 제외합니다.
-Airflow는 검증 대상 artifact prefix를 알고 있다는 전제로, `storage.gcs_path`와 `storage.package_docs.*_path`를 조합해 artifact 내부 `docs/manifest.json`, `docs/description.md`를 읽습니다.
-나중에 dataset 이름과 version만으로 artifact 경로를 찾는 catalog가 필요해지면 `data/manifests/`를 Git/GCS metadata로 도입하고, DVC 추적 대상에서는 제외합니다.
+GCS/DVC artifact 내부 `docs/`는 유지합니다. 데이터 패키지 하나만 내려받아도 실제 데이터와 설명서가 같이 있어야 하고,
+Airflow도 `storage.gcs_path`와 `storage.package_docs.*_path`를 조합해 해당 artifact 내부 metadata를 직접 검증할 수 있어야 합니다.
+
+중앙 manifest만 두는 구조로 바꾸지 않습니다. 중앙 파일 하나에 모든 metadata를 몰아두면 artifact 폴더만 봤을 때 데이터 맥락을 알기 어렵고,
+Git 원본, GCS 데이터, DVC pointer 사이의 참조 관계가 늘어납니다.
+
+나중에 dataset 이름과 version만으로 artifact 경로를 찾는 자동 탐색 기능이 필요해지면, 중앙 manifest 사본이 아니라
+`data/catalog/datasets.json` 같은 catalog/index를 별도로 도입합니다.
+이 catalog는 artifact 목록과 `artifact_root`를 찾기 위한 색인일 뿐이며, artifact 내부 `docs/manifest.json`, `docs/description.md`를 대체하지 않습니다.
+catalog/index는 DVC 추적 대상에서 제외합니다.
 
 팀원이 GCS에 직접 업로드하거나 내려받아야 할 때는 아래 명령을 사용합니다.
 
