@@ -241,9 +241,12 @@
   },
   "storage": {
     "gcs_path": "gs://ssakda/projects/brandmate/data/processed/aihub_food_image_text/v1/food_description_data/",
-    "manifest_gcs_path": "gs://ssakda/projects/brandmate/data/manifests/aihub_food_image_text_v1.json",
     "local_example_path": "data/processed/aihub_food_image_text/v1/food_description_data/",
     "recommended_standard_path": "data/processed/aihub_food_image_text/v1/food_description_data/",
+    "package_docs": {
+      "manifest_path": "docs/manifest.json",
+      "description_path": "docs/description.md"
+    },
     "dvc_tracked": true
   },
   "reproducibility": {

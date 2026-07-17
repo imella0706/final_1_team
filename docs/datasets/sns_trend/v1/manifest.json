@@ -42,26 +42,45 @@
   },
   "processing": {
     "input_dataset": "sns_trend curated platform_cleaned and keyword_terms",
-    "artifact_name": "query_ranked_candidates",
+    "artifact_name": "cross_platform_signal_top_candidates",
     "target_use": "retrieval",
     "preprocessing_steps": [
       "merge candidates from youtube, gogumafarm, careet, and naver",
+      "normalize source-specific signals into signal score",
       "match query terms against candidate titles, contexts, and metadata",
       "calculate signal-based score",
-      "rank candidates by query relevance and recency",
+      "rank candidates by signal score, query relevance, and recency",
+      "keep candidates ranked without manual review",
       "export nested JSON result",
       "export flat CSV result for Airflow-friendly validation"
     ],
     "output_files": [
-      "query_ranked_candidates.json",
-      "query_ranked_candidates.csv"
+      "cross_platform_signal_top_candidates.json",
+      "cross_platform_signal_top_candidates.csv"
     ]
   },
-  "query_ranked_candidates": {
+  "cross_platform_signal_top_candidates": {
+    "merge_scope": [
+      "youtube",
+      "gogumafarm",
+      "careet",
+      "naver"
+    ],
     "query": "니가 좋아 밈을 활용한 여름 카페 신메뉴 숏폼 광고",
     "selected_card_id": "gogumafarm:1bf390d89536004b",
     "result_count": 5,
-    "sources_in_results": [
+    "score_policy": "Candidates from four platforms are merged, scored with signal-based score, and exported as top candidates.",
+    "score_code_path": "demo/trend_ad/pipeline.py",
+    "human_reviewed": false,
+    "top_candidate_policy": "The current artifact keeps top candidates after signal score ranking. The exact top-N retention rule should be fixed in a later version.",
+    "input_platforms": [
+      "youtube",
+      "gogumafarm",
+      "careet",
+      "naver"
+    ],
+    "input_platform_count": 4,
+    "result_platforms": [
       "gogumafarm",
       "naver",
       "youtube"
@@ -85,22 +104,28 @@
     ]
   },
   "storage": {
-    "gcs_path": "gs://ssakda/projects/brandmate/data/processed/sns_trend/v1/query_ranked_candidates/",
-    "manifest_gcs_path": "gs://ssakda/projects/brandmate/data/manifests/sns_trend_v1.json",
-    "local_example_path": "data/processed/sns_trend/v1/query_ranked_candidates/",
+    "gcs_path": "gs://ssakda/projects/brandmate/data/processed/sns_trend/v1/cross_platform_signal_top_candidates/",
+    "local_example_path": "data/processed/sns_trend/v1/cross_platform_signal_top_candidates/",
+    "local_source_path": "outputs/Chaebin/",
+    "local_source_size_bytes": 1357527,
+    "package_docs": {
+      "manifest_path": "docs/manifest.json",
+      "description_path": "docs/description.md"
+    },
     "dvc_tracked": false
   },
   "reproducibility": {
-    "generation_script_available": "TODO",
-    "generation_script_path": "TODO",
+    "generation_script_available": true,
+    "generation_script_path": "demo/trend_ad/pipeline.py",
     "random_seed": "none",
-    "can_rebuild": "TODO"
+    "can_rebuild": "partial"
   },
   "limitations": [
-    "This artifact is generated from a single demo query, so it is not a full global trend ranking dataset.",
-    "Only the top ranked candidates for the query are included.",
+    "The current export file is generated from a single demo query, so it is not a full global trend ranking dataset.",
+    "Only top candidates after signal score ranking are included.",
+    "The ranking stage is automated and has not been manually reviewed.",
     "Instagram data is not included because collection was blocked by policy or access limitations.",
     "Some source URLs or platform-specific metadata may be empty depending on the source."
   ],
-  "next_version_plan": "Create a broader weekly sns_trend release with stable platform schema, full global ranking, and optional query-specific ranked candidate exports."
+  "next_version_plan": "Create a broader weekly sns_trend release with stable platform schema, full cross-platform signal scoring, and an explicit top-N retention policy for large outputs."
 }
