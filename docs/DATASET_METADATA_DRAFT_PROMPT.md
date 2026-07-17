@@ -81,7 +81,7 @@ description.md 작성 기준:
 6. 담당자가 직접 확인해야 할 TODO 목록
 
 분석할 기존 데이터셋 폴더:
-- 예시: /home/imella0707/personal/final_1_team/data/5gb_v2_diverse
+- 'TODO' (예시: /home/imella0707/personal/final_1_team/data/5gb_v2_diverse)
 - 필요하면 하위 파일과 폴더를 직접 읽어 분석하세요.
 
 생성할 문서:
