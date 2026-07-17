@@ -262,12 +262,14 @@ gs://ssakda/projects/brandmate/data/processed/aihub_food_image_text/v1/food_desc
 
 ## Storage
 
-- GCS 업로드 예정 경로: `gs://ssakda/projects/brandmate/data/processed/aihub_food_image_text/v1/food_description_data/`
+- GCS path: `gs://ssakda/projects/brandmate/data/processed/aihub_food_image_text/v1/food_description_data/`
 - local example path: `data/processed/aihub_food_image_text/v1/food_description_data/`
 - recommended standard path: `data/processed/aihub_food_image_text/v1/food_description_data/`
+- package docs manifest path: `docs/manifest.json`
+- package docs description path: `docs/description.md`
 - DVC tracking 여부: true
 
-DVC tracking 상태는 `manifest.json` 기준 `true`입니다.
+DVC tracking 상태는 `manifest.json` 기준 `true`입니다. 패키지 내부 readable docs 사본은 `food_description_data/docs/manifest.json`, `food_description_data/docs/description.md` 위치에 둡니다.
 
 ## Reproducibility
 
