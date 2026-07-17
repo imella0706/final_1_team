@@ -4,7 +4,7 @@
 
 | 버전 | 목표 용량 |
 |---|---:|
-| 5gb | 5GB |
+| processed\aihub_food_image_text\v1\food_description_data | processed\aihub_food_image_text\v1\food_description_data |
 | 10gb | 10GB |
 | 20gb | 20GB |
 
@@ -49,7 +49,7 @@ configs/db_size_policy.yaml의 size_tolerance_mb 기준으로 허용 오차를 �
 
 ## v2 diverse DB Policy
 
-`5gb_v2_diverse` is not built with the baseline business_category balancing policy. The v2 DB prioritizes:
+`processed\aihub_food_image_text\v2\food_description_data` is not built with the baseline business_category balancing policy. The v2 DB prioritizes:
 
 1. maximize unique food types
 2. select one front and one side representative per food when possible
@@ -58,4 +58,4 @@ configs/db_size_policy.yaml의 size_tolerance_mb 기준으로 허용 오차를 �
 5. prefer high Blur Score
 6. prefer high resolution
 
-Therefore, `category_balanced` is false for `5gb_v2_diverse`, and restaurant remains the largest category.
+Therefore, `category_balanced` is false for `processed\aihub_food_image_text\v2\food_description_data`, and restaurant remains the largest category.

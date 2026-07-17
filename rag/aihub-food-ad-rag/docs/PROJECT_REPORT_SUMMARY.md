@@ -69,7 +69,7 @@ OpenCLIP `ViT-B-32/openai` 모델로 이미지 임베딩을 생성하고 FAISS `
 | 11 | `11_select_diverse_representatives.py` | 음식별 정위/측면 대표 이미지 선택 |
 | 12 | `12_build_diverse_embedding_subset.py` | 대표 이미지 임베딩 subset 생성 |
 | 13 | `13_build_diverse_faiss.py` | diverse FAISS 인덱스 생성 |
-| 14 | `14_make_diverse_final_db.py` | `5gb_v2_diverse` DB 생성 |
+| 14 | `14_make_diverse_final_db.py` | `processed\aihub_food_image_text\v2\food_description_data` DB 생성 |
 | 15 | `15_export_final_db_assets.py` | 관리 CSV, LLM JSON, 통합 summary 생성 |
 
 전체 DB 목록과 요약은 아래 파일에서 관리한다.
@@ -80,7 +80,7 @@ data/final_db/final_db_summary.json
 
 ## 8. 실험 및 결과
 
-### 기존 5GB DB
+### 기존 processed\aihub_food_image_text\v1\food_description_data DB
 
 | 항목 | 값 |
 |---|---:|
@@ -88,7 +88,7 @@ data/final_db/final_db_summary.json
 | 실제 용량 | 약 4.998GB |
 | 고유 음식 수 | 88 |
 
-### 다양성 기반 5GB v2 DB
+### 다양성 기반 processed\aihub_food_image_text\v2\food_description_data
 
 | 항목 | 값 |
 |---|---:|
@@ -102,8 +102,8 @@ data/final_db/final_db_summary.json
 ## 9. 최종 산출물 구조
 
 ```text
-data/final_db/5gb/
-data/final_db/5gb_v2_diverse/
+data/final_db/processed\aihub_food_image_text\v1\food_description_data/
+data/final_db/processed\aihub_food_image_text\v2\food_description_data/
 ```
 
 10GB/20GB는 구조만 준비되어 있으며, 현재 완성 DB로 보지는 않는다.
@@ -129,7 +129,7 @@ Retrieval DB는 광고 생성 시스템에서 Reference DB 역할을 한다.
 
 ## 11. 한계점 및 개선 방향
 
-- 기존 5GB DB는 음식 다양성이 낮다.
+- 기존 processed\aihub_food_image_text\v1\food_description_data DB는 음식 다양성이 낮다.
 - v2 DB는 다양성을 개선했지만 검색 성능 평가는 추가로 필요하다.
 - Bounding Box 비율별 Hits@5, Recall@5, MRR 평가가 필요하다.
 - CLIP text encoder 기반 검색을 추가하면 텍스트-이미지 검색 품질을 더 명확히 평가할 수 있다.

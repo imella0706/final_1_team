@@ -92,7 +92,7 @@ OpenCLIP `ViT-B-32/openai` 모델을 사용하여 이미지 임베딩을 생성�
 6. 해상도 우선
 ```
 
-이 정책은 `data/final_db/5gb_v2_diverse/` DB에 반영되어 있다.
+이 정책은 `data/final_db/processed\aihub_food_image_text\v2\food_description_data/` DB에 반영되어 있다.
 
 다양성 기반 파이프라인:
 
@@ -102,7 +102,7 @@ OpenCLIP `ViT-B-32/openai` 모델을 사용하여 이미지 임베딩을 생성�
 | 11 | `11_select_diverse_representatives.py` | 음식별 정위/측면 대표 이미지 선택 |
 | 12 | `12_build_diverse_embedding_subset.py` | 대표 이미지 임베딩 subset 생성 |
 | 13 | `13_build_diverse_faiss.py` | diverse FAISS 인덱스 생성 |
-| 14 | `14_make_diverse_final_db.py` | `5gb_v2_diverse` DB 패키징 |
+| 14 | `14_make_diverse_final_db.py` | `processed\aihub_food_image_text\v2\food_description_data` DB 패키징 |
 | 15 | `15_export_final_db_assets.py` | 관리용 CSV, LLM JSON, 통합 summary 생성 |
 
 ### 9. 최종 관리/LLM Export
@@ -125,13 +125,13 @@ data/final_db/final_db_summary.json
 ## 현재 한계
 
 - 10GB/20GB는 완성 DB가 아니라 구조만 준비되어 있다.
-- 기존 5GB DB는 고유 음식 수가 88개로, 음식 다양성이 낮다.
+- 기존 processed\aihub_food_image_text\v1\food_description_data DB는 고유 음식 수가 88개로, 음식 다양성이 낮다.
 - 현재 검색 API는 CLIP text encoder 기반 검색이 아니다.
 - Bounding Box 비율별 Recall@5, Hits@5, MRR 비교 실험은 아직 별도 평가 단계로 남아 있다.
 
 ## 개선 방향
 
-- `5gb_v2_diverse`를 기준 DB로 삼아 검색 품질 평가
+- `processed\aihub_food_image_text\v2\food_description_data`를 기준 DB로 삼아 검색 품질 평가
 - Bounding Box 후보 구간별 성능 비교
 - CLIP text embedding 검색 추가
 - 광고 입력 스키마와 Retrieval DB를 연결하는 end-to-end RAG 파이프라인 구성
@@ -145,4 +145,4 @@ src/utils/reproducibility.py
 DEFAULT_RANDOM_SEED = 42
 ```
 
-`5gb_v2_diverse` does not directly reuse the final baseline `5gb` DB. It uses the base/v1 processed candidate pool and embedding/FAISS artifacts produced by `01`~`08`.
+`processed\aihub_food_image_text\v2\food_description_data` does not directly reuse the final baseline `processed\aihub_food_image_text\v1\food_description_data` DB. It uses the base/v1 processed candidate pool and embedding/FAISS artifacts produced by `01`~`08`.

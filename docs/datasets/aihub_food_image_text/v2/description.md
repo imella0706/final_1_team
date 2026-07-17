@@ -6,7 +6,7 @@
 
 현재 v2의 processed 산출물인 `food_description_data`는 음식 이미지, 메타데이터, 프롬프트용 경량 메타데이터, CLIP embedding, FAISS index, mapping 파일, 운영 검수용 CSV, LLM prompt payload JSON을 함께 묶은 retrieval 패키지입니다.
 
-v2는 baseline `5gb` DB를 그대로 복제한 버전이 아니라, `01`~`08` 단계에서 생성된 base/v1 processed candidate pool과 embedding/FAISS 산출물을 바탕으로 `10`~`15` 단계의 diverse representative pipeline을 적용해 만든 `5gb_v2_diverse` 계열 artifact입니다. 따라서 v2 direct generation path에는 `09_make_final_db.py`를 포함하지 않습니다.
+v2는 baseline `processed\aihub_food_image_text\v1\food_description_data` DB를 그대로 복제한 버전이 아니라, `01`~`08` 단계에서 생성된 base/v1 processed candidate pool과 embedding/FAISS 산출물을 바탕으로 `10`~`15` 단계의 diverse representative pipeline을 적용해 만든 `processed\aihub_food_image_text\v2\food_description_data` 계열 artifact입니다. 따라서 v2 direct generation path에는 `09_make_final_db.py`를 포함하지 않습니다.
 
 ## Dataset Stage
 
@@ -33,7 +33,7 @@ v2는 baseline `5gb` DB를 그대로 복제한 버전이 아니라, `01`~`08` �
 검증에 사용한 기존 로컬 작업 경로는 다음입니다.
 
 ```text
-C:\aihub-food-ad-rag\data\final_db\5gb_v2_diverse
+C:\aihub-food-ad-rag\data\final_db\processed\aihub_food_image_text\v2\food_description_data
 ```
 
 이 경로는 개인 PC의 임시 작업/검증 경로이며, 공식 GCS 경로나 표준 processed 경로로 사용하지 않습니다. 온보딩 규칙에 따른 표준 processed artifact 경로는 다음입니다.
@@ -150,8 +150,8 @@ Sampling policy:
 
 ```text
 base/v1 processed candidate path: 01_parse_metadata.py through 08_build_faiss.py
-v1 baseline DB path: 09_make_final_db.py creates data/final_db/5gb/
-v2 diverse path: 10_prepare_diverse_candidates.py through 15_export_final_db_assets.py creates/exports data/final_db/5gb_v2_diverse/
+v1 baseline DB path: 09_make_final_db.py creates data/final_db/processed\aihub_food_image_text\v1\food_description_data/
+v2 diverse path: 10_prepare_diverse_candidates.py through 15_export_final_db_assets.py creates/exports data/final_db/processed\aihub_food_image_text\v2\food_description_data/
 ```
 
 ## Dataset-Specific Fields
@@ -376,7 +376,7 @@ gs://ssakda/projects/brandmate/data/processed/aihub_food_image_text/v2/food_desc
 - `C:\aihub-food-ad-rag\src\14_make_diverse_final_db.py`
 - `C:\aihub-food-ad-rag\src\15_export_final_db_assets.py`
 
-v2 direct generation path에서는 `09_make_final_db.py`를 제외합니다. `09_make_final_db.py`는 baseline `5gb` DB 생성용이며, v2는 `01`~`08`의 base processed candidate 산출물을 기반으로 `10`~`15` 단계를 실행합니다.
+v2 direct generation path에서는 `09_make_final_db.py`를 제외합니다. `09_make_final_db.py`는 baseline `processed\aihub_food_image_text\v1\food_description_data` DB 생성용이며, v2는 `01`~`08`의 base processed candidate 산출물을 기반으로 `10`~`15` 단계를 실행합니다.
 
 ## Limitations
 

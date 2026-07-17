@@ -16,8 +16,8 @@ AI Hub 음식 이미지 데이터를 광고 콘텐츠 생성 AI에서 참조할 
 | BLIP 기반 캡션/태그 생성 | 완료 |
 | CLIP 이미지 임베딩 생성 | 완료 |
 | FAISS 인덱스 생성 | 완료 |
-| 기존 5GB DB | 완료 |
-| 다양성 기반 5GB v2 DB | 완료 |
+| 기존 processed\aihub_food_image_text\v1\food_description_data DB | 완료 |
+| 다양성 기반 processed\aihub_food_image_text\v2\food_description_data | 완료 |
 | 최종 DB 관리 CSV/LLM JSON Export | 완료 |
 | 10GB/20GB DB | 구조만 준비됨, 완성 DB 아님 |
 
@@ -48,12 +48,12 @@ AI Hub 음식 이미지 데이터를 광고 콘텐츠 생성 AI에서 참조할 
 
 ## 최종 DB
 
-### 기존 5GB DB
+### 기존 processed\aihub_food_image_text\v1\food_description_data DB
 
 위치:
 
 ```text
-data/final_db/5gb/
+data/final_db/processed\aihub_food_image_text\v1\food_description_data/
 ```
 
 | 항목 | 값 |
@@ -63,12 +63,12 @@ data/final_db/5gb/
 | 고유 음식 수 | 88 |
 | 임베딩 shape | 952 x 512 |
 
-### 다양성 기반 5GB v2 DB
+### 다양성 기반 processed\aihub_food_image_text\v2\food_description_data
 
 위치:
 
 ```text
-data/final_db/5gb_v2_diverse/
+data/final_db/processed\aihub_food_image_text\v2\food_description_data/
 ```
 
 샘플링 정책:
@@ -108,13 +108,13 @@ python src\07_clip_embedding.py
 python src\08_build_faiss.py
 ```
 
-The baseline `5gb` DB is created by `09_make_final_db.py`.
+The baseline `processed\aihub_food_image_text\v1\food_description_data` DB is created by `09_make_final_db.py`.
 
 ```cmd
-python src\09_make_final_db.py --versions 5gb
+python src\09_make_final_db.py --versions processed\aihub_food_image_text\v1\food_description_data
 ```
 
-The diverse `5gb_v2_diverse` DB does not directly reuse the final baseline `5gb` DB. It uses the base/v1 processed candidate pool and embedding/FAISS artifacts from `01`~`08`, then rebuilds the DB through steps `10`~`15`.
+The diverse `processed\aihub_food_image_text\v2\food_description_data` DB does not directly reuse the final baseline `processed\aihub_food_image_text\v1\food_description_data` DB. It uses the base/v1 processed candidate pool and embedding/FAISS artifacts from `01`~`08`, then rebuilds the DB through steps `10`~`15`.
 
 ```cmd
 python src\10_prepare_diverse_candidates.py
@@ -122,7 +122,7 @@ python src\11_select_diverse_representatives.py
 python src\12_build_diverse_embedding_subset.py
 python src\13_build_diverse_faiss.py
 python src\14_make_diverse_final_db.py --overwrite
-python src\15_export_final_db_assets.py --db-names 5gb,5gb_v2_diverse
+python src\15_export_final_db_assets.py --db-names processed\aihub_food_image_text\v1\food_description_data,processed\aihub_food_image_text\v2\food_description_data
 ```
 
 ## Reproducibility
@@ -185,6 +185,6 @@ The current API does not directly use the CLIP text encoder. It combines metadat
 ## Notes
 
 - Do not commit `data/raw/`, `data/embeddings/`, `data/final_db/`, or `data.zip`.
-- `5gb_v2_diverse` does not directly reuse the final baseline `5gb` DB; it uses outputs from `01`~`08`.
-- `09_make_final_db.py` is for the baseline `5gb` DB and is not part of the direct v2 generation path.
-- Bounding Box representative selection is implemented in `10_prepare_diverse_candidates.py` and reflected in `5gb_v2_diverse`.
+- `processed\aihub_food_image_text\v2\food_description_data` does not directly reuse the final baseline `processed\aihub_food_image_text\v1\food_description_data` DB; it uses outputs from `01`~`08`.
+- `09_make_final_db.py` is for the baseline `processed\aihub_food_image_text\v1\food_description_data` DB and is not part of the direct v2 generation path.
+- Bounding Box representative selection is implemented in `10_prepare_diverse_candidates.py` and reflected in `processed\aihub_food_image_text\v2\food_description_data`.

@@ -2,21 +2,21 @@
 
 ## 목적
 
-이 문서는 기존 `5gb` DB와 새로 만든 `5gb_v2_diverse` DB의 차이를 정리한다. 두 DB는 모두 광고 생성용 Food Retrieval DB지만, 샘플링 기준과 활용 목적이 다르다.
+이 문서는 기존 `processed\aihub_food_image_text\v1\food_description_data` DB와 새로 만든 `processed\aihub_food_image_text\v2\food_description_data` DB의 차이를 정리한다. 두 DB는 모두 광고 생성용 Food Retrieval DB지만, 샘플링 기준과 활용 목적이 다르다.
 
 ```text
-기존 5gb DB
+기존 processed\aihub_food_image_text\v1\food_description_data DB
   -> 용량 목표와 카테고리 비율 중심으로 생성한 기본 Retrieval DB
 
-5gb_v2_diverse DB
+processed\aihub_food_image_text\v2\food_description_data DB
   -> 음식 종류 다양성, 정위/측면 대표성, Bounding Box 품질을 반영한 개선 DB
 ```
 
 ## 요약 비교
 
-| 항목 | 기존 5gb DB | 5gb_v2_diverse DB |
+| 항목 | 기존 processed\aihub_food_image_text\v1\food_description_data DB | processed\aihub_food_image_text\v2\food_description_data DB |
 |---|---:|---:|
-| 위치 | `data/final_db/5gb/` | `data/final_db/5gb_v2_diverse/` |
+| 위치 | `data/final_db/processed\aihub_food_image_text\v1\food_description_data/` | `data/final_db/processed\aihub_food_image_text\v2\food_description_data/` |
 | 실제 이미지 용량 | 약 4.998GB | 약 4.441GB |
 | 이미지 수 | 952 | 1,036 |
 | 고유 음식 수 | 88 | 541 |
@@ -27,11 +27,11 @@
 | 정위/측면 모두 확보된 음식 | 별도 관리 없음 | 495 |
 | BBox 40~70% 선택 비율 | 별도 관리 없음 | 약 72.3% |
 
-## 기존 5gb DB
+## 기존 processed\aihub_food_image_text\v1\food_description_data DB
 
 ### 생성 목적
 
-기존 `5gb` DB는 전체 파이프라인이 정상적으로 작동하는지 검증하고, 검색 API와 Prompt RAG에서 바로 사용할 수 있는 첫 번째 완성 DB를 만드는 것이 목적이었다.
+기존 `processed\aihub_food_image_text\v1\food_description_data` DB는 전체 파이프라인이 정상적으로 작동하는지 검증하고, 검색 API와 Prompt RAG에서 바로 사용할 수 있는 첫 번째 완성 DB를 만드는 것이 목적이었다.
 
 ### 생성 방식
 
@@ -45,7 +45,7 @@ data/embeddings/image_embeddings.npy
 주요 기준:
 
 ```text
-1. 목표 용량 5GB에 맞춰 이미지 선택
+1. 목표 용량 processed\aihub_food_image_text\v1\food_description_data에 맞춰 이미지 선택
 2. business_category 비율 반영
 3. product_group, original_food_name 기준 정렬 및 샘플링
 4. 선택 이미지로 metadata, prompt_metadata, embeddings, faiss.index 생성
@@ -65,11 +65,11 @@ data/embeddings/image_embeddings.npy
 - 정위/측면 촬영 방향을 명시적으로 보장하지 않는다.
 - Bounding Box 비율, 중앙성, 대표 이미지 점수를 고려하지 않는다.
 
-## 5gb_v2_diverse DB
+## processed\aihub_food_image_text\v2\food_description_data DB
 
 ### 생성 목적
 
-`5gb_v2_diverse` DB는 기존 DB의 음식 다양성 부족 문제를 해결하기 위해 만들었다. 광고 생성용 Retrieval DB에서는 동일 음식의 유사 이미지가 반복되는 것보다, 다양한 음식 종류와 대표적인 촬영 방향을 확보하는 것이 중요하다.
+`processed\aihub_food_image_text\v2\food_description_data` DB는 기존 DB의 음식 다양성 부족 문제를 해결하기 위해 만들었다. 광고 생성용 Retrieval DB에서는 동일 음식의 유사 이미지가 반복되는 것보다, 다양한 음식 종류와 대표적인 촬영 방향을 확보하는 것이 중요하다.
 
 ### 생성 방식
 
@@ -81,7 +81,7 @@ python src\11_select_diverse_representatives.py
 python src\12_build_diverse_embedding_subset.py
 python src\13_build_diverse_faiss.py
 python src\14_make_diverse_final_db.py --overwrite
-python src\15_export_final_db_assets.py --db-names 5gb,5gb_v2_diverse
+python src\15_export_final_db_assets.py --db-names processed\aihub_food_image_text\v1\food_description_data,processed\aihub_food_image_text\v2\food_description_data
 ```
 
 ### 단계별 역할
@@ -92,7 +92,7 @@ python src\15_export_final_db_assets.py --db-names 5gb,5gb_v2_diverse
 | 11 | `11_select_diverse_representatives.py` | 음식별 정위/측면 대표 이미지 선택 |
 | 12 | `12_build_diverse_embedding_subset.py` | 선택 이미지에 해당하는 CLIP 임베딩 subset 생성 |
 | 13 | `13_build_diverse_faiss.py` | diverse subset 전용 FAISS 인덱스 생성 |
-| 14 | `14_make_diverse_final_db.py` | 최종 `5gb_v2_diverse` DB 패키징 |
+| 14 | `14_make_diverse_final_db.py` | 최종 `processed\aihub_food_image_text\v2\food_description_data` DB 패키징 |
 | 15 | `15_export_final_db_assets.py` | 관리 CSV, LLM JSON, 루트 final_db_summary 생성 |
 
 ### 대표 이미지 선정 기준
@@ -194,7 +194,7 @@ LLM 프롬프트 또는 RAG context에 바로 전달하기 위한 JSON 파일이
 ### 빠른 API 검증
 
 ```text
-data/final_db/5gb/
+data/final_db/processed\aihub_food_image_text\v1\food_description_data/
 ```
 
 기존 DB는 API 로딩, 검색 응답, 파일 구조 검증에 적합하다.
@@ -202,7 +202,7 @@ data/final_db/5gb/
 ### 광고 생성용 Reference DB
 
 ```text
-data/final_db/5gb_v2_diverse/
+data/final_db/processed\aihub_food_image_text\v2\food_description_data/
 ```
 
 v2 DB는 음식 다양성과 대표 이미지 품질이 더 좋아 광고 생성용 reference DB로 더 적합하다.
@@ -212,13 +212,13 @@ v2 DB는 음식 다양성과 대표 이미지 품질이 더 좋아 광고 생성
 보고서에는 다음처럼 정리할 수 있다.
 
 ```text
-기존 5GB DB는 전체 파이프라인 검증과 검색 API 구축을 위한 기준 DB로 활용하였다.
+기존 processed\aihub_food_image_text\v1\food_description_data DB는 전체 파이프라인 검증과 검색 API 구축을 위한 기준 DB로 활용하였다.
 이후 동일 음식 반복과 낮은 음식 다양성 문제를 개선하기 위해 다양성 기반 샘플링 정책을 추가하였다.
-그 결과 5gb_v2_diverse DB는 고유 음식 수를 88개에서 541개로 확대했고,
+그 결과 processed\aihub_food_image_text\v2\food_description_data DB는 고유 음식 수를 88개에서 541개로 확대했고,
 정위/측면 대표 이미지를 균형 있게 확보하여 광고 생성용 Reference DB로서 활용성이 개선되었다.
 ```
 
 
 ### Reproducibility
 
-The v2 generation path uses `src/utils/reproducibility.py` with seed `42`. The direct v2 generation path is `01`~`08` plus `10`~`15`; `09_make_final_db.py` is for the baseline `5gb` DB.
+The v2 generation path uses `src/utils/reproducibility.py` with seed `42`. The direct v2 generation path is `01`~`08` plus `10`~`15`; `09_make_final_db.py` is for the baseline `processed\aihub_food_image_text\v1\food_description_data` DB.
