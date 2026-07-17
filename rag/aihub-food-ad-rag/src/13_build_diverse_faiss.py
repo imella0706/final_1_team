@@ -7,6 +7,7 @@ from typing import Any
 import faiss
 import numpy as np
 import pandas as pd
+from utils.reproducibility import DEFAULT_RANDOM_SEED, set_global_seed
 
 # ============================================================
 # Path configuration
@@ -257,6 +258,7 @@ def build_summary(
 
 
 def main() -> None:
+    set_global_seed(DEFAULT_RANDOM_SEED)
     validate_input_files()
 
     OUTPUT_DIR.mkdir(

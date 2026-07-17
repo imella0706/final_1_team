@@ -217,3 +217,8 @@ v2 DB는 음식 다양성과 대표 이미지 품질이 더 좋아 광고 생성
 그 결과 5gb_v2_diverse DB는 고유 음식 수를 88개에서 541개로 확대했고,
 정위/측면 대표 이미지를 균형 있게 확보하여 광고 생성용 Reference DB로서 활용성이 개선되었다.
 ```
+
+
+### Reproducibility
+
+The v2 generation path uses `src/utils/reproducibility.py` with seed `42`. The direct v2 generation path is `01`~`08` plus `10`~`15`; `09_make_final_db.py` is for the baseline `5gb` DB.

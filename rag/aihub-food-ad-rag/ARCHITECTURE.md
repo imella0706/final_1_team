@@ -1,4 +1,4 @@
-﻿# Architecture
+# Architecture
 
 ## 목적
 
@@ -80,6 +80,17 @@ data/embeddings/embedding_metadata.parquet
 data/embeddings/faiss.index
 data/embeddings/faiss_mapping.csv
 ```
+
+
+### Reproducibility Layer
+
+`src/utils/reproducibility.py` is the shared seed utility called by the v2 generation path scripts `01`~`08` and `10`~`15`.
+
+```text
+DEFAULT_RANDOM_SEED = 42
+```
+
+It sets Python `random`, NumPy, PyTorch, CUDA seeds and deterministic options on a best-effort basis. The v2 `can_rebuild=true` statement assumes this seed setup plus the same input data, intermediate artifacts, dependency versions, and local path layout.
 
 ### Final DB Layer
 

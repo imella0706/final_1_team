@@ -1,4 +1,4 @@
-﻿# Diverse Sampling Pipeline
+# Diverse Sampling Pipeline
 
 ## 목적
 
@@ -171,3 +171,14 @@ MRR
 ```
 
 이 평가는 40~70% 구간이 실제 검색 성능에서도 가장 좋은지 확인하기 위한 근거가 된다.
+
+
+## Reproducibility
+
+The v2 diverse generation path uses the shared seed utility.
+
+```text
+DEFAULT_RANDOM_SEED = 42
+```
+
+This applies to scripts `01`~`08` and `10`~`15`. `09_make_final_db.py` is used for the baseline `5gb` DB and is not part of the direct v2 generation path.

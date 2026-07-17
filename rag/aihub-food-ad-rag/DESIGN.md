@@ -1,4 +1,4 @@
-﻿# Design
+# Design
 
 ## 설계 목표
 
@@ -135,3 +135,14 @@ data/final_db/final_db_summary.json
 - Bounding Box 후보 구간별 성능 비교
 - CLIP text embedding 검색 추가
 - 광고 입력 스키마와 Retrieval DB를 연결하는 end-to-end RAG 파이프라인 구성
+
+## Reproducibility
+
+The v2 generation path scripts `01`~`08` and `10`~`15` call the shared seed utility.
+
+```text
+src/utils/reproducibility.py
+DEFAULT_RANDOM_SEED = 42
+```
+
+`5gb_v2_diverse` does not directly reuse the final baseline `5gb` DB. It uses the base/v1 processed candidate pool and embedding/FAISS artifacts produced by `01`~`08`.

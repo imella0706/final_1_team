@@ -1,4 +1,4 @@
-﻿# Project Report Summary
+# Project Report Summary
 
 ## 1. 요구사항 분석
 
@@ -133,3 +133,14 @@ Retrieval DB는 광고 생성 시스템에서 Reference DB 역할을 한다.
 - v2 DB는 다양성을 개선했지만 검색 성능 평가는 추가로 필요하다.
 - Bounding Box 비율별 Hits@5, Recall@5, MRR 평가가 필요하다.
 - CLIP text encoder 기반 검색을 추가하면 텍스트-이미지 검색 품질을 더 명확히 평가할 수 있다.
+
+
+## 13. Reproducibility
+
+The v2 generation path scripts `01`~`08` and `10`~`15` call the shared seed utility.
+
+```text
+DEFAULT_RANDOM_SEED = 42
+```
+
+This supports the v2 `manifest.json` values `random_seed=42` and `can_rebuild=true`.

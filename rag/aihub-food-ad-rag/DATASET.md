@@ -1,4 +1,4 @@
-﻿# Dataset
+# Dataset
 
 ## 사용 데이터
 
@@ -153,3 +153,14 @@ data/final_db/final_db_summary.json
 - 이미지 중심 데이터라 실제 매장 프로모션 문구, 고객 반응 데이터는 없다.
 - BLIP 캡션은 보조 정보이므로 오류 가능성이 있다.
 - 기존 5GB DB는 음식 다양성이 낮아, 다양성 기반 v2 DB가 추가되었다.
+
+## Reproducibility
+
+The v2 generation path scripts `01`~`08` and `10`~`15` call the shared seed utility.
+
+```text
+src/utils/reproducibility.py
+DEFAULT_RANDOM_SEED = 42
+```
+
+`5gb_v2_diverse` does not directly reuse the final baseline `5gb` DB. It uses the base/v1 processed candidate pool and embedding/FAISS artifacts produced by `01`~`08`.

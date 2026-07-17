@@ -91,3 +91,8 @@ summary.json
 | `embeddings.npy` | OpenCLIP 이미지 임베딩 벡터 |
 | `faiss.index` | FAISS 벡터 검색 인덱스 |
 | `summary.json` | 데이터셋 통계 및 생성 결과 요약 |
+---
+
+## Reproducibility
+
+The v2 generation path scripts `01`~`08` and `10`~`15` call `src/utils/reproducibility.py` and use seed `42`.
