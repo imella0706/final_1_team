@@ -1,4 +1,5 @@
 # BrandMate Dataset Submission Guide
+update: 2026.07.17
 
 이 문서는 BrandMate 팀원이 데이터셋을 만들고 공유할 때 지켜야 하는 공통 규칙입니다.
 
@@ -27,7 +28,8 @@
 | 데이터셋 생성 스크립트 경로 | O | X | X | 재현 코드는 Git에서 리뷰하고 버전관리 |
 | `manifest.json` | O | O | X | Git은 리뷰/이력 관리, GCS는 데이터셋 패키지 설명용 |
 | `description.md` | O | O | X | Git은 리뷰/이력 관리, GCS는 사람이 데이터셋을 바로 이해하기 위한 설명용 |
-| landing/raw 데이터 | X | O | 필요 시 | 계속 수집되는 원본 입고 데이터는 우선 GCS에 보관 |
+| 직접 수집한 landing/raw 데이터 | X | O | 필요 시 | SNS 크롤링처럼 팀이 직접 수집한 원본 입고 데이터는 GCS에 보관 |
+| 공식 URL로 재확보 가능한 대용량 raw 데이터 | X | 링크로 대체 | X | AIHub 등 공식 제공처에서 다시 받을 수 있는 대용량 raw는 팀프로젝트 비용 문제로 GCS에 올리지 않고 출처 URL과 재현 방법을 기록 |
 | curated 데이터 | X | O | 필요 시 | 공식 baseline 후보 풀로 고정할 때만 DVC 추적 |
 | processed 데이터 | X | O | O | 모델/평가/검색/API가 바로 쓰는 공식 산출물은 DVC로 버전 추적 |
 | 이미지/Parquet/Embedding/FAISS | X | O | O | 대용량 processed 산출물은 GCS에 저장하고 DVC로 버전 추적 |
@@ -44,6 +46,9 @@
 
 ### DVC 추적 기준
 
+> 이 문서는 데이터셋 담당자가 DVC 대상 여부를 판단하기 위한 정책만 설명합니다.
+> 실제 DVC 명령어와 remote 운영 절차는 [GCS_MLOPS_ONBOARDING.md](./GCS_MLOPS_ONBOARDING.md)를 따릅니다.
+
 DVC는 모든 중간 데이터를 무조건 등록하는 도구가 아닙니다.
 Git commit과 실험/서비스에 사용한 데이터 버전을 연결해야 할 때 사용합니다.
 
@@ -58,15 +63,45 @@ Git commit과 실험/서비스에 사용한 데이터 버전을 연결해야 할
 현재 프로젝트의 기본 운영 기준은 아래와 같습니다.
 
 ```text
-landing/raw = GCS 보관 중심
+직접 수집한 landing/raw = GCS 보관 중심
+공식 URL로 재확보 가능한 대용량 raw = 링크와 재현 방법으로 대체 가능
 curated = 공식 baseline으로 고정할 때만 DVC
 processed = 실험/서비스에서 바로 쓰는 공식 산출물이면 DVC 필수
+```
+
+### 팀프로젝트 DVC 운영 범위
+
+현재 팀프로젝트 기간과 운영 복잡도를 고려해 DVC 추적 대상은 공식 `processed` 산출물로 한정합니다.
+`curated` 데이터는 GCS에 보관하고, `processed` manifest의 `processing.input_dataset`,
+`curation.curated_inputs`, `reproducibility.generation_script_path`에 입력 경로와 생성 코드를 기록합니다.
+
+이 판단을 한 이유는 아래와 같습니다.
+
+- 프로젝트 기간이 2026-07-30까지로 제한되어 있어 `curated`까지 DVC로 고정하면 등록/검수/충돌 해결 비용이 커집니다.
+- `landing`과 `curated`는 수집과 정리 과정에서 자주 바뀌므로 모든 중간본을 DVC로 추적하면 pointer가 과도하게 늘어납니다.
+- 팀원이 DVC에 익숙하지 않은 상태에서 raw/curated/processed를 모두 추적하면 운영 실수가 생기기 쉽습니다.
+- 실험과 서비스 재현성에 직접 영향을 주는 것은 최종적으로 모델/API/RAG가 소비하는 `processed` 산출물입니다.
+- 따라서 현재 단계에서는 `processed`를 우선 고정하고, `curated` 계보는 GCS 경로와 manifest/description 문서로 추적합니다.
+
+이 구조의 한계도 명확히 기록합니다.
+
+- 현재 구조에서는 `processed` 산출물이 어떤 `curated` 경로에서 생성되었는지는 추적할 수 있습니다.
+- 하지만 `curated` 데이터 자체의 DVC hash까지 고정하지는 않습니다.
+- 따라서 완전한 DVC lineage, 즉 `curated` hash → `processed` hash 연결은 다음 운영 고도화 범위로 둡니다.
+
+추후 운영 고도화 시에는 아래 구조로 확장합니다.
+
+```text
+curated DVC 추적
+→ processed DVC 추적
+→ dvc.yaml / dvc.lock으로 curated → processed lineage 고정
 ```
 
 ## 3. 역할과 등록 흐름
 
 데이터셋 등록은 MLOps/인프라 담당자가 전부 대신 처리하는 구조로 운영하지 않습니다.
 MLOps 담당자는 구조와 규칙을 만들고, 데이터셋 담당자는 자기 데이터를 그 규칙에 맞춰 등록합니다.
+다만 현재 팀프로젝트 범위에서는 DVC 등록과 DVC remote 업로드는 MLOps/인프라 담당자가 관리합니다.
 
 | 역할 | 책임 |
 | --- | --- |
@@ -81,12 +116,35 @@ MLOps 담당자는 구조와 규칙을 만들고, 데이터셋 담당자는 자�
 2. 데이터셋 담당자가 raw / curated / processed 단계를 판단한다.
 3. 데이터셋 담당자가 manifest.json, description.md, 생성 코드 경로를 준비한다.
 4. MLOps/인프라 담당자가 폴더 구조, 데이터 단계, metadata 필드를 1차 검수한다.
-5. 검수 후 데이터셋 담당자가 GCS 업로드와 DVC 등록을 수행한다.
-6. MLOps/인프라 담당자가 PR에서 .dvc pointer와 metadata를 최종 리뷰한다.
+5. 검수 후 데이터셋 담당자가 승인된 구조대로 GCS에 업로드한다.
+6. MLOps/인프라 담당자가 공식 processed 산출물을 DVC로 등록한다.
+7. MLOps/인프라 담당자가 .dvc pointer, manifest, description을 최종 PR 리뷰한다.
 ```
 
 초기 운영에서는 MLOps/인프라 담당자가 예시 데이터셋 1~2개를 같이 등록해 기준을 잡습니다.
-이후 반복 등록은 데이터셋 담당자가 수행하고, MLOps/인프라 담당자는 리뷰어 역할로 전환합니다.
+이후 팀원의 데이터셋 관리 숙련도가 충분하고 충돌 위험이 낮아졌을 때는 데이터셋 담당자도 DVC 등록을 수행할 수 있습니다.
+그 전까지는 DVC 등록, `dvc push`, DVC remote 권한/복구는 MLOps/인프라 담당자가 관리합니다.
+
+### 초기 DVC 중앙 관리 원칙
+
+현재 팀프로젝트 초기 단계에서는 DVC 등록과 `dvc push`를 MLOps/인프라 담당자가 중앙에서 관리합니다.
+
+DVC는 단순 데이터 업로드 도구가 아니라 Git commit과 데이터 hash를 연결하는 버전관리 절차입니다.
+데이터셋 구조, `manifest.json`, `description.md`가 아직 자주 바뀌는 단계에서 각 데이터셋 담당자가 직접
+`dvc add`와 `dvc push`를 수행하면 아래 문제가 생길 수 있습니다.
+
+- `.dvc` pointer 충돌
+- GCS readable path와 DVC remote의 데이터 불일치
+- Git에 실제 데이터 파일을 잘못 추가하는 실수
+- metadata 수정 후 DVC pointer를 갱신하지 않아 Git commit과 데이터 버전이 어긋나는 문제
+- 여러 사람이 같은 processed artifact를 수정하면서 어떤 데이터 버전이 공식인지 불명확해지는 문제
+
+따라서 초기에는 데이터셋 담당자가 폴더 구조 초안, metadata 작성, 생성 코드 경로 정리, GCS 업로드까지 수행하고, MLOps/인프라 담당자가 최종 검수 후 DVC 등록과 `.dvc` pointer 갱신을 처리합니다.
+
+이 정책은 데이터셋 담당자의 작업을 제한하려는 목적이 아니라, 데이터 구조가 안정화되기 전까지
+데이터 버전 충돌과 복구 비용을 줄이기 위한 운영 기준입니다.
+
+데이터셋 구조가 안정화되고 팀원이 DVC 운영 흐름에 익숙해진 뒤에는 데이터셋 담당자도 DVC 등록을 수행할 수 있도록 전환할 예정입니다. 
 
 ## 4. 데이터 단계
 
@@ -105,8 +163,12 @@ MLOps 담당자는 구조와 규칙을 만들고, 데이터셋 담당자는 자�
 ```
 
 중요한 기준은 "처리를 했는가"가 아니라 "어디에서 소비되는 데이터인가"입니다.
-null 제거, 중복 제거, 불필요 컬럼 제거, source별 정리, 후보 keyword 추출처럼
+
+팀 컨벤션상 null 제거, 중복 제거, 불필요 컬럼 제거, source별 정리, 후보 keyword 추출처럼
 프로젝트에 쓸 후보 데이터를 고르고 정리하는 작업은 curated 단계로 봅니다.
+
+기술적으로는 전처리라고 볼 수 있어도, 실제 모델/API/RAG 파이프라인이 바로 소비하는 최종 산출물이 아니면 우리 팀에서는 curated로 분류합니다.
+
 반면 score/ranking 계산, query 결과 구조화, embedding 생성, FAISS index 생성,
 RAG/LLM 입력용 변환처럼 프로젝트 파이프라인에서 바로 소비할 수 있는 산출물은 processed 단계로 봅니다.
 
@@ -164,6 +226,10 @@ processed/sns/v1/
   "storage": {
     "gcs_path": "TODO",
     "local_example_path": "TODO",
+    "package_docs": {
+      "manifest_path": "docs/manifest.json",
+      "description_path": "docs/description.md"
+    },
     "dvc_tracked": false
   },
   "reproducibility": {
@@ -174,6 +240,85 @@ processed/sns/v1/
   },
   "limitations": [],
   "next_version_plan": "TODO"
+}
+```
+
+### Manifest 작성 예시
+
+아래 예시는 SNS 트렌드 데이터셋 기준 예시입니다.
+다른 데이터셋은 그대로 복사하지 말고, 공통 형식은 유지하되 본인 데이터셋에 필요한 항목을 추가해서 작성해주세요.
+AI가 모르는 값은 추측하지 말고 `TODO`로 남겨주세요.
+
+```json
+{
+  "dataset_name": "sns_trend",
+  "version": "v1",
+  "dataset_stage": "processed",
+  "status": "baseline",
+  "owner": "Chaebin",
+  "created_at": "2026-07-16",
+  "source": {
+    "provider": "manual_crawl",
+    "source_name": "sns_trend_week_2026-W28",
+    "source_url": "multiple_sources",
+    "source_split": "none",
+    "raw_uploaded_to_gcs": true,
+    "annotation_preserved": "none",
+    "platforms": ["youtube", "gogumafarm", "careet", "naver"],
+    "crawl_period": {
+      "timezone": "Asia/Seoul",
+      "start_date": "2026-07-07",
+      "end_date": "2026-07-09",
+      "week": "2026-W28"
+    }
+  },
+  "curation": {
+    "selected_count": "TODO",
+    "target_size_gb": "none",
+    "actual_size_gb": "TODO",
+    "selection_policy": "null/중복/불필요 컬럼 제거 후 플랫폼별 후보 데이터 정리",
+    "category_balanced": "none",
+    "quality_filters": ["null 제거", "중복 제거", "불필요 컬럼 제거"],
+    "path_mapping_available": true
+  },
+  "processing": {
+    "input_dataset": "sns_trend_curated_v1",
+    "artifact_name": "cross_platform_signal_top_candidates",
+    "target_use": "retrieval",
+    "preprocessing_steps": [
+      "platform별 후보 통합",
+      "platform별 signal score 정량화",
+      "query 기준 후보 검색",
+      "상위 점수 후보 구조화",
+      "JSON 결과를 CSV로 flatten"
+    ],
+    "output_files": [
+      "cross_platform_signal_top_candidates.json",
+      "cross_platform_signal_top_candidates.csv"
+    ],
+    "input_platforms": ["youtube", "gogumafarm", "careet", "naver"],
+    "result_platforms": ["gogumafarm", "naver", "youtube"]
+  },
+  "storage": {
+    "gcs_path": "gs://ssakda/projects/brandmate/data/processed/sns_trend/v1/cross_platform_signal_top_candidates/",
+    "local_example_path": "data/processed/sns_trend/v1/cross_platform_signal_top_candidates/",
+    "package_docs": {
+      "manifest_path": "docs/manifest.json",
+      "description_path": "docs/description.md"
+    },
+    "dvc_tracked": false
+  },
+  "reproducibility": {
+    "generation_script_available": true,
+    "generation_script_path": "demo/trend_ad/pipeline.py",
+    "random_seed": "none",
+    "can_rebuild": "partial"
+  },
+  "limitations": [
+    "현재 export는 특정 demo query 기준 상위 후보 결과이며 전체 global ranking 데이터셋은 아닙니다.",
+    "curated 데이터는 현재 DVC로 추적하지 않고 GCS 경로와 metadata로 계보를 관리합니다."
+  ],
+  "next_version_plan": "주기적 크롤링 자동화, cross-platform signal scoring 확장, score 기준 top-N 보존 정책 정의"
 }
 ```
 
@@ -207,6 +352,8 @@ processed/sns/v1/
 | `processing.output_files` | 생성된 주요 파일 목록입니다. | `["metadata.csv", "images/", "summary.json"]` |
 | `storage.gcs_path` | GCS에 업로드될 위치입니다. | `gs://ssakda/projects/brandmate/data/processed/sns/v1/` |
 | `storage.local_example_path` | 로컬 예시 경로입니다. | `~/final_1_team/data/sns_meme_v1` |
+| `storage.package_docs.manifest_path` | artifact root 기준 package manifest 상대경로입니다. Airflow는 `storage.gcs_path`와 조합해 읽습니다. | `docs/manifest.json` |
+| `storage.package_docs.description_path` | artifact root 기준 package description 상대경로입니다. Airflow는 `storage.gcs_path`와 조합해 읽습니다. | `docs/description.md` |
 | `storage.dvc_tracked` | DVC로 추적하는지 여부입니다. | `false` |
 | `reproducibility.generation_script_available` | 재생성 스크립트가 있는지 여부입니다. | `true`, `false` |
 | `reproducibility.generation_script_path` | 재생성 스크립트나 노트북 경로입니다. | `scripts/build_sns_dataset.py`, `Colab URL` |
@@ -231,66 +378,121 @@ processed/sns/v1/
   예: `retrieval`, `embedding`, `faiss_index`, `image_processing`, `text_processing`, `evaluation_policy`
 - 추가 section을 만들 때는 왜 필요한지 `description.md`에도 같이 설명합니다.
 
+### AI 초안 생성 프롬프트
+
+AI로 `manifest.json`과 `description.md` 초안을 만들 때는
+[DATASET_METADATA_DRAFT_PROMPT.md](./DATASET_METADATA_DRAFT_PROMPT.md)를 사용합니다.
+
+AI 결과는 초안입니다. `TODO` 항목과 원본 출처, 선별 기준, 전처리 기준, 현재 한계, 다음 버전 계획은 데이터셋 담당자가 직접 검수합니다.
+
 ## 6. Description 공통 형식
 
-`description.md`는 사람이 읽는 설명 문서입니다. 아래 구조를 기본으로 사용합니다.
+- `description.md`는 사람이 읽는 설명 문서입니다. 아래 구조를 기본으로 사용합니다.
+- 실제 description.md 작성 시 `TODO` 항목을 본인 데이터셋 정보로 채워주세요.
+- 아래 공통 형식은 실제 description.md에 복사해서 사용할 수 있는 기본 구조입니다.
+- DVC 추적 상태는 데이터셋 담당자 작성 항목이 아닙니다. MLOps/인프라 담당자가 최종 등록 후 `manifest.json`의 `storage.dvc_tracked`에서 관리합니다.
 
 ```md
 # {dataset_name} {version} Description
 
 ## Summary
-- 데이터셋을 한 문단으로 요약합니다.
-- 이 데이터셋을 어디에 쓰는지 설명합니다.
+(데이터셋이 무엇인지 설명하고, 어디에 활용되는지 적습니다. 한 문장으로 끝내도 되고, 필요한 경우 여러 문장으로 설명해도 됩니다.)
+
+- 데이터셋 개요: TODO
+- 활용 방식: TODO
 
 ## Dataset Stage
-- raw / curated / processed 중 어느 단계인지 적습니다.
-- 왜 그렇게 판단했는지 근거를 적습니다.
+- 단계: (raw / curated / processed 중 하나를 작성합니다.)
+- 판단 근거: (해당 단계를 선택한 이유를 작성합니다.)
+
+## Files
+- 주요 파일 목록: (주요 파일 또는 디렉터리 이름을 작성합니다.)
+- row/image 개수: (row 수 또는 이미지 장수를 작성합니다.)
+- 전체 용량: (데이터셋 전체 용량을 작성합니다.)
+- 파일별 역할: (각 주요 파일이 어떤 용도인지 작성합니다.)
 
 ## Source
-- 원본 제공처:
-- 원본 데이터셋 이름:
-- 원본 URL:
-- 사용 split:
-- raw 원본 GCS 업로드 여부:
-- 원본 annotation/label 보존 여부:
+- 원본 제공처: (원본 제공처를 작성합니다.)
+- 원본 데이터셋 이름: (원본 데이터셋 또는 수집 작업 이름을 작성합니다.)
+- 원본 URL: (원본 URL을 작성합니다. 없으면 `없음` 또는 `TODO`로 표시합니다.)
+- 사용 split: (사용한 split을 작성합니다. 해당 없으면 `없음`으로 표시합니다.)
+- raw 원본 GCS 업로드 여부: (업로드했다면 `예`, 아니면 `아니오`를 작성합니다.)
+- 원본 annotation/label 보존 여부: (보존 여부를 작성합니다.)
 
 ## Curation
-- 선별 개수:
-- 목표 용량:
-- 실제 용량:
-- 선별 기준:
-- 제외 기준:
-- 카테고리 균형 여부:
-- 원본 경로와 최종 경로 매핑 가능 여부:
+- 선별 기준: (데이터를 선택한 기준을 작성합니다.)
+- 제외 기준: (제외하거나 필터링한 기준을 작성합니다.)
+- 카테고리 균형 여부: (균형 적용 여부와 방식을 작성합니다.)
+- 원본 경로와 최종 경로 매핑 가능 여부: (매핑 가능 여부와 매핑 파일 위치를 작성합니다.)
 
 ## Processing
-- 입력 데이터셋:
-- 사용 목적:
-- 전처리 단계:
-- 생성 파일:
-- 사용한 모델/도구:
-- 모델/평가/검색/API에서 사용하는 방식:
+- 입력 데이터셋: (입력 raw 또는 curated 데이터셋 경로/이름을 작성합니다.)
+- 사용 목적: (training / evaluation / generation / api / retrieval / analysis 중 사용 목적을 작성합니다.)
+- 전처리 기준: (전처리의 목적과 적용 기준을 작성합니다.)
+- 전처리 단계: (실행한 전처리 단계를 순서대로 작성합니다.)
+- 생성 파일: (생성한 주요 파일을 작성합니다.)
+- 사용한 모델/도구: (사용 모델, 라이브러리, 서비스 또는 도구를 작성합니다.)
+- 모델/평가/검색/API에서 사용하는 방식: (실제 소비 파이프라인과 사용 방식을 작성합니다.)
 
 ## Dataset-Specific Fields
-- 공통 manifest에 없는 데이터셋 전용 정보를 설명합니다.
-- 예: retrieval, embedding, faiss_index, image_processing, text_processing, evaluation_policy
+(공통 manifest에 없는 데이터셋 전용 정보를 설명합니다. 예: retrieval, embedding, faiss_index, image_processing, text_processing, evaluation_policy)
 
 ## Storage
-- GCS path:
-- local example path:
-- DVC tracking 여부:
+- GCS 업로드 예정 경로: (승인 후 업로드할 GCS 경로를 작성합니다. 아직 경로가 정해지지 않았다면 추측하지 말고 `TODO`로 남깁니다.)
+- local example path: (로컬 예시 경로를 작성합니다.)
 
 ## Reproducibility
-- 데이터셋 생성 스크립트 또는 노트북 경로:
-- random seed:
-- 같은 결과를 다시 만들 수 있는지:
+- 데이터셋 생성 스크립트 또는 노트북 경로: (재생성 코드 또는 노트북 경로를 작성합니다.)
+- random seed: (사용한 seed를 작성합니다. 랜덤 과정이 없으면 `없음`으로 표시합니다.)
+- 같은 결과를 다시 만들 수 있는지: (가능 / 부분 가능 / 불가능과 그 이유를 작성합니다.)
 
 ## Limitations
-- 현재 데이터셋의 한계를 적습니다.
+(현재 데이터셋의 한계를 작성합니다.)
 
 ## Next Version Plan
-- 다음 버전에서 보강할 내용을 적습니다.
+(다음 버전에서 보강할 내용을 작성합니다.)
 ```
+
+### Description 작성 예시
+
+아래는 SNS 트렌드 processed 데이터셋의 작성 예시입니다. 실제 description.md에는 예시 값을 그대로 복사하지 말고, 본인 데이터셋의 확인된 값으로 작성해주세요.
+
+```md
+## Summary
+
+- 데이터셋 개요: YouTube, 고구마팜, 캐릿, 네이버에서 수집한 SNS/콘텐츠 트렌드 후보 데이터입니다.
+- 활용 방식: 광고 문구 생성과 밈 기반 프롬프트 조립을 위한 트렌드 후보 검색/랭킹에 활용합니다.
+
+## Dataset Stage
+- 단계: processed
+- 판단 근거: 여러 플랫폼 후보를 merge하고 signal score 기준으로 상위 후보 결과를 구조화했기 때문에 실제 프롬프트/RAG 파이프라인에서 바로 사용할 수 있는 processed 산출물입니다.
+
+## Files
+- 주요 파일 목록:
+  - cross_platform_signal_top_candidates.json
+  - cross_platform_signal_top_candidates.csv
+- row/image 개수: 5 rows
+- 전체 용량: TODO
+- 파일별 역할:
+  - cross_platform_signal_top_candidates.json: 여러 플랫폼 후보를 merge한 뒤 signal score 기준 상위 후보, query, selected_card_id를 포함한 원본 구조화 결과입니다.
+  - cross_platform_signal_top_candidates.csv: Airflow 검증과 사람이 확인하기 쉽도록 JSON을 flat table 형태로 펼친 파일입니다.
+```
+
+위 공통 형식은 공유 전 검수해야 하는 핵심 항목을 모두 포함합니다.
+
+| 검수 항목 | description.md 위치 |
+| --- | --- |
+| 데이터셋 목적 | `Summary` |
+| 파일 목록 | `Files` |
+| row/image 개수 | `Files` |
+| 용량 | `Files` |
+| 원본 출처 | `Source` |
+| 데이터 단계 | `Dataset Stage` |
+| 선별 기준 | `Curation` |
+| 전처리 기준 | `Processing` |
+| 생성 스크립트 또는 노트북 경로 | `Reproducibility` |
+| 현재 한계 | `Limitations` |
+| 다음 버전 계획 | `Next Version Plan` |
 
 `description.md`의 목적은 사람에게 맥락을 전달하는 것입니다. `manifest.json`에 구조화된 값이 있더라도, 왜 그렇게 선별/전처리했는지와 현재 한계는 문장으로 설명합니다.
 
@@ -316,21 +518,62 @@ processed/sns/v1/
 
 ## 8. GCS 위치
 
-최종 GCS 폴더 구조와 DVC 운영 절차는 MLOps/인프라 담당자용 문서인
+데이터셋 담당자가 새 데이터셋 폴더 구조를 잡을 때는 이 섹션을 기준으로 합니다.
+즉, 팀원이 `raw`, `curated`, `processed` 중 어디에 둘지 판단하고 `manifest.storage.gcs_path`를 작성할 때는
+이 문서를 먼저 봅니다.
+
+MLOps/인프라 담당자용 전체 bucket 구조, DVC remote, 권한, 업로드/복구 절차는
 [GCS_MLOPS_ONBOARDING.md](./GCS_MLOPS_ONBOARDING.md)를 따릅니다.
-데이터셋 담당자는 아래 원칙만 지키면 됩니다.
+
+| 상황 | 먼저 볼 문서 |
+| --- | --- |
+| 데이터셋 담당자가 자기 데이터의 폴더 구조 초안을 만들 때 | `DATASET_SUBMISSION_ONBOARDING.md` |
+| `raw / curated / processed` 단계를 판단할 때 | `DATASET_SUBMISSION_ONBOARDING.md` |
+| `manifest.json`, `description.md`를 작성할 때 | `DATASET_SUBMISSION_ONBOARDING.md` |
+| 실제 GCS bucket 전체 구조, 권한, DVC remote를 관리할 때 | `GCS_MLOPS_ONBOARDING.md` |
+| `dvc add`, `dvc push`, DVC pointer 갱신 기준을 확인할 때 | `GCS_MLOPS_ONBOARDING.md` |
 
 `manifest.storage.gcs_path`에는 아래 규칙에 맞는 경로를 적습니다.
 
 ```text
-gs://ssakda/projects/brandmate/data/curated/{source}/v{version}/
-gs://ssakda/projects/brandmate/data/processed/{source}/v{version}/{artifact_name}/
-gs://ssakda/projects/brandmate/data/manifests/{dataset_name}_{version}.json
+gs://ssakda/projects/brandmate/data/curated/{dataset_name}/v{version}/
+gs://ssakda/projects/brandmate/data/processed/{dataset_name}/v{version}/{artifact_name}/
 ```
 
 - 용량 정보는 폴더명에 넣지 않습니다. 용량은 manifest에 기록합니다.
 - 데이터셋 이름과 processed 산출물 이름은 분리합니다. 예를 들어 AIHub 음식 이미지 및 정보소개 텍스트 데이터로 음식 설명용 데이터를 만들었다면 `dataset_name`은 `aihub_food_image_text`, processed 산출물 이름인 `artifact_name`은 `food_description_data`로 기록합니다.
 - 데이터 파일만 올리지 말고, 데이터 패키지 안에 `docs/manifest.json`, `docs/description.md` 사본을 함께 둡니다.
+- 현재 운영 범위에서는 `data/manifests/{dataset_name}_{version}.json` 같은 중앙 manifest 사본을 만들지 않습니다. 나중에 Airflow/API가 전체 dataset 목록을 자동 조회해야 할 때는 `data/catalog/datasets.json` 같은 catalog/index를 별도 정책으로 도입합니다.
+
+### Git metadata 원본과 GCS metadata 사본 구분
+
+metadata 파일명은 어디에 있든 항상 `manifest.json`, `description.md`로 유지합니다.
+파일명을 `git_manifest.json`, `gcs_manifest.json`처럼 나누지 않습니다.
+
+위치에 따라 역할이 다릅니다.
+
+| 위치 | 역할 | 수정 기준 |
+| --- | --- | --- |
+| `docs/datasets/{dataset_name}/{version}/manifest.json` | Git에서 관리하는 공식 metadata 원본 | 데이터셋 담당자가 수정하고 PR 리뷰 |
+| `docs/datasets/{dataset_name}/{version}/description.md` | Git에서 관리하는 공식 설명 문서 원본 | 데이터셋 담당자가 수정하고 PR 리뷰 |
+| `data/{stage}/{dataset_name}/{version}/{artifact_name}/docs/manifest.json` | GCS 데이터 패키지 안에 포함되는 metadata 사본 | 공식 원본 확인 후 MLOps 담당자가 동기화 |
+| `data/{stage}/{dataset_name}/{version}/{artifact_name}/docs/description.md` | GCS 데이터 패키지 안에 포함되는 설명 문서 사본 | 공식 원본 확인 후 MLOps 담당자가 동기화 |
+
+Git의 `docs/datasets/...` 아래 파일이 공식 원본입니다.
+GCS 데이터 패키지 내부 `docs/` 아래 파일은 데이터 파일 옆에 붙여두는 사본입니다.
+
+수정은 Git 원본에서 먼저 진행하고, 검수 후 GCS 사본에 반영합니다.
+
+GCS/DVC artifact 내부 `docs/`는 유지합니다. 데이터 패키지 하나만 내려받아도 실제 데이터와 설명서가 같이 있어야 하고,
+Airflow도 `storage.gcs_path`와 `storage.package_docs.*_path`를 조합해 해당 artifact 내부 metadata를 직접 검증할 수 있어야 합니다.
+
+중앙 manifest만 두는 구조로 바꾸지 않습니다. 중앙 파일 하나에 모든 metadata를 몰아두면 artifact 폴더만 봤을 때 데이터 맥락을 알기 어렵고,
+Git 원본, GCS 데이터, DVC pointer 사이의 참조 관계가 늘어납니다.
+
+나중에 dataset 이름과 version만으로 artifact 경로를 찾는 자동 탐색 기능이 필요해지면, 중앙 manifest 사본이 아니라
+`data/catalog/datasets.json` 같은 catalog/index를 별도로 도입합니다.
+이 catalog는 artifact 목록과 `artifact_root`를 찾기 위한 색인일 뿐이며, artifact 내부 `docs/manifest.json`, `docs/description.md`를 대체하지 않습니다.
+catalog/index는 DVC 추적 대상에서 제외합니다.
 
 팀원이 GCS에 직접 업로드하거나 내려받아야 할 때는 아래 명령을 사용합니다.
 
@@ -345,11 +588,6 @@ gcloud storage rsync --recursive \
   gs://ssakda/projects/brandmate/data/{stage}/{dataset_name}/v1/{artifact_name} \
   data/{stage}/{dataset_name}/v1/{artifact_name}
 ```
-
-DVC 등록은 팀 숙련도에 따라 운영 단계를 나눕니다.
-초기에는 MLOps/인프라 담당자가 같이 처리하고, 반복 운영에서는 데이터셋 담당자가 `dvc add`까지 수행합니다.
-`dvc push`, DVC remote 복구, 권한 문제는 MLOps/인프라 담당자가
-[GCS_MLOPS_ONBOARDING.md](./GCS_MLOPS_ONBOARDING.md)에 따라 최종 확인합니다.
 
 ### 주간 수집 데이터 partition 기준
 
