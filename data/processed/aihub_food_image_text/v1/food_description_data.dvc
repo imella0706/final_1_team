@@ -1,6 +1,6 @@
 outs:
-- md5: 43a39218817cb7248ac9045cd8702dc1.dir
-  size: 5372421877
+- md5: db06b8dec8a4f3442fc64ea9c0cd80e9.dir
+  size: 5372388978
   nfiles: 962
   hash: md5
   path: food_description_data
