@@ -2,54 +2,53 @@
 
 ## Summary
 
-`aihub_food_image_text` v2는 '비전영역 음식이미지 및 정보소개 텍스트 데이터'의 AIHub 검증 분할에서 파생된 처리된 검색 아티팩트입니다.
+`aihub_food_image_text` v2는 AIHub `비전영역 음식이미지 및 정보소개 텍스트 데이터`의 validation split에서 BrandMate 광고 생성/RAG/API 참고용으로 만든 processed retrieval artifact입니다.
 
-이 패키지는 BrandMate RAG/API 참조용으로 설계되었습니다. 여기에는 음식 이미지, 마스터 메타데이터, 프롬프트 지향 메타데이터, CLIP 임베딩, FAISS 인덱스, 매핑 파일, 운영 인벤토리 CSV 및 LLM 프롬프트 페이로드 JSON이 포함되어 있습니다.
+현재 v2의 processed 산출물인 `food_description_data`는 음식 이미지, 메타데이터, 프롬프트용 경량 메타데이터, CLIP embedding, FAISS index, mapping 파일, 운영 검수용 CSV, LLM prompt payload JSON을 함께 묶은 retrieval 패키지입니다.
 
-v2 아티팩트는 '5gb_v2_diverse' 데이터베이스를 설명합니다. 최종 기준 '5gb' DB의 직접적인 연속은 아닙니다. 대신, 스크립트 '01'~'08'에서 생성된 베이스/v1 처리 후보 풀과 임베딩/FAISS 아티팩트를 사용한 후, 스크립트 '10'~'15'를 통해 다양한 대표 DB를 재구성합니다.
+v2는 baseline `5gb` DB를 그대로 복제한 버전이 아니라, `01`~`08` 단계에서 생성된 base/v1 processed candidate pool과 embedding/FAISS 산출물을 바탕으로 `10`~`15` 단계의 diverse representative pipeline을 적용해 만든 `5gb_v2_diverse` 계열 artifact입니다. 따라서 v2 direct generation path에는 `09_make_final_db.py`를 포함하지 않습니다.
 
 ## Dataset Stage
 
-- Dataset stage: `processed`
-- Status: `stable`
-- Owner: `Giwoo`
-- Created at: `2026-07-14`
-
-This artifact is classified as `processed` because it is not only a selected image folder. It includes normalized metadata, prompt metadata, embeddings, a FAISS index, mapping files, and JSON/CSV exports that can be consumed directly by model/API/RAG pipelines.
+- 판단 단계: `processed`
+- 상태: `stable`
+- 담당자: `Giwoo`
+- 생성일: `2026-07-14`
+- 판단 근거: 단순 이미지 subset이 아니라 `metadata.csv`, `metadata.parquet`, `prompt_metadata.csv`, `prompt_metadata.parquet`, `embeddings.npy`, `faiss.index`, `mapping.csv`, `db_management_inventory.csv`, `llm_prompt_payloads.json`을 포함하며 모델/API/RAG 파이프라인에서 바로 읽을 수 있는 구조이므로 processed 단계로 분류합니다.
 
 ## Source
 
-- Provider: `AIHub`
-- Source dataset ID: `71564`
-- Source dataset name: `비전영역 음식이미지 및 정보소개 텍스트 데이터`
-- Source URL: `https://aihub.or.kr/aihubdata/data/view.do?dataSetSn=71564`
-- Source split: `validation`
-- Raw uploaded to GCS: `False`
-- Original annotation preserved in this artifact: `False`
-- Builder primary: `㈜네스`
-- Builder participants: ㈜씨엔에이아이, ㈜어메이징푸드솔루션
+- 원본 제공처: `AIHub`
+- 원본 데이터셋 ID: `71564`
+- 원본 데이터셋 이름: `비전영역 음식이미지 및 정보소개 텍스트 데이터`
+- 원본 URL: `https://aihub.or.kr/aihubdata/data/view.do?dataSetSn=71564`
+- 사용 split: `validation`
+- raw 원본 전체 GCS 업로드 여부: `False`
+- 원본 annotation/label 보존 여부: `False`
+- 구축 기관 primary: `㈜네스`
+- 구축 기관 participants: ㈜씨엔에이아이, ㈜어메이징푸드솔루션
 
 ## Existing Local Dataset Folder Analysis
 
-Local source artifact used for validation:
+검증에 사용한 기존 로컬 작업 경로는 다음입니다.
 
 ```text
 C:\aihub-food-ad-rag\data\final_db\5gb_v2_diverse
 ```
 
-This is a local working path and should not be treated as the official storage path. The standard processed artifact path is:
+이 경로는 개인 PC의 임시 작업/검증 경로이며, 공식 GCS 경로나 표준 processed 경로로 사용하지 않습니다. 온보딩 규칙에 따른 표준 processed artifact 경로는 다음입니다.
 
 ```text
 data/processed/aihub_food_image_text/v2/food_description_data/
 ```
 
-Recommended GCS artifact root:
+권장 GCS artifact root는 다음입니다.
 
 ```text
 gs://ssakda/projects/brandmate/data/processed/aihub_food_image_text/v2/food_description_data/
 ```
 
-Package docs are stored relative to the artifact root:
+artifact 내부 package docs 위치는 artifact root 기준 상대경로로 관리합니다.
 
 ```text
 docs/manifest.json
@@ -58,45 +57,31 @@ docs/description.md
 
 ## Files
 
-The artifact contains the following output files according to the manifest:
-
-- `images/`
-- `metadata.csv`
-- `metadata.parquet`
-- `prompt_metadata.csv`
-- `prompt_metadata.parquet`
-- `embeddings.npy`
-- `faiss.index`
-- `mapping.csv`
-- `summary.json`
-- `db_management_inventory.csv`
-- `llm_prompt_payloads.json`
-
-### File Roles
-
-| File or folder | Role |
-| --- | --- |
-| `images/` | Food reference images included in the final retrieval DB. |
-| `metadata.csv` / `metadata.parquet` | Master metadata for final DB records. |
-| `prompt_metadata.csv` / `prompt_metadata.parquet` | Lightweight prompt/RAG context metadata. |
-| `embeddings.npy` | CLIP image embedding array. |
-| `faiss.index` | FAISS vector index for image embedding retrieval. |
-| `mapping.csv` | Mapping between FAISS ids, image paths, food names, and metadata fields. |
-| `summary.json` | Per-DB generation summary. |
-| `db_management_inventory.csv` | Human-readable operational inventory for DB inspection. |
-| `llm_prompt_payloads.json` | JSON payloads for LLM prompt/RAG context generation. |
+| 파일/폴더 | 확인된 개수/크기 | 역할 |
+| --- | ---: | --- |
+| `images/` | 1036 files | 최종 retrieval DB에 포함된 음식 reference 이미지 |
+| `metadata.csv` | 1036 rows | 최종 DB 마스터 메타데이터 CSV |
+| `metadata.parquet` | 1036 rows | 최종 DB 마스터 메타데이터 Parquet |
+| `prompt_metadata.csv` | 1036 rows | LLM/RAG context용 경량 메타데이터 CSV |
+| `prompt_metadata.parquet` | 1036 rows | LLM/RAG context용 경량 메타데이터 Parquet |
+| `embeddings.npy` | shape `(1036, 512)` | 이미지 embedding 배열 |
+| `faiss.index` | 1036 vectors | FAISS 검색 index |
+| `mapping.csv` | 1036 rows | FAISS index 결과와 이미지/메타데이터 연결 테이블 |
+| `summary.json` | 1 file | DB 생성 결과 요약 |
+| `db_management_inventory.csv` | 1036 rows | 운영 검수 및 전체 데이터 관리용 inventory CSV |
+| `llm_prompt_payloads.json` | 1036 records | LLM prompt context 전달용 JSON payload |
 
 ## Curation
 
-- Selected count: `1036` images
-- Target size: `5.0` GB
-- Actual image size: `4.440799856558442` GB
-- Actual image size bytes: `4768272538`
-- Category balanced: `False`
-- Path mapping available: `True`
-- Separate curated artifact exists: `False`
+- 선별 개수: 1036 images
+- 목표 용량: `5.0` GB
+- 실제 이미지 용량: `4.440799856558442` GB
+- 실제 이미지 용량 bytes: `4768272538`
+- 카테고리 균형 여부: `False`
+- 원본 경로와 최종 경로 매핑 가능 여부: `True`
+- 별도 curated artifact 존재 여부: `False`
 
-Selection policy:
+선별 기준:
 
 ```text
 Diverse representative sampling from the AIHub validation processed candidate pool: maximize unique food types, select one front and one side representative per food when available, prefer bbox ratio 0.40-0.70, high center score, high blur score, and high resolution.
@@ -111,51 +96,67 @@ Sampling policy:
 - prefer_high_blur_score
 - prefer_high_resolution
 
-Quality preference rules:
+품질/대표 이미지 선호 기준:
 
 - prefer bbox ratio 0.40-0.70
 - prefer high center score
 - prefer high blur score
 - prefer high resolution
 
-Validation checks:
+검증 기준:
 
 - image copy success validation
 - path mapping validation
 
 ## Processing
 
-- Input dataset: `AIHub validation selected processed candidate pool`
-- Artifact name: `food_description_data`
-- Target use: `retrieval`
+- 입력 데이터셋: `AIHub validation selected processed candidate pool`
+- artifact name: `food_description_data`
+- 사용 목적: `retrieval`
 
-Processing steps:
+처리 단계:
 
-- base/v1 metadata normalization
-- base/v1 category mapping
-- base/v1 image quality filtering
-- base/v1 duplicate removal
-- base/v1 caption generation or caption assignment
-- base/v1 CLIP embedding generation
-- base/v1 FAISS index generation
-- diverse representative candidate preparation
-- front and side view representative selection
-- diverse embedding subset build
-- diverse FAISS index generation
-- final DB materialization
-- CSV and Parquet export
-- DB management inventory CSV export
-- LLM prompt payload JSON export
+  - base/v1 metadata normalization
+  - base/v1 category mapping
+  - base/v1 image quality filtering
+  - base/v1 duplicate removal
+  - base/v1 caption generation or caption assignment
+  - base/v1 CLIP embedding generation
+  - base/v1 FAISS index generation
+  - diverse representative candidate preparation
+  - front and side view representative selection
+  - diverse embedding subset build
+  - diverse FAISS index generation
+  - final DB materialization
+  - CSV and Parquet export
+  - DB management inventory CSV export
+  - LLM prompt payload JSON export
 
-Important distinction:
+생성 파일:
+
+  - `images/`
+  - `metadata.csv`
+  - `metadata.parquet`
+  - `prompt_metadata.csv`
+  - `prompt_metadata.parquet`
+  - `embeddings.npy`
+  - `faiss.index`
+  - `mapping.csv`
+  - `summary.json`
+  - `db_management_inventory.csv`
+  - `llm_prompt_payloads.json`
+
+중요한 구분:
 
 ```text
-v1/base path: 01_parse_metadata.py through 08_build_faiss.py
+base/v1 processed candidate path: 01_parse_metadata.py through 08_build_faiss.py
 v1 baseline DB path: 09_make_final_db.py creates data/final_db/5gb/
 v2 diverse path: 10_prepare_diverse_candidates.py through 15_export_final_db_assets.py creates/exports data/final_db/5gb_v2_diverse/
 ```
 
-## Image Processing
+## Dataset-Specific Fields
+
+### Image Processing
 
 | Field | Value |
 | --- | ---: |
@@ -168,11 +169,11 @@ v2 diverse path: 10_prepare_diverse_candidates.py through 15_export_final_db_ass
 | foods_with_one_view | 46 |
 | copy_failure_count | 0 |
 
-- Image directory: `images/`
-- Original image path column: `image_path`
-- Final image path column: `final_image_path`
+- image directory: `images/`
+- original image path column: `image_path`
+- final image path column: `final_image_path`
 
-## Representative Sampling
+### Representative Sampling
 
 | Field | Value |
 | --- | ---: |
@@ -185,11 +186,11 @@ v2 diverse path: 10_prepare_diverse_candidates.py through 15_export_final_db_ass
 | average_center_score | 0.9436934336120392 |
 | average_blur_score | 291.3626430546937 |
 
-## Category Mapping
+### Category Mapping
 
-- Business category column: `business_category`
-- Product group column: `product_group`
-- Mapping rule: Rule-based mapping inherited from the base/v1 processed candidate pipeline. Exact mapping implementation and version require dataset owner review.
+- business category column: `business_category`
+- product group column: `product_group`
+- mapping rule: Rule-based mapping inherited from the base/v1 processed candidate pipeline. Exact mapping implementation and version require dataset owner review.
 
 Business category distribution:
 
@@ -231,34 +232,34 @@ Product group distribution:
 | shaved_ice | 6 |
 | bagel | 2 |
 
-## Embedding
+### Embedding
 
-- Enabled: `True`
-- Model: `OpenCLIP ViT-B-32 / openai`
-- File: `embeddings.npy`
-- Shape: `(1036, 512)`
-- Normalized: `True`
+- enabled: `True`
+- model: `OpenCLIP ViT-B-32 / openai`
+- file: `embeddings.npy`
+- shape: `(1036, 512)`
+- normalized: `True`
 
-## Retrieval / FAISS
+### Retrieval / FAISS
 
-- Enabled: `True`
-- Method: `embedding_search`
-- Index file: `faiss.index`
-- Mapping file: `mapping.csv`
+- enabled: `True`
+- method: `embedding_search`
+- index file: `faiss.index`
+- mapping file: `mapping.csv`
 - FAISS index type: `IndexFlatIP`
-- Similarity metric: `inner_product_on_l2_normalized_vectors`
+- similarity metric: `inner_product_on_l2_normalized_vectors`
 - FAISS index total: `1036`
-- Mapping count: `1036`
+- mapping count: `1036`
 
 `IndexFlatIP` is used with L2-normalized embeddings, so inner product on normalized vectors is used as the retrieval similarity metric.
 
-## LLM Prompt Payload
+### LLM Prompt Payload
 
-- Enabled: `True`
-- File: `llm_prompt_payloads.json`
-- Record count: `1036`
-- Top-level type: `list`
-- Top-level keys: ['database_name', 'reference', 'prompt_context']
+- enabled: `True`
+- file: `llm_prompt_payloads.json`
+- record count: `1036`
+- top-level type: `list`
+- top-level keys: `database_name`, `reference`, `prompt_context`
 
 ## Output Schema
 
@@ -294,30 +295,71 @@ database_name, reference, prompt_context
 
 ## Statistics
 
-- Image file count: `1036`
-- Record count: `1036`
-- Embedding shape: `(1036, 512)`
-- Unique food name count: `541`
+- image file count: `1036`
+- record count: `1036`
+- embedding shape: `(1036, 512)`
+- actual image size: `4.440799856558442` GB
+- unique food name count: `541`
+
+## Recommended GCS Folder Structure Draft
+
+`manifest.json` 기준 GCS 경로에는 아래 표준 processed artifact 구조를 사용합니다.
+
+```text
+gs://ssakda/projects/brandmate/data/processed/aihub_food_image_text/v2/food_description_data/
+├── images/
+├── metadata.csv
+├── metadata.parquet
+├── prompt_metadata.csv
+├── prompt_metadata.parquet
+├── embeddings.npy
+├── faiss.index
+├── mapping.csv
+├── summary.json
+├── db_management_inventory.csv
+├── llm_prompt_payloads.json
+└── docs/
+    ├── manifest.json
+    └── description.md
+```
+
+## Local Path to Recommended Standard Path Mapping
+
+| 기존 로컬/표준 경로 | 추천 GCS/표준 경로 | 파일 역할 |
+| --- | --- | --- |
+| `data/processed/aihub_food_image_text/v2/food_description_data/images/` | `gs://ssakda/projects/brandmate/data/processed/aihub_food_image_text/v2/food_description_data/images/` | 최종 음식 reference 이미지 |
+| `data/processed/aihub_food_image_text/v2/food_description_data/metadata.csv` | `gs://ssakda/projects/brandmate/data/processed/aihub_food_image_text/v2/food_description_data/metadata.csv` | 최종 DB 마스터 메타데이터 CSV |
+| `data/processed/aihub_food_image_text/v2/food_description_data/metadata.parquet` | `gs://ssakda/projects/brandmate/data/processed/aihub_food_image_text/v2/food_description_data/metadata.parquet` | 최종 DB 마스터 메타데이터 Parquet |
+| `data/processed/aihub_food_image_text/v2/food_description_data/prompt_metadata.csv` | `gs://ssakda/projects/brandmate/data/processed/aihub_food_image_text/v2/food_description_data/prompt_metadata.csv` | LLM/RAG 프롬프트용 경량 메타데이터 CSV |
+| `data/processed/aihub_food_image_text/v2/food_description_data/prompt_metadata.parquet` | `gs://ssakda/projects/brandmate/data/processed/aihub_food_image_text/v2/food_description_data/prompt_metadata.parquet` | LLM/RAG 프롬프트용 경량 메타데이터 Parquet |
+| `data/processed/aihub_food_image_text/v2/food_description_data/embeddings.npy` | `gs://ssakda/projects/brandmate/data/processed/aihub_food_image_text/v2/food_description_data/embeddings.npy` | CLIP 이미지 embedding 배열 |
+| `data/processed/aihub_food_image_text/v2/food_description_data/faiss.index` | `gs://ssakda/projects/brandmate/data/processed/aihub_food_image_text/v2/food_description_data/faiss.index` | FAISS 검색 index |
+| `data/processed/aihub_food_image_text/v2/food_description_data/mapping.csv` | `gs://ssakda/projects/brandmate/data/processed/aihub_food_image_text/v2/food_description_data/mapping.csv` | FAISS 검색 결과와 이미지/메타데이터 연결 테이블 |
+| `data/processed/aihub_food_image_text/v2/food_description_data/summary.json` | `gs://ssakda/projects/brandmate/data/processed/aihub_food_image_text/v2/food_description_data/summary.json` | DB 생성 결과 요약 |
+| `data/processed/aihub_food_image_text/v2/food_description_data/db_management_inventory.csv` | `gs://ssakda/projects/brandmate/data/processed/aihub_food_image_text/v2/food_description_data/db_management_inventory.csv` | 운영 검수 및 전체 데이터 관리용 inventory CSV |
+| `data/processed/aihub_food_image_text/v2/food_description_data/llm_prompt_payloads.json` | `gs://ssakda/projects/brandmate/data/processed/aihub_food_image_text/v2/food_description_data/llm_prompt_payloads.json` | LLM prompt context 전달용 JSON payload |
+| `docs/datasets/aihub_food_image_text/v2/manifest.json` | `gs://ssakda/projects/brandmate/data/processed/aihub_food_image_text/v2/food_description_data/docs/manifest.json` | artifact package manifest 사본 |
+| `docs/datasets/aihub_food_image_text/v2/description.md` | `gs://ssakda/projects/brandmate/data/processed/aihub_food_image_text/v2/food_description_data/docs/description.md` | artifact package description 사본 |
 
 ## Storage
 
 - GCS path: `gs://ssakda/projects/brandmate/data/processed/aihub_food_image_text/v2/food_description_data/`
-- Local example path: `data/processed/aihub_food_image_text/v2/food_description_data/`
-- Recommended standard path: `data/processed/aihub_food_image_text/v2/food_description_data/`
-- Package docs manifest path: `docs/manifest.json`
-- Package docs description path: `docs/description.md`
-- DVC tracked: `TODO`
+- local example path: `data/processed/aihub_food_image_text/v2/food_description_data/`
+- recommended standard path: `data/processed/aihub_food_image_text/v2/food_description_data/`
+- package docs manifest path: `docs/manifest.json`
+- package docs description path: `docs/description.md`
+- DVC tracking 여부: `TODO`
 
-No central `data/manifests/` copy is declared in this document.
+중앙 `data/manifests/` 사본은 이 문서에서 선언하지 않습니다. package docs는 artifact 내부 `docs/manifest.json`, `docs/description.md` 위치를 기준으로 관리합니다.
 
 ## Reproducibility
 
-- Generation script available: `True`
-- Random seed: `42`
-- Seed setup path: `C:\aihub-food-ad-rag\src\utils\reproducibility.py`
-- Can rebuild: `True`
+- generation script available: `True`
+- random seed: `42`
+- seed setup path: `C:\aihub-food-ad-rag\src\utils\reproducibility.py`
+- can rebuild: `True`
 
-Generation script path:
+생성 스크립트 경로:
 
 - `C:\aihub-food-ad-rag\src\01_parse_metadata.py`
 - `C:\aihub-food-ad-rag\src\02_eda_report.py`
@@ -334,7 +376,7 @@ Generation script path:
 - `C:\aihub-food-ad-rag\src\14_make_diverse_final_db.py`
 - `C:\aihub-food-ad-rag\src\15_export_final_db_assets.py`
 
-The v2 direct generation path excludes `09_make_final_db.py`. Script `09_make_final_db.py` is used for the baseline `5gb` DB, while v2 uses outputs from `01`~`08` and then runs `10`~`15`.
+v2 direct generation path에서는 `09_make_final_db.py`를 제외합니다. `09_make_final_db.py`는 baseline `5gb` DB 생성용이며, v2는 `01`~`08`의 base processed candidate 산출물을 기반으로 `10`~`15` 단계를 실행합니다.
 
 ## Limitations
 
@@ -349,6 +391,7 @@ Evaluate retrieval quality metrics such as Hits@5, Recall@5, and MRR for candida
 
 ## Dataset Owner Review Checklist
 
-- Confirm whether `storage.dvc_tracked` should remain `TODO` or be updated after a `.dvc` pointer is created.
-- Confirm whether the mapping rule text is sufficiently precise for team handoff.
-- Confirm limitations and next version plan before final dataset registration.
+- `storage.dvc_tracked`를 `.dvc` pointer 생성 이후 확정해야 합니다.
+- `category_mapping.mapping_rule`이 팀 handoff에 충분한 수준인지 데이터셋 담당자가 최종 검수해야 합니다.
+- `limitations`와 `next_version_plan`은 최종 등록 전 데이터셋 담당자가 직접 검수해야 합니다.
+- 실제 GCS 업로드 후 artifact 내부 `docs/manifest.json`, `docs/description.md` 사본이 이 canonical 문서와 일치하는지 확인해야 합니다.
