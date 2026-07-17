@@ -634,6 +634,7 @@ git commit -m "Initialize DVC for BrandMate"
 WSL 또는 제한된 실행 환경에서 DVC가 `/var/tmp/dvc`에 쓰려고 하며 실패할 수 있습니다. 이 경우 `core.site_cache_dir`를 프로젝트 내부 `.dvc/site-cache`로 고정합니다.
 
 DVC의 GCS backend는 `gcloud storage` 로그인과 별개로 Application Default Credentials를 사용합니다. `dvc push`에서 `Your default credentials were not found`가 나오면 아래 명령으로 ADC를 한 번 설정합니다.
+`Invalid Credentials, 401` 또는 `Reauthentication is needed`가 나오는 경우도 같은 방식으로 다시 인증합니다.
 
 ```bash
 # [Design Intent] DVC/GCSFS가 GCS bucket에 인증된 사용자로 접근할 수 있게 한다.
@@ -662,6 +663,51 @@ git add data/processed/aihub_food_image_text/v1/food_description_data.dvc .gitig
 git add docs/datasets/aihub_food_image_text/v1/manifest.json
 git add docs/datasets/aihub_food_image_text/v1/description.md
 git commit -m "Track AIHub food image text v1 processed artifact"
+```
+
+### 이미 DVC로 추적 중인 artifact를 수정할 때
+
+이미 DVC로 추적 중인 폴더 안의 파일을 수정하면 실제 데이터 본문이 아니라 `docs/manifest.json`,
+`docs/description.md` 같은 package metadata 사본만 바뀌어도 DVC output hash가 변경됩니다.
+공식 artifact package의 일부를 수정한 것이므로, 의도한 변경이면 DVC pointer를 갱신합니다.
+
+예를 들어 Git 공식 metadata와 artifact 내부 package docs 사본을 동기화한 경우에는 아래 순서로 처리합니다.
+
+```bash
+# [Design Intent] 이미 추적 중인 artifact의 변경 사항을 새 DVC version으로 고정한다.
+cd ~/personal/final_1_team
+
+# 1. 현재 DVC 변경 확인
+dvc status
+
+# 2. DVC output hash 갱신
+dvc add data/processed/aihub_food_image_text/v1/food_description_data
+
+# 3. DVC remote에 새 artifact version 업로드
+dvc push
+
+# 4. 변경된 .dvc pointer 확인
+git status
+
+# 5. Git에 pointer 커밋
+git add data/processed/aihub_food_image_text/v1/food_description_data.dvc
+git commit -m "data(metadata): AIHub package docs 사본 동기화"
+```
+
+이때 PR에는 변경 범위를 명확히 적습니다.
+
+```md
+- AIHub food artifact의 이미지/JSONL 등 데이터 본문은 변경하지 않았습니다.
+- 변경 범위는 artifact 내부 `docs/manifest.json`, `docs/description.md` package metadata 사본입니다.
+- Git 공식 metadata와 GCS/DVC artifact 내부 package docs를 맞추기 위해 DVC pointer를 갱신했습니다.
+```
+
+수정이 실수라면 DVC version을 갱신하지 말고 기존 DVC cache 상태로 되돌립니다.
+
+```bash
+# [Design Intent] 의도하지 않은 DVC-tracked artifact 내부 변경을 원래 DVC version으로 되돌린다.
+dvc checkout data/processed/aihub_food_image_text/v1/food_description_data.dvc
+dvc status
 ```
 
 업로드 후 확인합니다.
