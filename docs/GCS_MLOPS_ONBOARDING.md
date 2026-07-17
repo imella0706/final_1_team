@@ -621,6 +621,23 @@ catalog/index는 artifact 목록과 `artifact_root`를 찾기 위한 색인일 �
 
 DVC는 Git commit과 데이터 버전을 연결하기 위한 포인터입니다. `gs://ssakda/dvc/brandmate/`는 DVC 내부 object store이므로 사람이 직접 파일을 정리하지 않습니다.
 
+문서, 폴더 구조, 파일명, metadata schema가 자주 바뀌는 초기 정리 단계에서는 바로 DVC로 고정하지 않습니다.
+DVC 추적이 시작된 뒤에는 artifact 내부 `docs/manifest.json`, `docs/description.md` 같은 metadata 사본만 바뀌어도
+폴더 hash와 `.dvc` pointer를 다시 갱신해야 합니다.
+따라서 데이터셋 구조와 package docs 위치가 안정화된 뒤, 공식 processed artifact로 승격할 때 DVC에 등록합니다.
+
+```text
+정리 중인 데이터셋:
+  GCS readable path 업로드 가능
+  DVC 등록 보류
+
+공식 processed artifact로 확정된 데이터셋:
+  artifact 내부 docs 포함
+  dvc add
+  dvc push
+  .dvc pointer Git commit
+```
+
 ```bash
 # [Design Intent] Git commit과 데이터 버전을 강하게 결합하기 위해 DVC remote를 GCS로 둔다.
 cd ~/personal/final_1_team
