@@ -1,0 +1,146 @@
+{
+  "dataset_name": "aihub_cctv_visitor_flow",
+  "artifact_name": "ju_ja_validation_selected",
+  "version": "v1",
+  "dataset_stage": "curated",
+  "status": "baseline",
+  "artifact_role": "source_pool",
+  "owner": "Sujin",
+  "created_at": "2026-07-19",
+  "source": {
+    "provider": "AIHub",
+    "source_dataset_id": "489",
+    "source_name": "유동 인구 분석을 위한 CCTV 영상 데이터",
+    "source_url": "https://aihub.or.kr/aihubdata/data/view.do?dataSetSn=489",
+    "aihub_downloader_url": "https://api.aihub.or.kr/api/aihubshell.do",
+    "raw_scope": "AIHub dataset 489 full source dataset",
+    "selected_source_scope": "Validation ju-ja files only",
+    "source_split": "Validation ju-ja",
+    "downloaded_files": [
+      {
+        "file": "VS3_ju-ja.zip",
+        "file_key": 65983,
+        "role": "validation source videos"
+      },
+      {
+        "file": "VL3_ju-ja.zip",
+        "file_key": 65995,
+        "role": "validation labeling data"
+      }
+    ],
+    "raw_uploaded_to_gcs": false,
+    "raw_gcs_policy": "Do not upload partial AIHub source files as raw. Full official AIHub raw can be reacquired by source URL/file keys; project-specific selected subsets are documented as curated.",
+    "annotation_preserved": true
+  },
+  "curation": {
+    "selection_policy": "Keep the full downloaded Validation ju-ja split as a curated source pool for selecting store-front MVP samples.",
+    "selected_video_count": 132,
+    "selected_label_count": 132,
+    "matched_stem_count": 132,
+    "actual_size_gb": 8.1,
+    "camera_distribution": {
+      "C0063": {
+        "mp4": 9,
+        "json": 9
+      },
+      "C0065": {
+        "mp4": 9,
+        "json": 9
+      },
+      "C0071": {
+        "mp4": 38,
+        "json": 38
+      },
+      "C0133": {
+        "mp4": 13,
+        "json": 13
+      },
+      "C0241": {
+        "mp4": 63,
+        "json": 63
+      }
+    },
+    "time_bucket_distribution": {
+      "dawn_0_9": {
+        "original_aihub_bucket": "새벽(0~9)",
+        "mp4": 21,
+        "json": 21
+      },
+      "morning_9_12": {
+        "original_aihub_bucket": "오전(9~12)",
+        "mp4": 31,
+        "json": 31
+      },
+      "afternoon_12_16": {
+        "original_aihub_bucket": "오후(12~16)",
+        "mp4": 24,
+        "json": 24
+      },
+      "evening_16_20": {
+        "original_aihub_bucket": "저녁(16~20)",
+        "mp4": 31,
+        "json": 31
+      },
+      "night_20_24": {
+        "original_aihub_bucket": "야간(20~24)",
+        "mp4": 25,
+        "json": 25
+      }
+    },
+    "date_distribution": {
+      "2021-08-02": 38,
+      "2021-08-03": 22,
+      "2021-08-04": 19,
+      "2021-08-05": 16,
+      "2021-08-06": 7,
+      "2021-08-07": 13,
+      "2021-08-08": 2,
+      "2021-08-09": 6,
+      "2021-08-10": 9
+    },
+    "derived_mvp_sample": {
+      "artifact_name": "c0241_20210802",
+      "path": "data/curated/aihub_cctv_visitor_flow/v1/c0241_20210802/",
+      "camera_id": "C0241",
+      "date": "2021-08-02",
+      "pair_count": 8
+    }
+  },
+  "storage": {
+    "gcs_path": "gs://ssakda/projects/brandmate/data/curated/aihub_cctv_visitor_flow/v1/ju_ja_validation_selected/",
+    "local_example_path": "data/curated/aihub_cctv_visitor_flow/v1/ju_ja_validation_selected/",
+    "layout": {
+      "videos_path": "videos/",
+      "labels_path": "labels/"
+    },
+    "dvc_tracked": false,
+    "gcs_uploaded": false
+  },
+  "reproducibility": {
+    "aihub_downloader": {
+      "tool_name": "aihubshell",
+      "download_url": "https://api.aihub.or.kr/api/aihubshell.do",
+      "local_tool_path_example": "data/local/aihub_tools/aihubshell",
+      "git_tracked": false,
+      "download_command": "data/local/aihub_tools/aihubshell -mode d -datasetkey 489 -filekey 65983,65995 -aihubapikey '<AIHUB_API_KEY>'"
+    },
+    "can_rebuild": "yes, if AIHub access and the listed file keys are available"
+  },
+  "privacy_policy": {
+    "face_recognition": false,
+    "identity_tracking": false,
+    "raw_video_git_tracked": false,
+    "allowed_claims": [
+      "camera/date/time-bucket distribution of the selected Validation ju-ja source pool",
+      "mp4/json pair availability",
+      "candidate pool for visitor-flow MVP sample selection"
+    ],
+    "forbidden_claims": [
+      "full AIHub dataset representativeness",
+      "actual store visitor count",
+      "purchase conversion",
+      "customer identity",
+      "gender/age targeting"
+    ]
+  }
+}
