@@ -9,6 +9,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
+from utils.reproducibility import DEFAULT_RANDOM_SEED, set_global_seed
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
@@ -447,6 +448,7 @@ def calculate_bbox_range_score(ratio: float) -> float:
 
 
 def main() -> None:
+    set_global_seed(DEFAULT_RANDOM_SEED)
     if not INPUT_METADATA.exists():
         raise FileNotFoundError(f"입력 파일이 없습니다: {INPUT_METADATA}")
 

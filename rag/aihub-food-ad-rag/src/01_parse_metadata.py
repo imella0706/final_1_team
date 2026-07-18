@@ -9,6 +9,7 @@ from typing import Any, Dict
 import pandas as pd
 import yaml
 from tqdm import tqdm
+from utils.reproducibility import DEFAULT_RANDOM_SEED, set_global_seed
 
 # Windows에서 src/utils import 문제 방지
 CURRENT_DIR = Path(__file__).resolve().parent
@@ -159,6 +160,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> None:
+    set_global_seed(DEFAULT_RANDOM_SEED)
     args = parse_args()
     config = load_pipeline_config(args.config)
 

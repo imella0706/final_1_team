@@ -1,10 +1,10 @@
-﻿# Diverse Sampling Pipeline
+# Diverse Sampling Pipeline
 
 ## 목적
 
-`src/10_prepare_diverse_candidates.py`는 기존 5GB DB의 한계를 보완하기 위해 추가된 후보 생성 스크립트다.
+`src/10_prepare_diverse_candidates.py`는 기존 processed\aihub_food_image_text\v1\food_description_data DB의 한계를 보완하기 위해 추가된 후보 생성 스크립트다.
 
-기존 5GB DB는 목표 용량에 맞춰 이미지를 선택했기 때문에 고유 음식 수가 88개에 그쳤다. 광고 생성용 Retrieval DB에서는 같은 음식의 유사 이미지가 많이 들어가는 것보다, 가능한 다양한 음식 종류와 대표적인 촬영 방향을 확보하는 것이 중요하다.
+기존 processed\aihub_food_image_text\v1\food_description_data DB는 목표 용량에 맞춰 이미지를 선택했기 때문에 고유 음식 수가 88개에 그쳤다. 광고 생성용 Retrieval DB에서는 같은 음식의 유사 이미지가 많이 들어가는 것보다, 가능한 다양한 음식 종류와 대표적인 촬영 방향을 확보하는 것이 중요하다.
 
 ## 입력
 
@@ -75,7 +75,7 @@ python src\11_select_diverse_representatives.py
 python src\12_build_diverse_embedding_subset.py
 python src\13_build_diverse_faiss.py
 python src\14_make_diverse_final_db.py --overwrite
-python src\15_export_final_db_assets.py --db-names 5gb,5gb_v2_diverse
+python src\15_export_final_db_assets.py --db-names processed\aihub_food_image_text\v1\food_description_data,processed\aihub_food_image_text\v2\food_description_data
 ```
 
 | 단계 | 산출물 |
@@ -84,7 +84,7 @@ python src\15_export_final_db_assets.py --db-names 5gb,5gb_v2_diverse
 | 11 | `data/metadata/diverse_sampling/selected_representatives.parquet` |
 | 12 | `data/embeddings/diverse_sampling/diverse_image_embeddings.npy` |
 | 13 | `data/embeddings/diverse_sampling/diverse_faiss.index` |
-| 14 | `data/final_db/5gb_v2_diverse/` |
+| 14 | `data/final_db/processed\aihub_food_image_text\v2\food_description_data/` |
 | 15 | `db_management_inventory.csv`, `llm_prompt_payloads.json`, `final_db_summary.json` |
 
 ## 현재 v2 결과
@@ -92,7 +92,7 @@ python src\15_export_final_db_assets.py --db-names 5gb,5gb_v2_diverse
 위치:
 
 ```text
-data/final_db/5gb_v2_diverse/
+data/final_db/processed\aihub_food_image_text\v2\food_description_data/
 ```
 
 | 항목 | 값 |
@@ -108,9 +108,9 @@ data/final_db/5gb_v2_diverse/
 | 평균 Center Score | 약 0.944 |
 | 평균 Blur Score | 약 291.36 |
 
-## 기존 5GB DB와 차이
+## 기존 processed\aihub_food_image_text\v1\food_description_data DB와 차이
 
-| 항목 | 기존 5GB | v2 Diverse 5GB |
+| 항목 | 기존 processed\aihub_food_image_text\v1\food_description_data | v2 Diverse processed\aihub_food_image_text\v1\food_description_data |
 |---|---:|---:|
 | 이미지 수 | 952 | 1,036 |
 | 고유 음식 수 | 88 | 541 |
@@ -122,10 +122,10 @@ data/final_db/5gb_v2_diverse/
 최종 DB 생성 후 `15_export_final_db_assets.py`를 실행하면 다음 파일이 생성된다.
 
 ```text
-data/final_db/5gb/db_management_inventory.csv
-data/final_db/5gb/llm_prompt_payloads.json
-data/final_db/5gb_v2_diverse/db_management_inventory.csv
-data/final_db/5gb_v2_diverse/llm_prompt_payloads.json
+data/final_db/processed\aihub_food_image_text\v1\food_description_data/db_management_inventory.csv
+data/final_db/processed\aihub_food_image_text\v1\food_description_data/llm_prompt_payloads.json
+data/final_db/processed\aihub_food_image_text\v2\food_description_data/db_management_inventory.csv
+data/final_db/processed\aihub_food_image_text\v2\food_description_data/llm_prompt_payloads.json
 data/final_db/final_db_summary.json
 ```
 
@@ -155,7 +155,7 @@ data/final_db/final_db_summary.json 갱신
 여러 DB를 한 번에 갱신하려면 다음처럼 실행한다.
 
 ```cmd
-python src\15_export_final_db_assets.py --db-names 5gb,5gb_v2_diverse,새로운_db
+python src\15_export_final_db_assets.py --db-names processed\aihub_food_image_text\v1\food_description_data,processed\aihub_food_image_text\v2\food_description_data,새로운_db
 ```
 
 ## 향후 평가
@@ -171,3 +171,14 @@ MRR
 ```
 
 이 평가는 40~70% 구간이 실제 검색 성능에서도 가장 좋은지 확인하기 위한 근거가 된다.
+
+
+## Reproducibility
+
+The v2 diverse generation path uses the shared seed utility.
+
+```text
+DEFAULT_RANDOM_SEED = 42
+```
+
+This applies to scripts `01`~`08` and `10`~`15`. `09_make_final_db.py` is used for the baseline `processed\aihub_food_image_text\v1\food_description_data` DB and is not part of the direct v2 generation path.

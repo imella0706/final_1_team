@@ -7,6 +7,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import pandas as pd
 import yaml
+from utils.reproducibility import DEFAULT_RANDOM_SEED, set_global_seed
 
 
 def load_yaml(path: str | Path) -> Dict[str, Any]:
@@ -1095,6 +1096,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> None:
+    set_global_seed(DEFAULT_RANDOM_SEED)
     args = parse_args()
 
     input_path = Path(args.input)

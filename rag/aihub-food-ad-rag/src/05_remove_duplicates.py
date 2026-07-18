@@ -10,6 +10,7 @@ import pandas as pd
 import yaml
 from PIL import Image, UnidentifiedImageError
 from tqdm import tqdm
+from utils.reproducibility import DEFAULT_RANDOM_SEED, set_global_seed
 
 
 def load_pipeline_config(config_path: str | Path) -> Dict[str, Any]:
@@ -380,6 +381,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> None:
+    set_global_seed(DEFAULT_RANDOM_SEED)
     args = parse_args()
 
     config = load_pipeline_config(args.config)

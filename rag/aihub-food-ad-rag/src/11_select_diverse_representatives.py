@@ -5,6 +5,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+from utils.reproducibility import DEFAULT_RANDOM_SEED, set_global_seed
 
 # ============================================================
 # Path configuration
@@ -302,6 +303,7 @@ def build_summary(
 
 
 def main() -> None:
+    set_global_seed(DEFAULT_RANDOM_SEED)
     if not INPUT_PATH.exists():
         raise FileNotFoundError(
             "1단계 결과 파일이 없습니다.\n"

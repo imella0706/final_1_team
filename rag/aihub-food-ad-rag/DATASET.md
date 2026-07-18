@@ -1,4 +1,4 @@
-﻿# Dataset
+# Dataset
 
 ## 사용 데이터
 
@@ -97,10 +97,10 @@ Fallback 비율은 약 5.21%다.
 
 ## 최종 DB 결과
 
-### 5GB DB
+### processed\aihub_food_image_text\v1\food_description_data DB
 
 ```text
-data/final_db/5gb/
+data/final_db/processed\aihub_food_image_text\v1\food_description_data/
 ```
 
 | 항목 | 값 |
@@ -110,10 +110,10 @@ data/final_db/5gb/
 | 고유 음식 수 | 88 |
 | 임베딩 shape | 952 x 512 |
 
-### 5GB v2 Diverse DB
+### processed\aihub_food_image_text\v1\food_description_data v2 Diverse DB
 
 ```text
-data/final_db/5gb_v2_diverse/
+data/final_db/processed\aihub_food_image_text\v2\food_description_data/
 ```
 
 | 항목 | 값 |
@@ -152,4 +152,15 @@ data/final_db/final_db_summary.json
 - AI Hub 데이터는 광고 카피 데이터가 아니다.
 - 이미지 중심 데이터라 실제 매장 프로모션 문구, 고객 반응 데이터는 없다.
 - BLIP 캡션은 보조 정보이므로 오류 가능성이 있다.
-- 기존 5GB DB는 음식 다양성이 낮아, 다양성 기반 v2 DB가 추가되었다.
+- 기존 processed\aihub_food_image_text\v1\food_description_data DB는 음식 다양성이 낮아, 다양성 기반 v2 DB가 추가되었다.
+
+## Reproducibility
+
+The v2 generation path scripts `01`~`08` and `10`~`15` call the shared seed utility.
+
+```text
+src/utils/reproducibility.py
+DEFAULT_RANDOM_SEED = 42
+```
+
+`processed\aihub_food_image_text\v2\food_description_data` does not directly reuse the final baseline `processed\aihub_food_image_text\v1\food_description_data` DB. It uses the base/v1 processed candidate pool and embedding/FAISS artifacts produced by `01`~`08`.
