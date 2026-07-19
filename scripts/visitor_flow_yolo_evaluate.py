@@ -625,9 +625,9 @@ def main() -> None:
         ),
     )
 
-    write_csv(args.output_dir / "metrics_by_threshold.csv", metrics_rows)
-    write_csv(args.output_dir / "frame_metrics.csv", frame_rows)
-    write_csv(args.output_dir / "match_details.csv", detail_rows)
+    write_csv(args.output_dir / "threshold_metrics.csv", metrics_rows)
+    write_csv(args.output_dir / "frame_error_summary.csv", frame_rows)
+    write_csv(args.output_dir / "bbox_match_details.csv", detail_rows)
     write_prediction_candidates(
         path=args.output_dir / "prediction_candidates.csv",
         video_id=args.video.stem,
@@ -650,7 +650,7 @@ def main() -> None:
         "selection_rule": "max_f1_then_recall_then_precision_then_lower_threshold",
         "selected_threshold": selected["confidence_threshold"],
         "selected_metrics": selected,
-        "metrics_by_threshold": metrics_rows,
+        "threshold_metrics": metrics_rows,
         "limitations": [
             "This evaluates sampled-frame bbox detection, not unique visitors.",
             "Results cover one C0241 clip and do not prove generalization.",
