@@ -391,13 +391,33 @@ def build_analysis_json(
     if summary.empty:
         peak_bucket = None
         top_zone = None
+        peak_bucket_observations = 0
+        top_zone_observations = 0
     else:
-        peak_row = summary.sort_values(
+        time_totals = (
+            summary.groupby("time_bucket", as_index=False)
+            .agg(
+                total_person_detection_observations=(
+                    "person_detection_observations",
+                    "sum",
+                )
+            )
+            .sort_values(
+                ["total_person_detection_observations", "time_bucket"],
+                ascending=[False, True],
+            )
+        )
+        peak_bucket_row = time_totals.iloc[0]
+        top_zone_row = summary.sort_values(
             ["person_detection_observations", "density_score"],
             ascending=[False, False],
         ).iloc[0]
-        peak_bucket = str(peak_row["time_bucket"])
-        top_zone = str(peak_row["zone_id"])
+        peak_bucket = str(peak_bucket_row["time_bucket"])
+        peak_bucket_observations = int(
+            peak_bucket_row["total_person_detection_observations"]
+        )
+        top_zone = str(top_zone_row["zone_id"])
+        top_zone_observations = int(top_zone_row["person_detection_observations"])
 
     return {
         "analysis_id": analysis_id,
@@ -414,7 +434,9 @@ def build_analysis_json(
         "sampled_frames": int(sum(item["sampled_frames"] for item in clip_summaries)),
         "person_detection_observations": total_observations,
         "peak_time_bucket": peak_bucket,
+        "peak_time_bucket_observations": peak_bucket_observations,
         "top_zone_id": top_zone,
+        "top_zone_observations": top_zone_observations,
         "artifacts": {
             "events_parquet": str(args.output_dir / "events.parquet"),
             "summary_parquet": str(args.output_dir / "summary.parquet"),
