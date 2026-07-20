@@ -14,7 +14,7 @@ import cv2
 from ultralytics import YOLO
 
 
-# [Design Intent] L1-1C는 방문객 수를 계산하는 단계가 아니라, 같은 프레임의
+# [Design Intent] L1-3은 방문객 수를 계산하는 단계가 아니라, 같은 프레임의
 # YOLO bbox와 AIHub 정답 bbox를 비교해 탐지 모델의 오류를 정량화하는 단계다.
 
 
@@ -637,7 +637,7 @@ def main() -> None:
     )
 
     summary = {
-        "scope": "L1-1C_yolo_vs_aihub_label_evaluation",
+        "scope": "L1-3_yolo_vs_aihub_label_evaluation",
         "video": str(args.video),
         "label": str(args.label),
         "model": str(args.model),

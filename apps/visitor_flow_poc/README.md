@@ -1,6 +1,6 @@
 # Visitor Flow Streamlit POC
 
-C0241 17:09 단일 영상의 L1-1C YOLO 평가 결과를 보여주는 독립형 대시보드입니다.
+C0241 17:09 단일 영상의 L1-3 YOLO 평가 결과를 보여주는 독립형 대시보드입니다.
 
 이 화면은 실제 방문객 수나 시간대별 상권 분석 결과가 아닙니다. sampled-frame bbox 탐지 성능과 오류 preview를 팀원에게 시연하기 위한 L1 POC입니다.
 
@@ -24,17 +24,17 @@ C0241 17:09 단일 영상의 L1-1C YOLO 평가 결과를 보여주는 독립형 
 # [Design Intent] 대시보드 전용 고정 의존성을 설치합니다.
 python -m pip install -r apps/visitor_flow_poc/requirements.txt
 
-# [Design Intent] 기본 L1-1C 결과 폴더를 읽어 로컬 Streamlit 화면을 엽니다.
+# [Design Intent] 기본 L1-3 결과 폴더를 읽어 로컬 Streamlit 화면을 엽니다.
 python -m streamlit run apps/visitor_flow_poc/app.py
 ```
 
 기본 입력은 아래 로컬 산출물입니다.
 
 ```text
-outputs/visitor_flow_mvp/c0241_20210802_yolo_l1_1c/
+outputs/visitor_flow_mvp/c0241_20210802_yolo_l1_3/
 ```
 
-다른 결과 폴더를 확인하려면 화면 왼쪽의 `L1-1C 결과 폴더`를 변경합니다.
+다른 결과 폴더를 확인하려면 화면 왼쪽의 `L1-3 결과 폴더`를 변경합니다.
 
 ## 현재 화면에서 확인할 수 있는 것
 
@@ -43,4 +43,4 @@ outputs/visitor_flow_mvp/c0241_20210802_yolo_l1_1c/
 - 프레임별 AIHub reference bbox와 YOLO bbox 차이
 - 선택 threshold의 GT/TP/FP/FN preview
 
-실제 방문객 수, 중복 제거, 하루 시간대별 피크, 구역 heatmap, 마케팅 최종 추천은 후속 L1-2/L2 범위입니다.
+실제 방문객 수, 중복 제거, 하루 시간대별 피크, 구역 heatmap, 마케팅 최종 추천은 후속 L1-5/L2 범위입니다.

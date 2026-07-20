@@ -11,14 +11,14 @@ import pandas as pd
 import streamlit as st
 
 
-# [Design Intent] 이 앱은 단일 영상 L1-1C 결과를 설명하는 시연 화면이다.
+# [Design Intent] 이 앱은 단일 영상 L1-3 결과를 설명하는 시연 화면이다.
 # 실제 방문객 수, 시간대별 상권 피크, 최종 마케팅 처방으로 확대 해석하지 않는다.
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_RESULTS_DIR = (
     REPO_ROOT
     / "outputs"
     / "visitor_flow_mvp"
-    / "c0241_20210802_yolo_l1_1c"
+    / "c0241_20210802_yolo_l1_3"
 )
 
 REQUIRED_FILES = {
@@ -48,7 +48,7 @@ def validate_results_dir(results_dir: Path) -> list[Path]:
 def load_results(
     results_dir: Path,
 ) -> tuple[dict[str, Any], pd.DataFrame, pd.DataFrame]:
-    """Load the small L1-1C evaluation artifacts used by this POC."""
+    """Load the small L1-3 evaluation artifacts used by this POC."""
     summary = json.loads(
         (results_dir / REQUIRED_FILES["summary"]).read_text(encoding="utf-8")
     )
@@ -277,13 +277,13 @@ def main() -> None:
         layout="wide",
     )
     st.title("매장 앞 방문객 흐름 YOLO POC")
-    st.caption("C0241 · 2021-08-02 17:09 · 단일 180초 영상 · L1-1C 모델 검증")
+    st.caption("C0241 · 2021-08-02 17:09 · 단일 180초 영상 · L1-3 모델 검증")
     render_scope_notice()
 
     with st.sidebar:
         st.header("데이터 경로")
         results_path_text = st.text_input(
-            "L1-1C 결과 폴더",
+            "L1-3 결과 폴더",
             value=str(DEFAULT_RESULTS_DIR.relative_to(REPO_ROOT)),
         )
         st.caption("절대 경로 또는 저장소 루트 기준 상대 경로를 사용할 수 있습니다.")

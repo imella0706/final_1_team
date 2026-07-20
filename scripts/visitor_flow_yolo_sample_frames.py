@@ -1,4 +1,4 @@
-# [Design Intent] L1-1B에서 영상을 일정 간격으로 샘플링하고,
+# [Design Intent] L1-2에서 영상을 일정 간격으로 샘플링하고,
 # person-only YOLO 탐지 결과를 후속 집계가 가능한 CSV로 저장한다.
 # 이 스크립트는 실제 방문객 수, tracking, 마케팅 추천을 계산하지 않는다.
 
