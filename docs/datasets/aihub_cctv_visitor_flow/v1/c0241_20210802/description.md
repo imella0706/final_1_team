@@ -278,25 +278,25 @@ cd data/local/aihub_cctv_visitor_flow/ju_ja_validation
 
 ### 3. 압축 해제
 
-아래 `raw/`는 현재 로컬 작업 폴더 이름입니다. 팀 데이터 단계의 `raw`가 아닙니다. 표준 curated artifact에서는 영상 폴더명을 `videos/`로 사용합니다.
+다운로드한 zip은 중간 로컬 작업 폴더에 따로 풀지 않습니다. 현재 사용하는 표준 curated artifact의 `videos/`, `labels/` 경로에 바로 압축 해제합니다.
 
 ```bash
-# [Design Intent] Extract AIHub zip files into local working folders before copying selected files into the standard curated layout.
-mkdir -p data/local/aihub_cctv_visitor_flow/ju_ja_validation/raw
-mkdir -p data/local/aihub_cctv_visitor_flow/ju_ja_validation/labels
+# [Design Intent] Extract the selected AIHub source files directly into the standard curated layout without maintaining obsolete local working copies.
+mkdir -p data/curated/aihub_cctv_visitor_flow/v1/ju_ja_validation_selected/videos
+mkdir -p data/curated/aihub_cctv_visitor_flow/v1/ju_ja_validation_selected/labels
 
 python -m zipfile -e \
   "data/local/aihub_cctv_visitor_flow/ju_ja_validation/154.유동_인구_분석을_위한_CCTV_영상_데이터/01.데이터/2.Validation/원천데이터/VS3_ju-ja.zip" \
-  data/local/aihub_cctv_visitor_flow/ju_ja_validation/raw
+  data/curated/aihub_cctv_visitor_flow/v1/ju_ja_validation_selected/videos
 
 python -m zipfile -e \
   "data/local/aihub_cctv_visitor_flow/ju_ja_validation/154.유동_인구_분석을_위한_CCTV_영상_데이터/01.데이터/2.Validation/라벨링데이터_1107_add/VL3_ju-ja.zip" \
-  data/local/aihub_cctv_visitor_flow/ju_ja_validation/labels
+  data/curated/aihub_cctv_visitor_flow/v1/ju_ja_validation_selected/labels
 ```
 
 ### 4. 표준 curated 경로
 
-다운로드/압축해제한 로컬 작업 폴더에서 표준 curated 경로로 복사한 결과가 현재 v1의 기준입니다.
+압축 해제한 selected source와 여기서 선별한 C0241 sample은 아래 표준 curated 경로를 현재 v1의 기준으로 사용합니다.
 
 ```text
 data/curated/aihub_cctv_visitor_flow/v1/
