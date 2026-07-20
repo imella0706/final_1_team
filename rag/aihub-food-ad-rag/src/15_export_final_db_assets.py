@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 import pandas as pd
+from utils.reproducibility import DEFAULT_RANDOM_SEED, set_global_seed
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -140,6 +141,24 @@ def merge_metadata(metadata: pd.DataFrame, prompt_metadata: pd.DataFrame) -> pd.
     return metadata.merge(prompt_subset, on="final_image_id", how="left")
 
 
+def export_core_metadata_csvs(db_dir: Path) -> tuple[Path, Path]:
+    """Export core parquet metadata files as CSV files inside the DB folder."""
+    metadata = pd.read_parquet(db_dir / "metadata.parquet")
+    prompt_metadata = pd.read_parquet(db_dir / "prompt_metadata.parquet")
+
+    metadata_csv_path = db_dir / "metadata.csv"
+    prompt_metadata_csv_path = db_dir / "prompt_metadata.csv"
+
+    metadata.to_csv(metadata_csv_path, index=False, encoding="utf-8-sig")
+    prompt_metadata.to_csv(
+        prompt_metadata_csv_path,
+        index=False,
+        encoding="utf-8-sig",
+    )
+
+    return metadata_csv_path, prompt_metadata_csv_path
+
+
 def build_management_inventory(db_name: str, db_dir: Path) -> pd.DataFrame:
     metadata = pd.read_parquet(db_dir / "metadata.parquet")
     prompt_metadata = pd.read_parquet(db_dir / "prompt_metadata.parquet")
@@ -200,7 +219,9 @@ def build_master_summary(final_db_root: Path, db_dirs: list[Path]) -> dict[str, 
             summary["files"] = {
                 "images_dir": str(db_dir / "images"),
                 "metadata": str(db_dir / "metadata.parquet"),
+                "metadata_csv": str(db_dir / "metadata.csv"),
                 "prompt_metadata": str(db_dir / "prompt_metadata.parquet"),
+                "prompt_metadata_csv": str(db_dir / "prompt_metadata.csv"),
                 "embeddings": str(db_dir / "embeddings.npy"),
                 "faiss_index": str(db_dir / "faiss.index"),
                 "mapping": str(db_dir / "mapping.csv"),
@@ -209,6 +230,8 @@ def build_master_summary(final_db_root: Path, db_dirs: list[Path]) -> dict[str, 
                 "llm_prompt_payloads": str(db_dir / "llm_prompt_payloads.json"),
             }
         else:
+            files["metadata_csv"] = str(db_dir / "metadata.csv")
+            files["prompt_metadata_csv"] = str(db_dir / "prompt_metadata.csv")
             files["management_inventory"] = str(db_dir / "db_management_inventory.csv")
             files["llm_prompt_payloads"] = str(db_dir / "llm_prompt_payloads.json")
 
@@ -241,6 +264,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> None:
+    set_global_seed(DEFAULT_RANDOM_SEED)
     args = parse_args()
     final_db_root = Path(args.final_db_root)
 
@@ -258,6 +282,7 @@ def main() -> None:
 
     for db_dir in db_dirs:
         db_name = db_dir.name
+        metadata_csv_path, prompt_metadata_csv_path = export_core_metadata_csvs(db_dir)
         inventory = build_management_inventory(db_name, db_dir)
         payloads = build_llm_payloads(db_name, inventory)
 
@@ -267,6 +292,8 @@ def main() -> None:
         inventory.to_csv(inventory_path, index=False, encoding="utf-8-sig")
         write_json(payloads, payload_path)
 
+        print(f"[OK] {db_name}: {metadata_csv_path}")
+        print(f"[OK] {db_name}: {prompt_metadata_csv_path}")
         print(f"[OK] {db_name}: {inventory_path}")
         print(f"[OK] {db_name}: {payload_path}")
 

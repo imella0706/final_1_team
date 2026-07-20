@@ -5,8 +5,10 @@ const $ = (selector) => document.querySelector(selector);
 
 const form = $("#ad-form");
 const copyModelSelect = $("#copy-model");
+const visionModelSelect = $("#vision-model");
 const imageModelSelect = $("#image-model");
 const copyModelHelp = $("#copy-model-help");
+const visionModelHelp = $("#vision-model-help");
 const imageModelHelp = $("#image-model-help");
 const apiState = $("#api-state");
 const channelSelect = $("#channel-select");
@@ -67,15 +69,10 @@ let latestNaverBlogPasteText = "";
 
 const fallbackCopyModels = [
   {
-    id: "openai/gpt-4.1-mini",
-    name: "OpenAI GPT 4.1 Mini",
-    note: "최신 플래그십 GPT 모델. 광고 기획/카피 품질 비교용 기본 추천",
-    recommended: true,
-  },
-  {
     id: "openai/gpt-5.4-mini",
     name: "OpenAI GPT-5.4 Mini",
     note: "속도/비용 테스트용 GPT 모델. 실서비스 후보 비교에 적합",
+    recommended: true,
   },
   {
     id: "Qwen/Qwen2.5-7B-Instruct",
@@ -93,23 +90,45 @@ const fallbackImageModels = [
   {
     id: "openai/gpt-image-1-mini",
     name: "OpenAI gpt-image-1-mini",
+    provider: "OpenAI",
     note: "저비용/일반 이미지 생성용으로 우선 사용합니다.",
     recommended: true,
   },
   {
     id: "black-forest-labs/FLUX.1-schnell",
     name: "FLUX.1 Schnell",
+    provider: "Hugging Face Router",
     note: "광고 시안용 이미지 생성을 빠르게 확인할 때 적합합니다.",
   },
   {
     id: "stabilityai/stable-diffusion-xl-base-1.0",
     name: "Stable Diffusion XL Base 1.0",
+    provider: "Hugging Face Router",
     note: "범용 이미지 생성 모델입니다.",
   },
   {
     id: "prompthero/openjourney",
     name: "Openjourney",
+    provider: "Hugging Face Router",
     note: "스타일이 있는 홍보/포스터 시안에 적합합니다.",
+  },
+];
+
+const fallbackVisionModels = [
+  {
+    id: "openai/gpt-5.4-mini",
+    name: "GPT-5.4 Mini Vision",
+    provider: "OpenAI",
+    note: "기존 OpenAI 사진 분석 모델입니다.",
+    enabled: true,
+    recommended: true,
+  },
+  {
+    id: "Qwen/Qwen2.5-VL-7B-Instruct",
+    name: "Qwen2.5-VL-7B-Instruct",
+    provider: "Hugging Face",
+    note: "사진 이해, OCR, 이미지 설명과 한국어 분석에 적합합니다.",
+    enabled: true,
   },
 ];
 
@@ -989,6 +1008,7 @@ async function readForm() {
       detail: `${audienceDetail || ""}`.trim(),
     },
     image_model: data.get("imageModel"),
+    vision_model: data.get("visionModel"),
     image_width: 1024,
     image_height: 1280,
     reference_image_data_url: referenceImageDataUrl,
@@ -1023,25 +1043,86 @@ function fillSelect(select, models) {
   });
 }
 
+function fillVisionSelect(models) {
+  visionModelSelect.replaceChildren();
+  const groups = new Map();
+  models.forEach((model) => {
+    const provider = model.provider || "기타";
+    if (!groups.has(provider)) {
+      const group = document.createElement("optgroup");
+      group.label = provider;
+      groups.set(provider, group);
+      visionModelSelect.append(group);
+    }
+    const option = document.createElement("option");
+    option.value = model.id;
+    option.textContent = model.enabled === false ? `${model.name} (설정 필요)` : model.name;
+    option.dataset.note = model.note;
+    option.dataset.provider = provider;
+    option.disabled = model.enabled === false;
+    option.selected = Boolean(model.recommended && model.enabled !== false);
+    groups.get(provider).append(option);
+  });
+}
+
+function imageProviderGroup(provider) {
+  if (provider === "OpenAI" || provider === "OpenAI Responses API") {
+    return "GPT / OpenAI";
+  }
+  if (provider === "Hugging Face Router") {
+    return "Hugging Face";
+  }
+  if (provider === "Local ComfyUI") {
+    return "Local ComfyUI";
+  }
+  return provider || "기타";
+}
+
+function fillImageSelect(models) {
+  imageModelSelect.replaceChildren();
+  const groups = new Map();
+  models.forEach((model) => {
+    const groupName = imageProviderGroup(model.provider);
+    if (!groups.has(groupName)) {
+      const group = document.createElement("optgroup");
+      group.label = groupName;
+      groups.set(groupName, group);
+      imageModelSelect.append(group);
+    }
+    const option = document.createElement("option");
+    option.value = model.id;
+    option.textContent = model.name;
+    option.dataset.note = model.note;
+    option.dataset.provider = model.provider || "";
+    option.selected = Boolean(model.recommended);
+    groups.get(groupName).append(option);
+  });
+}
+
 function updateModelHelp() {
   const copyOption = copyModelSelect.selectedOptions[0];
+  const visionOption = visionModelSelect.selectedOptions[0];
   const imageOption = imageModelSelect.selectedOptions[0];
   copyModelHelp.textContent = copyOption?.dataset.note || "광고 문구 모델을 선택해 주세요.";
+  visionModelHelp.textContent = visionOption?.dataset.note || "사진 분석 모델을 선택해 주세요.";
   imageModelHelp.textContent = imageOption?.dataset.note || "이미지 생성 모델을 선택해 주세요.";
 }
 
 async function loadModels() {
   fillSelect(copyModelSelect, fallbackCopyModels);
-  fillSelect(imageModelSelect, fallbackImageModels);
+  fillVisionSelect(fallbackVisionModels);
+  fillImageSelect(fallbackImageModels);
   updateModelHelp();
 
   try {
-    const [copyModels, imageModels] = await Promise.all([
+    const [copyModels, visionModels, imageModels] = await Promise.all([
       fetchJson("/ad-copies/models"),
+      fetchJson("/ad-content/vision-models"),
       fetchJson("/ad-content/image-models"),
     ]);
     fillSelect(copyModelSelect, copyModels);
-    fillSelect(imageModelSelect, imageModels);
+    fillVisionSelect(visionModels);
+    fillImageSelect(imageModels);
     updateModelHelp();
     apiState.textContent = "API 연결됨";
     apiState.className = "online";
@@ -1049,6 +1130,7 @@ async function loadModels() {
     apiState.textContent = "API 연결 실패, 기본 목록 사용";
     apiState.className = "offline";
     copyModelHelp.textContent = error.message;
+    visionModelHelp.textContent = error.message;
     imageModelHelp.textContent = error.message;
   }
 }
@@ -1283,6 +1365,7 @@ form.addEventListener("submit", async (event) => {
 });
 
 copyModelSelect.addEventListener("change", updateModelHelp);
+visionModelSelect.addEventListener("change", updateModelHelp);
 imageModelSelect.addEventListener("change", updateModelHelp);
 referenceImageInput?.addEventListener("change", updateReferencePreview);
 referenceCutoutToggle?.addEventListener("change", updateReferencePreview);

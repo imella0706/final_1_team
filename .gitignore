@@ -45,3 +45,7 @@ outputs
 /services/cosyvoice/.runtime/
 /services/cosyvoice/.venv/
 /services/cosyvoice/voices/*.wav
+
+# Airflow local runtime artifacts
+airflow/logs/
+airflow/mock_gcs/logs/

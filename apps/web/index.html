@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content="BrandMate 광고 문구와 이미지 생성 모델 통합 화면" />
     <title>BrandMate Ad Content Studio</title>
-    <link rel="stylesheet" href="./styles.css?v=voice-ads-20260715" />
+    <link rel="stylesheet" href="./styles.css?v=voice-vision-20260720" />
   </head>
   <body>
     <header class="topbar">
@@ -70,6 +70,11 @@
                 <label for="copy-model">광고 문구 모델 <b>필수</b></label>
                 <select id="copy-model" name="copyModel"></select>
                 <small id="copy-model-help">모델 정보를 불러오는 중입니다.</small>
+              </div>
+              <div class="model-field vision">
+                <label for="vision-model">사진 분석 모델 <b>필수</b></label>
+                <select id="vision-model" name="visionModel"></select>
+                <small id="vision-model-help">Vision 모델 정보를 불러오는 중입니다.</small>
               </div>
               <div class="model-field image">
                 <label for="image-model">이미지 생성 모델 <b>필수</b></label>
@@ -172,7 +177,7 @@
             </fieldset>
 
             <div class="field">
-              <label for="business-name">상호명 <b>필수</b></label>
+              <label for="business-name">가게명 <b>필수</b></label>
               <input id="business-name" name="businessName" value="오후의 조각" maxlength="100" required />
             </div>
 
@@ -180,12 +185,8 @@
               <label>상품과 가격 <b>필수</b></label>
               <div class="product-list" id="product-list">
                 <div class="product-row">
-                  <input name="productName" value="수제 딸기 티라미수" placeholder="상품명" required />
-                  <input name="productPrice" value="6,500원" placeholder="가격" maxlength="80" />
-                </div>
-                <div class="product-row">
-                  <input name="productName" value="피치에이드" placeholder="상품명" />
-                  <input name="productPrice" value="5,000원" placeholder="가격" maxlength="80" />
+                  <input name="productName" placeholder="상품명" required />
+                  <input name="productPrice" placeholder="가격" maxlength="80" />
                 </div>
               </div>
               <button class="text-button add-product-button" id="add-product-button" type="button">상품 추가</button>
@@ -415,6 +416,6 @@
       </div>
     </main>
 
-    <script src="./app.js?v=voice-channel-format-20260715"></script>
+    <script src="./app.js?v=voice-provider-groups-20260720"></script>
   </body>
 </html>

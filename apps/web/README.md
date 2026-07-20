@@ -5,7 +5,7 @@
 
 ## 확인할 수 있는 것
 
-- 업종, 상황, 타겟, 톤, 상호명, 상품, 금칙어 입력
+- 업종, 상황, 타겟, 톤, 가게명, 상품, 금칙어 입력
 - Qwen, Llama, Mistral, Gemma, Phi, SOLAR 중 광고 문구 모델 선택
 - FLUX.1 Schnell, SDXL, Openjourney 등 이미지 생성 모델 선택
 - 참고 이미지 업로드, 미리보기, 제품만 추출 옵션

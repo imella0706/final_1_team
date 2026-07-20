@@ -469,7 +469,9 @@ def build_final_summary(
         "files": {
             "images_dir": str(output_dir / "images"),
             "metadata": str(output_dir / "metadata.parquet"),
+            "metadata_csv": str(output_dir / "metadata.csv"),
             "prompt_metadata": str(output_dir / "prompt_metadata.parquet"),
+            "prompt_metadata_csv": str(output_dir / "prompt_metadata.csv"),
             "embeddings": str(output_dir / "embeddings.npy"),
             "faiss_index": str(output_dir / "faiss.index"),
             "mapping": str(output_dir / "mapping.csv"),
@@ -541,14 +543,18 @@ def create_final_db_version(
     )
 
     metadata_output = output_dir / "metadata.parquet"
+    metadata_csv_output = output_dir / "metadata.csv"
     prompt_metadata_output = output_dir / "prompt_metadata.parquet"
+    prompt_metadata_csv_output = output_dir / "prompt_metadata.csv"
     embeddings_output = output_dir / "embeddings.npy"
     faiss_output = output_dir / "faiss.index"
     mapping_output = output_dir / "mapping.csv"
     summary_output = output_dir / "summary.json"
 
     final_metadata_df.to_parquet(metadata_output, index=False)
+    save_csv(final_metadata_df, metadata_csv_output)
     prompt_metadata_df.to_parquet(prompt_metadata_output, index=False)
+    save_csv(prompt_metadata_df, prompt_metadata_csv_output)
     np.save(embeddings_output, normalize_embeddings(selected_embeddings))
     faiss.write_index(faiss_index, str(faiss_output))
     save_csv(mapping_df, mapping_output)

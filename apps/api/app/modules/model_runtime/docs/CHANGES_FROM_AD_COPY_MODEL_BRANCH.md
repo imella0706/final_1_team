@@ -35,7 +35,7 @@ POST /api/v1/ad-content/generate
 역할:
 
 - 광고 문구 생성
-- Product Visualizer 실행
+- Product Visualizer fallback 실행
 - 이미지 prompt 생성
 - 이미지 모델 호출
 - 최종 광고 콘텐츠 반환
@@ -84,9 +84,13 @@ apps/api/app/extensions/ad_content/product_visualizer.py
 
 역할:
 
-- 상품명을 이미지 모델이 이해할 수 있는 시각 정보 JSON으로 변환
+- 현재 요청 경로에서는 fallback으로 상품명을 기본 시각 정보 JSON으로 변환
 - 사용자가 입력한 상품이 다른 상품으로 대체되는 문제 완화
 - 음식, 음료, 물건, 패키지, 소품 등 다양한 상품에 대응
+
+현재 제한:
+
+- `ProductVisualizer.visualize()`가 즉시 fallback을 반환하므로 LLM 기반 상품 시각 분석은 실행되지 않습니다.
 
 ### 5. Product Visual Database
 
@@ -110,6 +114,10 @@ apps/api/app/extensions/ad_content/reference_analyzer.py
 BRANDMATE_REFERENCE_SEARCH_ENABLED=false
 BRANDMATE_REFERENCE_SOURCE=wikimedia
 ```
+
+현재 제한:
+
+- 위 DB/search/analyzer 코드는 존재하지만 Product Visualizer 조기 fallback 때문에 일반 `/api/v1/ad-content/generate` 요청에서는 실행되지 않습니다.
 
 ### 6. Prompt Normalizer
 

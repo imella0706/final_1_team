@@ -137,7 +137,7 @@ SEO 검색 키워드: {seo_keywords}
 글 길이: {blog_length}
 업종: {business_type}
 상황: {situation}
-상호명: {request.business_name}
+가게명: {request.business_name}
 상품명: {products}
 상품/가격 정보: {product_price}
 특징/판매 포인트: {features}
@@ -169,7 +169,7 @@ SEO 검색 키워드: {seo_keywords}
 5. 가격, 지역, 상권, 이벤트, 예약 가능 여부처럼 고객에게 필요한 사실 정보는 자연스러운 문장으로 반영하세요.
 6. 사용자가 입력하지 않은 메뉴, 혜택, 영업시간, 주차, 예약 정보를 만들지 마세요.
 7. 블로그 글은 제목, 대표 이미지, 도입부, 매장/상품 소개, 사진별 본문, 방문 안내, 마무리, 해시태그 흐름으로 작성하세요.
-8. SEO를 위해 지역명, 상호명, 대표 상품명을 제목과 본문에 자연스럽게 포함하세요.
+8. SEO를 위해 지역명, 가게명, 대표 상품명을 제목과 본문에 자연스럽게 포함하세요.
 9. blog_sections의 각 항목은 title, photo, body 키를 가진 객체로 작성하세요.
 10. publish_body에는 사진 위치 표시를 포함하세요. 예: "[사진 3 삽입: 대표 메뉴]".
 11. 블로그 목적에 따라 글 구조를 바꾸세요.
@@ -342,7 +342,7 @@ JSON의 키 이름과 enum 값은 아래 스키마에 있는 영어 값을 정�
 {blog_photo_notes}
 톤앤매너: {tone}
 마케팅 채널: {channel}
-상호명: {request.business_name}
+가게명: {request.business_name}
 상품명: {products}
 제품가격: {product_price}
 특징/판매 포인트: {features}
@@ -418,7 +418,7 @@ channel_recommendation을 작성하세요.
 - Store Poster: 매장 포스터 형식. publish_title은 포스터 제목, publish_body는 짧은 안내 문구, promotion_template은 상단 헤드라인/중앙 상품/하단 CTA 양식으로 작성하세요.
 image_insert_guide에는 생성 이미지와 글을 어디에 넣으면 좋은지 구체적으로 적으세요.
 
-이미지용 overlay_headline은 상품 설명이나 CTA를 넣지 않은 짧은 맥락 문구로 작성하세요. 지역, 업종, 상호명 중심으로 20자 안팎을 권장하며, 상품명과 상세 소개는 caption 또는 publish_title에 작성하세요.
+이미지용 overlay_headline은 상품 설명이나 CTA를 넣지 않은 짧은 맥락 문구로 작성하세요. 지역, 업종, 가게명 중심으로 20자 안팎을 권장하며, 상품명과 상세 소개는 caption 또는 publish_title에 작성하세요.
 
 Instagram 캡션 작성 규칙:
 - 내부 데이터 라벨을 그대로 쓰지 마세요.

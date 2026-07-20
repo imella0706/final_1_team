@@ -1,0 +1,10 @@
+﻿article_id,meme_id,meme_name,parent_section,position,reason
+1929,1929_3,요즘 뜨는 해외 숏폼 밈 2,,3,used_as_parent_section|ends_with_standalone_count
+1798,1798_4,반려동물을 가리키는 신조어 2,,4,ends_with_standalone_count
+1774,1774_4,스포츠 팬덤이 자주 사용하는 밈 2,,4,ends_with_standalone_count
+1774,1774_5,최근 릴스에서 자주 보이는 밈 2,,5,ends_with_standalone_count
+1723,1723_2,Z세대가 자주 쓰는 초성 표현 3,,2,ends_with_standalone_count
+1655,1655_1,공룡 붐은 왔다! Z세대가 자주 쓰는 공룡 밈 2,,1,ends_with_standalone_count
+1589,1589_2,2,,2,number_only
+1379,1379_2,릴스 챌린지로 화제가 된 밈 3,,2,ends_with_standalone_count
+1379,1379_5,아이돌 노래 가사 밈 2,,5,ends_with_standalone_count

@@ -7,11 +7,14 @@
 ```text
 AdContentRequest
 -> generate_ad_copy
--> Product Visualizer
+-> Product Visualizer fallback
 -> Prompt Normalizer
 -> Image Generation Model
+-> optional Image Validator
 -> AdContentResponse
 ```
+
+주의: `product_visualizer.py`에는 LLM 기반 상품 시각 분석, Product Visual DB, reference analyzer 연동 코드가 있지만 현재 `visualize()`가 먼저 fallback을 반환합니다. 따라서 일반 통합 요청에서 실제로 쓰이는 것은 입력 상품명을 기반으로 만든 단순 ProductVisualization입니다.
 
 기존 광고 문구 API를 유지하면서 `/api/v1/ad-content/generate` endpoint를 제공합니다.
 
@@ -30,9 +33,10 @@ router.py
 광고 콘텐츠 통합 endpoint를 정의합니다.
 
 - 광고 문구 생성
-- Product Visualizer 호출
+- Product Visualizer fallback 호출
 - 이미지 prompt/negative prompt 생성
 - 이미지 모델 호출
+- 옵션 기반 이미지 검증
 - 최종 응답 조립
 
 ```text
@@ -51,7 +55,7 @@ models.py
 image_service.py
 ```
 
-Hugging Face Inference Router 스타일의 이미지 생성 API를 호출합니다.
+Hugging Face 공식 클라이언트로 현재 지원되는 이미지 공급자를 자동 선택해 호출합니다.
 
 ```text
 image_prompt.py
@@ -69,7 +73,7 @@ Product Visualizer 출력과 visual brief를 image prompt builder에 연결합�
 product_visualizer.py
 ```
 
-사용자 상품명, 특징, visual brief를 바탕으로 상품별 시각 정보 JSON을 생성합니다. Product Visual Database가 켜져 있으면 DB 캐시와 reference analyzer를 먼저 사용합니다.
+사용자 상품명, 특징, visual brief를 바탕으로 상품별 시각 정보 JSON을 생성하는 모듈입니다. 현재 런타임에서는 즉시 fallback을 반환하므로 DB 캐시와 reference analyzer 경로는 실행되지 않습니다.
 
 ```text
 reference_search.py
@@ -93,7 +97,7 @@ SQLite 기반 Product Visual DB입니다. 이미지 파일이 아니라 시각 �
 image_validator.py
 ```
 
-이미지 검증 hook입니다. 현재는 옵션 구조이며, 추후 CLIP 같은 이미지-텍스트 유사도 모델을 연결할 수 있습니다.
+이미지 검증 hook입니다. `BRANDMATE_IMAGE_VALIDATION_ENABLED=true`이고 OpenAI-compatible vision API key가 있을 때 생성 이미지를 VLM으로 검사합니다. 기본값은 false라서 일반 실행에서는 검증을 건너뜁니다.
 
 ## 환경 변수
 
@@ -103,6 +107,8 @@ BRANDMATE_IMAGE_PROVIDER=comfyui
 BRANDMATE_COMFYUI_BASE_URL=http://127.0.0.1:8188
 BRANDMATE_IMAGE_PROMPT_TEMPLATE=generic
 
+# 현재 통합 요청 경로에서는 product_visualizer.py 조기 fallback 때문에
+# reference search가 실행되지 않는다. 활성화하려면 visualizer 로직 수정이 먼저 필요하다.
 BRANDMATE_REFERENCE_SEARCH_ENABLED=false
 BRANDMATE_REFERENCE_SOURCE=wikimedia
 BRANDMATE_REFERENCE_MAX_RESULTS=3
@@ -130,9 +136,15 @@ Hugging Face Router는 외부 유료 API 경로이므로 현재 운영 기본값
 ```env
 # [Design Intent] 외부 API 테스트는 운영 기본값이 아니라 임시 우회 경로로만 둔다.
 BRANDMATE_IMAGE_PROVIDER=huggingface
-BRANDMATE_IMAGE_BASE_URL=https://router.huggingface.co/hf-inference
+# auto는 모델을 지원하는 현재 공급자를 Hugging Face Router가 선택합니다.
+BRANDMATE_HF_IMAGE_PROVIDER=auto
+BRANDMATE_HF_IMAGE_EDIT_MODEL=black-forest-labs/FLUX.1-Kontext-dev
 BRANDMATE_LLM_API_KEY=...
 ```
+
+참고 사진이 없는 Hugging Face 요청은 선택한 text-to-image 모델을 사용합니다. 참고 사진이
+있으면 사진 원본 바이트를 `FLUX.1-Kontext-dev` image-to-image 요청에 직접 전달하며, 실제
+사용된 편집 모델은 응답의 `image.model`과 artifact 메타데이터에 기록됩니다.
 
 현재 비전 모델 평가코드는 터미널 생성 기준이며, 웹요청 중 자동으로 실행되지 않습니다. 평가지표, `report.json`, `report.md`, 평가용 이미지 저장은 터미널에서 `scriptsevaluate_vision_models`를 실행했을 때만 생성됩니다. 웹 UI에는 기존처럼 광고 문구 생성 시간과 이미지 생성 시간만 표시됩니다.
 

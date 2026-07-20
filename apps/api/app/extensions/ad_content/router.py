@@ -16,6 +16,11 @@ from app.extensions.ad_content.image_service import (
 )
 from app.extensions.ad_content.image_prompt import describe_blog_images, describe_reference_image
 from app.extensions.ad_content.models import list_image_model_options
+from app.extensions.ad_content.vision_models import list_vision_model_options
+from app.extensions.ad_content.vision_service import (
+    VisionModelNotConfiguredError,
+    VisionModelProviderError,
+)
 from app.extensions.ad_content.product_visualizer import visualize_products
 from app.extensions.ad_content.prompt_normalizer import (
     compact_regenerated_prompt,
@@ -30,6 +35,7 @@ from app.extensions.ad_content.schemas import (
     AdImageResponse,
     AudioProviderStatus,
     ImageModelOption,
+    VisionModelOption,
 )
 from app.modules.ad_copy.service import (
     InvalidModelOutputError,
@@ -95,6 +101,11 @@ async def audio_providers() -> list[AudioProviderStatus]:
     return await list_audio_provider_statuses()
 
 
+@router.get("/vision-models", response_model=list[VisionModelOption])
+async def vision_models() -> list[VisionModelOption]:
+    return list_vision_model_options()
+
+
 @router.post("/images/generate", response_model=AdImageResponse)
 async def generate_image(request: AdImageRequest) -> AdImageResponse:
     try:
@@ -122,6 +133,7 @@ async def generate_content(request: AdContentRequest) -> AdContentResponse:
             blog_photo_notes, blog_vision_prompt = await describe_blog_images(
                 request.blog_images,
                 copy_request,
+                request.vision_model,
             )
             copy_request = copy_request.model_copy(
                 update={"blog_photo_notes": blog_photo_notes}
@@ -149,6 +161,7 @@ async def generate_content(request: AdContentRequest) -> AdContentResponse:
             reference_image_context, vision_prompt = await describe_reference_image(
                 request.reference_image_data_url,
                 copy_request,
+                request.vision_model,
             )
             image_prompt, negative_prompt = normalize_image_prompt(
                 copy,
@@ -166,7 +179,11 @@ async def generate_content(request: AdContentRequest) -> AdContentResponse:
                     height=request.image_height,
                 )
             )
-            image_validation = await validate_generated_image(image, copy_request)
+            image_validation = await validate_generated_image(
+                image,
+                copy_request,
+                request.vision_model,
+            )
             regeneration_count = 0
             if not image_validation.valid and image_validation.regeneration_prompt_suffix:
                 regeneration_count = 1
@@ -183,7 +200,11 @@ async def generate_content(request: AdContentRequest) -> AdContentResponse:
                         height=request.image_height,
                     )
                 )
-                image_validation = await validate_generated_image(image, copy_request)
+                image_validation = await validate_generated_image(
+                    image,
+                    copy_request,
+                    request.vision_model,
+                )
             image_valid = image_validation.valid
             image_warnings = image_validation.warnings
             visual_brief_payload = copy.visual_brief.model_dump(mode="json")
@@ -198,7 +219,17 @@ async def generate_content(request: AdContentRequest) -> AdContentResponse:
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=str(error),
         ) from error
-    except (ModelProviderError, InvalidModelOutputError, ImageModelProviderError) as error:
+    except VisionModelNotConfiguredError as error:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=str(error),
+        ) from error
+    except (
+        ModelProviderError,
+        InvalidModelOutputError,
+        ImageModelProviderError,
+        VisionModelProviderError,
+    ) as error:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=str(error),
@@ -232,6 +263,7 @@ async def generate_content(request: AdContentRequest) -> AdContentResponse:
         },
         models={
             "copy_model": copy.model,
+            "vision_model": request.vision_model.value,
             "image_model": image.model,
             "image_provider": settings.image_provider,
             "image_prompt_template": settings.image_prompt_template,

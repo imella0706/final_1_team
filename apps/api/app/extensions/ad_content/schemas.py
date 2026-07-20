@@ -16,6 +16,26 @@ class ImageModel(StrEnum):
     OPENJOURNEY = "prompthero/openjourney"
 
 
+class VisionModel(StrEnum):
+    OPENAI_GPT_5_4_MINI = "openai/gpt-5.4-mini"
+    QWEN_2_5_VL_7B = "Qwen/Qwen2.5-VL-7B-Instruct"
+    QWEN_3_VL_2B = "Qwen/Qwen3-VL-2B-Instruct"
+    QWEN_3_VL_4B = "Qwen/Qwen3-VL-4B-Instruct"
+    QWEN_3_VL_8B = "Qwen/Qwen3-VL-8B-Instruct"
+    INTERNVL_3_2B = "OpenGVLab/InternVL3-2B"
+    INTERNVL_3_8B = "OpenGVLab/InternVL3-8B"
+
+
+class VisionModelOption(BaseModel):
+    id: VisionModel
+    name: str
+    provider: str
+    availability: str
+    enabled: bool = True
+    recommended: bool = False
+    note: str
+
+
 class ImageModelAvailability(StrEnum):
     HOSTED = "hosted"
     GATED = "gated"
@@ -88,6 +108,7 @@ class AdContentRequest(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     copy_request: AdCopyRequest = Field(alias="copy")
+    vision_model: VisionModel = VisionModel.OPENAI_GPT_5_4_MINI
     image_model: ImageModel = ImageModel.OPENAI_GPT_IMAGE_1_MINI
     image_width: int = Field(default=1024, ge=512, le=1536)
     image_height: int = Field(default=1280, ge=512, le=1536)

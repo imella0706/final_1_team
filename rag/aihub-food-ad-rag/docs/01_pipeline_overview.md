@@ -14,7 +14,7 @@
 6. 캡션/조명/구도 태깅
 7. CLIP 임베딩 생성
 8. FAISS 인덱스 생성
-9. 5GB / 10GB / 20GB 최종 DB 생성
+9. processed\aihub_food_image_text\v1\food_description_data / 10GB / 20GB 최종 DB 생성
 
 ## 카테고리 매핑 단계
 
@@ -53,14 +53,14 @@ data/
 ```text
 data/
 └── final_db/
-    ├── 5gb/
+    ├── processed\aihub_food_image_text\v1\food_description_data/
     ├── 10gb/
     └── 20gb/
 ```
 
 | Version | Purpose |
 | ------- | ------- |
-| `5GB` | 빠른 프로토타입 및 개발 |
+| `processed\aihub_food_image_text\v1\food_description_data` | 빠른 프로토타입 및 개발 |
 | `10GB` | 검증 및 발표 |
 | `20GB` | 서비스 테스트 및 최종 데이터베이스 |
 
@@ -91,3 +91,8 @@ summary.json
 | `embeddings.npy` | OpenCLIP 이미지 임베딩 벡터 |
 | `faiss.index` | FAISS 벡터 검색 인덱스 |
 | `summary.json` | 데이터셋 통계 및 생성 결과 요약 |
+---
+
+## Reproducibility
+
+The v2 generation path scripts `01`~`08` and `10`~`15` call `src/utils/reproducibility.py` and use seed `42`.

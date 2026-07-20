@@ -1,11 +1,10 @@
 import json
 
-import httpx
-
 from app.core.config import settings
 from app.extensions.ad_content.product_visualizer import ProductVisual, ProductVisualization
 from app.modules.ad_copy.schemas import AdCopyRequest, AdCopyResponse
-from app.extensions.ad_content.schemas import BlogImageInput
+from app.extensions.ad_content.schemas import BlogImageInput, VisionModel
+from app.extensions.ad_content.vision_service import request_vision_completion
 
 
 BUSINESS_TYPE_LABELS = {
@@ -118,21 +117,14 @@ def _label(mapping: dict[str, str], value: str) -> str:
     return mapping.get(value, value.replace("_", " "))
 
 
-def _secret_value(value) -> str | None:
-    if value is None:
-        return None
-    if hasattr(value, "get_secret_value"):
-        return value.get_secret_value() or None
-    return str(value) or None
-
-
 async def describe_reference_image(
     reference_image_data_url: str | None,
     copy_request: AdCopyRequest,
+    vision_model: VisionModel,
 ) -> tuple[str | None, dict[str, object]]:
     prompt_text = build_reference_image_prompt(copy_request)
     prompt_record: dict[str, object] = {
-        "model": settings.image_validator_model_name or settings.openai_vision_model,
+        "model": vision_model.value,
         "messages": [
             {
                 "role": "user",
@@ -149,44 +141,17 @@ async def describe_reference_image(
     if not reference_image_data_url:
         return None, prompt_record
 
-    api_key = _secret_value(settings.openai_api_key)
-    if not api_key:
-        return None, prompt_record
-
-    payload = {
-        "model": prompt_record["model"],
-        "messages": [
-            {
-                "role": "user",
-                "content": [
-                    {"type": "text", "text": prompt_text},
-                    {"type": "image_url", "image_url": {"url": reference_image_data_url}},
-                ],
-            }
+    content, resolved = await request_vision_completion(
+        vision_model,
+        [
+            {"type": "text", "text": prompt_text},
+            {"type": "image_url", "image_url": {"url": reference_image_data_url}},
         ],
-        "temperature": 0,
-        "max_completion_tokens": 400,
-    }
-
-    try:
-        async with httpx.AsyncClient(timeout=settings.llm_timeout_seconds) as client:
-            response = await client.post(
-                f"{settings.openai_base_url.rstrip('/')}/chat/completions",
-                headers={
-                    "Authorization": f"Bearer {api_key}",
-                    "Content-Type": "application/json",
-                },
-                json=payload,
-            )
-            response.raise_for_status()
-            body = response.json()
-            content = body["choices"][0]["message"]["content"]
-            if isinstance(content, str):
-                return content.strip(), prompt_record
-    except (httpx.HTTPError, KeyError, IndexError, TypeError, ValueError):
-        return None, prompt_record
-
-    return None, prompt_record
+        max_tokens=400,
+    )
+    prompt_record["routed_model"] = resolved.routed_model
+    prompt_record["provider"] = resolved.provider
+    return content.strip(), prompt_record
 
 
 def _parse_json_object(value: str) -> dict[str, object] | None:
@@ -248,11 +213,12 @@ def _format_blog_photo_notes(metadata: dict[str, object]) -> list[str]:
 async def describe_blog_images(
     blog_images: list[BlogImageInput],
     copy_request: AdCopyRequest,
+    vision_model: VisionModel,
 ) -> tuple[list[str], dict[str, object]]:
     product_names = ", ".join(copy_request.product_names)
     prompt_text = (
         "업로드된 여러 사진을 네이버 블로그 글 작성용 자료로 분석해 주세요.\n"
-        f"상호명: {copy_request.business_name}\n"
+        f"가게명: {copy_request.business_name}\n"
         f"상품명: {product_names}\n"
         f"블로그 글 목적: {copy_request.blog_purpose or 'None'}\n"
         f"강조할 내용: {', '.join(copy_request.blog_emphasis) or 'None'}\n"
@@ -292,46 +258,26 @@ async def describe_blog_images(
         redacted_content.append({"type": "image_url", "image_url": {"url": "[blog_image_data_url]"}})
 
     prompt_record: dict[str, object] = {
-        "model": settings.image_validator_model_name or settings.openai_vision_model,
+        "model": vision_model.value,
         "messages": [{"role": "user", "content": redacted_content}],
     }
     if not blog_images:
         return [], prompt_record
 
-    api_key = _secret_value(settings.openai_api_key)
-    if not api_key:
-        return [], prompt_record
-
-    try:
-        async with httpx.AsyncClient(timeout=settings.llm_timeout_seconds) as client:
-            response = await client.post(
-                f"{settings.openai_base_url.rstrip('/')}/chat/completions",
-                headers={
-                    "Authorization": f"Bearer {api_key}",
-                    "Content-Type": "application/json",
-                },
-                json={
-                    "model": prompt_record["model"],
-                    "messages": [{"role": "user", "content": content}],
-                    "temperature": 0,
-                    "max_completion_tokens": 1200,
-                },
-            )
-            response.raise_for_status()
-            body = response.json()
-            result = body["choices"][0]["message"]["content"]
-            if isinstance(result, str):
-                parsed = _parse_json_object(result)
-                if isinstance(parsed, dict):
-                    notes = _format_blog_photo_notes(parsed)
-                    prompt_record["structured_result"] = parsed
-                    return notes[:10], prompt_record
-                notes = [line.strip("- ").strip() for line in result.splitlines() if line.strip()]
-                return notes[:10], prompt_record
-    except (httpx.HTTPError, KeyError, IndexError, TypeError, ValueError):
-        return [], prompt_record
-
-    return [], prompt_record
+    result, resolved = await request_vision_completion(
+        vision_model,
+        content,
+        max_tokens=1200,
+    )
+    prompt_record["routed_model"] = resolved.routed_model
+    prompt_record["provider"] = resolved.provider
+    parsed = _parse_json_object(result)
+    if isinstance(parsed, dict):
+        notes = _format_blog_photo_notes(parsed)
+        prompt_record["structured_result"] = parsed
+        return notes[:10], prompt_record
+    notes = [line.strip("- ").strip() for line in result.splitlines() if line.strip()]
+    return notes[:10], prompt_record
 
 
 def build_reference_image_prompt(copy_request: AdCopyRequest) -> str:

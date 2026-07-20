@@ -22,9 +22,12 @@ IMAGE_MODEL_CATALOG = (
     ImageModelSpec(
         id=ImageModel.FLUX_SCHNELL,
         name="FLUX.1 Schnell",
-        provider="Hugging Face Inference",
+        provider="Hugging Face Router",
         availability=ImageModelAvailability.HOSTED,
-        note="Fast prompt-following model for polished ad visual drafts.",
+        note=(
+            "사진이 없으면 FLUX.1 Schnell로 생성하고, 참고 사진이 있으면 "
+            "FLUX.1 Kontext image-to-image로 원본 상품을 반영합니다."
+        ),
     ),
     ImageModelSpec(
         id=ImageModel.OPENAI_GPT_IMAGE_1_MINI,
@@ -76,14 +79,14 @@ IMAGE_MODEL_CATALOG = (
     ImageModelSpec(
         id=ImageModel.SDXL_BASE,
         name="Stable Diffusion XL Base 1.0",
-        provider="Hugging Face Inference",
+        provider="Hugging Face Router",
         availability=ImageModelAvailability.HOSTED,
         note="General-purpose image generation model with broad style coverage.",
     ),
     ImageModelSpec(
         id=ImageModel.OPENJOURNEY,
         name="Openjourney",
-        provider="Hugging Face Inference",
+        provider="Hugging Face Router",
         availability=ImageModelAvailability.HOSTED,
         note="Stylized promotional visuals and editorial poster concepts.",
     ),

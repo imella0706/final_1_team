@@ -1,0 +1,276 @@
+{
+  "dataset_name": "aihub_food_image_text",
+  "version": "v1",
+  "dataset_stage": "processed",
+  "status": "baseline",
+  "owner": "Giwoo",
+  "created_at": "2026-07-13",
+  "source": {
+    "provider": "AIHub",
+    "source_dataset_id": "71564",
+    "source_name": "비전영역 음식이미지 및 정보소개 텍스트 데이터",
+    "source_url": "https://aihub.or.kr/aihubdata/data/view.do?dataSetSn=71564",
+    "source_split": "validation",
+    "raw_uploaded_to_gcs": false,
+    "annotation_preserved": false,
+    "builder": {
+      "primary": "㈜네스",
+      "participants": [
+        "㈜씨엔에이아이",
+        "㈜어메이징푸드솔루션"
+      ]
+    }
+  },
+  "curation": {
+    "selected_count": 952,
+    "target_size_gb": 5.0,
+    "actual_size_gb": 4.997950611636043,
+    "actual_size_bytes": 5366508606,
+    "selection_policy": "Selected from AIHub validation split until approximately 5GB after quality filtering.",
+    "category_balanced": false,
+    "quality_filters": [
+      "blur score filtering",
+      "low-resolution image filtering",
+      "pHash duplicate filtering",
+      "CLIP similarity duplicate filtering"
+    ],
+    "validation_checks": [
+      "image existence/open validation"
+    ],
+    "path_mapping_available": true,
+    "separate_curated_artifact_exists": false,
+    "notes": "This v1 manifest describes only this baseline processed retrieval artifact. Selection intent and exact policy require dataset owner review."
+  },
+  "processing": {
+    "input_dataset": "AIHub validation selected subset",
+    "artifact_name": "food_description_data",
+    "target_use": "retrieval",
+    "preprocessing_steps": [
+      "metadata normalization",
+      "category mapping",
+      "image quality filtering",
+      "duplicate removal",
+      "caption generation or caption assignment",
+      "CLIP embedding generation",
+      "FAISS index generation",
+      "CSV and Parquet export",
+      "DB management inventory CSV export",
+      "LLM prompt payload JSON export"
+    ],
+    "output_files": [
+      "images/",
+      "metadata.csv",
+      "metadata.parquet",
+      "prompt_metadata.csv",
+      "prompt_metadata.parquet",
+      "embeddings.npy",
+      "faiss.index",
+      "mapping.csv",
+      "summary.json",
+      "db_management_inventory.csv",
+      "llm_prompt_payloads.json"
+    ]
+  },
+  "image_processing": {
+    "image_count": 952,
+    "image_size_bytes": 5366508606,
+    "image_size_gb": 4.997950611636043,
+    "image_directory": "images/",
+    "original_image_path_column": "image_path",
+    "final_image_path_column": "final_image_path"
+  },
+  "category_mapping": {
+    "business_category_column": "business_category",
+    "product_group_column": "product_group",
+    "mapping_rule": "Rule-based mapping using configs/category_map.yaml and src/03_build_category_groups.py. Keyword rules are built from service_category_schema.business_categories.*.product_groups.*.keywords, sorted by keyword length in descending order, and matched against the combined product_name, original_food_name, and food_code text. The script then applies food-name based manual override and fallback-reduction rules, and remaining unmapped rows fall back to restaurant / delivery_food according to unmapped_policy.",
+    "business_category_count": {
+      "restaurant": 276,
+      "dessert": 175,
+      "bakery": 174,
+      "cafe": 165,
+      "pub": 162
+    },
+    "product_group_count": {
+      "chicken": 272,
+      "cake": 175,
+      "bread": 164,
+      "fried_side": 127,
+      "brunch": 124,
+      "ade_juice": 40,
+      "grilled_side": 35,
+      "bagel": 9,
+      "japanese_food": 2,
+      "delivery_food": 1,
+      "pizza": 1,
+      "tea": 1,
+      "pastry": 1
+    }
+  },
+  "embedding": {
+    "enabled": true,
+    "model": "OpenCLIP ViT-B-32 pretrained=openai",
+    "file": "embeddings.npy",
+    "shape": [
+      952,
+      512
+    ],
+    "normalized": true
+  },
+  "retrieval": {
+    "enabled": true,
+    "method": "embedding_search",
+    "index_file": "faiss.index",
+    "mapping_file": "mapping.csv",
+    "faiss_index_type": "IndexFlatIP",
+    "similarity_metric": "inner_product_on_normalized_embeddings"
+  },
+  "llm_prompt_payload": {
+    "enabled": true,
+    "file": "llm_prompt_payloads.json",
+    "record_count": 952,
+    "top_level_type": "list",
+    "top_level_keys": [
+      "database_name",
+      "reference",
+      "prompt_context"
+    ]
+  },
+  "statistics": {
+    "image_file_count": 952,
+    "record_count": 952,
+    "embedding_shape": [
+      952,
+      512
+    ],
+    "unique_food_name_count": 88
+  },
+  "schema": {
+    "columns": {
+      "metadata.csv": [
+        "final_image_id",
+        "embedding_id",
+        "source_row_index",
+        "image_path",
+        "original_food_name",
+        "product_name",
+        "food_code",
+        "business_category",
+        "product_group",
+        "caption",
+        "prompt_keywords",
+        "text_for_embedding",
+        "embedding_array_index",
+        "final_image_size_bytes",
+        "final_image_exists",
+        "final_image_file_name",
+        "final_image_path"
+      ],
+      "prompt_metadata.csv": [
+        "final_image_id",
+        "final_image_path",
+        "business_category",
+        "product_group",
+        "product_name",
+        "original_food_name",
+        "food_code",
+        "caption",
+        "prompt_keywords",
+        "text_for_embedding",
+        "retrieval_text",
+        "ad_prompt_hint"
+      ],
+      "mapping.csv": [
+        "faiss_index_id",
+        "final_image_id",
+        "embedding_id",
+        "embedding_array_index",
+        "final_image_path",
+        "final_image_file_name",
+        "image_path",
+        "original_food_name",
+        "product_name",
+        "food_code",
+        "business_category",
+        "product_group",
+        "caption",
+        "prompt_keywords",
+        "text_for_embedding"
+      ],
+      "db_management_inventory.csv": [
+        "database_name",
+        "final_image_id",
+        "faiss_index_id",
+        "final_image_path",
+        "final_image_file_name",
+        "image_path",
+        "original_food_name",
+        "product_name",
+        "food_code",
+        "business_category",
+        "product_group",
+        "caption",
+        "prompt_keywords",
+        "text_for_embedding",
+        "retrieval_text",
+        "ad_prompt_hint",
+        "embedding_id",
+        "source_row_index",
+        "embedding_array_index",
+        "final_image_size_bytes",
+        "final_image_exists"
+      ],
+      "llm_prompt_payloads.json": [
+        "database_name",
+        "reference",
+        "prompt_context"
+      ]
+    },
+    "path_mapping": {
+      "available": true,
+      "files": [
+        "metadata.csv",
+        "mapping.csv",
+        "db_management_inventory.csv"
+      ],
+      "columns": {
+        "source_image_path": "image_path",
+        "final_image_path": "final_image_path",
+        "final_image_file_name": "final_image_file_name"
+      }
+    }
+  },
+  "storage": {
+    "gcs_path": "gs://ssakda/projects/brandmate/data/processed/aihub_food_image_text/v1/food_description_data/",
+    "local_example_path": "data/processed/aihub_food_image_text/v1/food_description_data/",
+    "recommended_standard_path": "data/processed/aihub_food_image_text/v1/food_description_data/",
+    "package_docs": {
+      "manifest_path": "docs/manifest.json",
+      "description_path": "docs/description.md"
+    },
+    "dvc_tracked": true
+  },
+  "reproducibility": {
+    "generation_script_available": true,
+    "generation_script_path": [
+      "C:\\aihub-food-ad-rag\\src\\01_parse_metadata.py",
+      "C:\\aihub-food-ad-rag\\src\\02_eda_report.py",
+      "C:\\aihub-food-ad-rag\\src\\03_build_category_groups.py",
+      "C:\\aihub-food-ad-rag\\src\\04_quality_filter.py",
+      "C:\\aihub-food-ad-rag\\src\\05_remove_duplicates.py",
+      "C:\\aihub-food-ad-rag\\src\\06_caption_tagging.py",
+      "C:\\aihub-food-ad-rag\\src\\07_clip_embedding.py",
+      "C:\\aihub-food-ad-rag\\src\\08_build_faiss.py",
+      "C:\\aihub-food-ad-rag\\src\\09_make_final_db.py",
+      "C:\\aihub-food-ad-rag\\src\\15_export_final_db_assets.py"
+    ],
+    "random_seed": 42,
+    "can_rebuild": "partial"
+  },
+  "limitations": [
+    "Category distribution was not intentionally balanced for BrandMate target domains.",
+    "Cafe and bakery scenarios may require more cake, dessert, bakery, beverage, and brunch images.",
+    "Dataset was created under time constraints using approximately 5GB target size.",
+    "Original AIHub annotation files were not preserved in this artifact."
+  ],
+  "next_version_plan": "Use the verified diverse follow-up artifact as the next-version direction: maximize unique food types, select one front and one side representative per food when available, prefer bbox ratio 0.40-0.70, high center score, high blur score, and high resolution; observed follow-up summary has 1036 records, 541 unique foods, 522 front images, 514 side images, 495 foods with both views, and 749 records (72.30%) in the bbox 0.40-0.70 range."
+}
