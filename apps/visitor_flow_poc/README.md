@@ -1,8 +1,8 @@
-# Visitor Flow Streamlit POC
+# Visitor Flow YOLO Evaluation Streamlit POC
 
-C0241 17:09 단일 영상의 L1-3 YOLO 평가 결과를 보여주는 독립형 대시보드입니다.
+C0241 17:09 단일 영상의 L1-3 YOLO 평가 결과를 보여주는 독립형 POC 화면입니다.
 
-이 화면은 실제 방문객 수나 시간대별 상권 분석 결과가 아닙니다. sampled-frame bbox 탐지 성능과 오류 preview를 팀원에게 시연하기 위한 L1 POC입니다.
+이 화면은 상권분석 결과 대시보드가 아닙니다. 실제 방문객 수나 시간대별 상권 분석 결과도 아닙니다. sampled-frame bbox 탐지 성능과 오류 preview를 팀원에게 시연하기 위한 L1-4 평가 결과 viewer입니다.
 
 ## 임시 운영 안내
 
@@ -39,8 +39,12 @@ outputs/visitor_flow_mvp/c0241_20210802_yolo_l1_3/
 ## 현재 화면에서 확인할 수 있는 것
 
 - threshold별 Precision, Recall, F1
-- 선택 threshold의 TP, FP, FN
-- 프레임별 AIHub reference bbox와 YOLO bbox 차이
-- 선택 threshold의 GT/TP/FP/FN preview
+- 임시 threshold 후보의 TP, FP, FN
+- 프레임별 AIHub bbox 관측과 YOLO bbox 관측 차이
+- 임시 threshold 후보의 GT/TP/FP/FN preview
+
+AIHub bbox 관측과 YOLO bbox 관측은 사람 수가 아니라 frame-level person bbox observation count입니다. 같은 사람이 여러 sampled frame에 보이면 반복 집계됩니다. 순방문자 수나 실제 유동인구 수를 말하려면 tracking 또는 AIHub person id/cam_in/cam_out 기반 중복 제거가 필요합니다.
+
+F1은 Precision과 Recall의 균형을 보기 위한 임시 선택 기준입니다. 현재 confidence는 단일 영상 18개 sampled frame 기준 후보일 뿐이며, 최종 threshold는 L1-5에서 8개 clip으로 확장 평가한 뒤 정합니다.
 
 실제 방문객 수, 중복 제거, 하루 시간대별 피크, 구역 heatmap, 마케팅 최종 추천은 후속 L1-5/L2 범위입니다.
