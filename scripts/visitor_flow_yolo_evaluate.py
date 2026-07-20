@@ -118,10 +118,17 @@ def validate_label_video(
         )
     if abs(float(label_video["fps"]) - metadata["fps"]) > 1e-6:
         mismatches.append(f"fps label={label_video['fps']} video={metadata['fps']}")
-    if (int(label_width), int(label_height)) != (
-        metadata["width"],
-        metadata["height"],
-    ):
+    # [Design Intent] 일부 AIHub mp4는 codec macroblock padding 때문에 실제 frame
+    # height가 label resolution보다 8px 크게 읽힌다. 파일명/fps/frame_count가 맞고
+    # width가 동일하며 video height가 label height보다 16px 이하로 큰 경우는 같은 영상의
+    # 하단 패딩으로 간주한다. 그 외 resolution mismatch는 평가 신뢰성을 깨므로 중단한다.
+    label_resolution = (int(label_width), int(label_height))
+    video_resolution = (metadata["width"], metadata["height"])
+    has_small_bottom_padding = (
+        label_resolution[0] == video_resolution[0]
+        and 0 < video_resolution[1] - label_resolution[1] <= 16
+    )
+    if label_resolution != video_resolution and not has_small_bottom_padding:
         mismatches.append(
             "resolution "
             f"label={label_width}x{label_height} "
