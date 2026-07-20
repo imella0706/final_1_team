@@ -51,19 +51,24 @@ outputs/visitor_flow_mvp/c0241_20210802_l2_1/
 
 ## 현재 화면에서 확인할 수 있는 것
 
-- 분석 clip 수, sampled frame 수, person bbox observation 수
-- YOLO bbox/grid 검증 영상
+- 가장 붐빈 시간대
+- 시간대별 보행 관측량
+- 가장 많이 보인 화면 구역
 - 시간대별 전체 보행 관측량
-- peak 시간대와 단일 zone hotspot 구분
-- 선택 시간대의 `6x4` 화면 grid heatmap
-- `analysis.json`, `summary.parquet`, `events.parquet` 원본 확인
+- 실제 영상에서 노란 `6x4` grid 기준 확인
+- 전체 시간대 또는 선택 시간대의 화면 구역별 밀집도
+- 마케팅 후보 해석
+- 검증용 YOLO bbox/grid 영상
+- 개발/검증용 `analysis.json`, `summary.parquet`, `events.parquet` 원본 확인
 
 ## 해석 제한
 
-- 표시 값은 frame-level person bbox observation입니다.
+- 표시 값은 보행 관측량입니다.
 - 같은 사람이 여러 sampled frame에 나오면 여러 건으로 집계됩니다.
 - tracking을 하지 않았으므로 순방문자 수가 아닙니다.
 - 화면 grid는 실제 지면 좌표가 아니라 CCTV 화면상의 상대 구역입니다.
+- 히트맵 색상은 관측량의 상대 강도입니다. 연노랑은 적음, 주황은 중간, 진한 빨강은 많음을 뜻합니다.
+- 시간대 목록은 임의 선택값이 아니라 AIHub C0241 폴더에 있는 영상 시작 시각을 1시간 단위로 묶은 결과입니다.
 - marketing signal은 dashboard validation용 rule-based hypothesis이며 매출 상승 검증 결과가 아닙니다.
 - preview 영상의 bbox는 tracking ID가 아닙니다.
 - 노란 매장 전면 ROI와 `In front of shop` 카운트는 L2-3에서 별도로 구현합니다.

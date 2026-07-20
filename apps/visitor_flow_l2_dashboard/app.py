@@ -26,6 +26,18 @@ REQUIRED_FILES = {
 }
 
 PREVIEW_EXTENSIONS = {".webm", ".mp4"}
+ALL_TIME_BUCKET = "__all_time_buckets__"
+ROW_LABELS = {
+    0: "상단",
+    1: "중상단",
+    2: "중하단",
+    3: "하단",
+}
+MARKETING_SIGNAL_LABELS = {
+    "morning_promotion_candidate": "아침 판촉 후보",
+    "storefront_visibility_candidate": "간판/입간판 노출 후보",
+    "evening_takeout_or_signage_candidate": "저녁 테이크아웃·간판 후보",
+}
 
 
 def resolve_results_dir(path_text: str) -> Path:
@@ -89,14 +101,31 @@ def preview_video_by_source_stem(results_dir: Path) -> dict[str, Path]:
     return mapping
 
 
+def format_zone_for_owner(zone_id: str) -> str:
+    """Convert an internal grid id like r0_c3 to owner-facing Korean text."""
+    try:
+        row_text, col_text = zone_id.split("_")
+        row = int(row_text.removeprefix("r"))
+        col = int(col_text.removeprefix("c"))
+    except (AttributeError, ValueError):
+        return zone_id
+
+    row_label = ROW_LABELS.get(row, f"{row + 1}번째 줄")
+    return f"{row_label} · 왼쪽에서 {col + 1}번째 구역"
+
+
+def format_marketing_signal(signal: str) -> str:
+    return MARKETING_SIGNAL_LABELS.get(signal, signal)
+
+
 def render_video_validation(
     analysis: dict[str, Any],
     results_dir: Path,
 ) -> None:
-    st.subheader("0. 연속 영상 탐지 품질 검증")
+    st.subheader("2. 실제 영상에서 구역 기준 확인")
     st.caption(
-        "이 화면은 사람이 YOLO bbox overlay 영상을 직접 확인하는 qualitative QA입니다. "
-        "연속 preview frame의 detection 수는 10초 간격으로 집계한 L2-1의 245건에 포함되지 않습니다."
+        "노란 선으로 나뉜 24칸이 아래 히트맵의 24칸과 같은 기준입니다. "
+        "영상은 탐지 품질과 구역 기준을 눈으로 확인하기 위한 대표 피크 구간입니다."
     )
 
     source_videos = source_video_paths(analysis)
@@ -106,23 +135,32 @@ def render_video_validation(
 
     previews = preview_video_by_source_stem(results_dir)
     preview_source_stems = set(previews)
-    default_index = next(
-        (
-            index
-            for index, video_path in enumerate(source_videos)
-            if video_path.stem in preview_source_stems
-        ),
-        0,
-    )
-    selected_video = st.selectbox(
-        "확인할 원본 clip",
-        options=source_videos,
-        index=default_index,
-        format_func=lambda path: path.stem,
-    )
-    preview_video = previews.get(selected_video.stem)
+    selectable_videos = [
+        video_path for video_path in source_videos if video_path.stem in preview_source_stems
+    ]
+    if not selectable_videos:
+        selectable_videos = source_videos
 
-    st.markdown("**YOLO bbox + 6×4 grid 검증 영상**")
+    if len(selectable_videos) == 1:
+        selected_video = selectable_videos[0]
+        st.markdown(f"**대표 검증 clip:** `{selected_video.stem}`")
+    else:
+        default_index = next(
+            (
+                index
+                for index, video_path in enumerate(selectable_videos)
+                if video_path.stem in preview_source_stems
+            ),
+            0,
+        )
+        selected_video = st.selectbox(
+            "검증 clip 선택",
+            options=selectable_videos,
+            index=default_index,
+            format_func=lambda path: path.stem,
+        )
+
+    preview_video = previews.get(selected_video.stem)
     if preview_video is None:
         st.info(
             "선택한 clip의 검증 영상이 아직 없습니다. 아래 명령으로 먼저 생성한 뒤 "
@@ -156,49 +194,67 @@ def render_video_validation(
         st.video(str(preview_video), format="video/webm")
         st.caption(f"검증 영상 artifact: {preview_video}")
 
-    st.warning(
-        "bbox의 person/confidence/zone은 detection 결과입니다. tracker ID가 아니며, "
-        "같은 사람이 다음 frame에 다시 나오면 새로운 observation으로 보입니다. "
-        "노란 ROI와 In front of shop 카운트는 L2-3 범위입니다."
+    st.info(
+        "영상 속 초록 박스는 YOLO가 사람으로 탐지한 위치입니다. "
+        "노란 grid id는 내부 검증용이며, 아래 히트맵에서는 같은 위치를 쉬운 구역명으로 바꿔 보여줍니다."
     )
 
 
 def render_scope_notice() -> None:
     st.warning(
-        "이 화면은 L2-1 산출물을 검증하는 L2-2 대시보드 POC입니다. "
-        "표시되는 값은 frame-level person bbox observation이며, "
-        "방문객 수·순방문자 수·정확한 유동인구 수가 아닙니다."
+        "이 화면은 CCTV 화면에서 사람이 얼마나 자주 보였는지 비교하는 POC입니다. "
+        "표시 값은 정확한 방문객 수가 아니라, 시간대별 붐빔 정도를 보는 보행 관측량입니다."
     )
 
 
 def render_metric_cards(analysis: dict[str, Any]) -> None:
     first, second, third, fourth = st.columns(4)
-    first.metric("분석 clip", f"{int(analysis['clip_count'])}개")
-    second.metric("sampled frame", f"{int(analysis['sampled_frames'])}장")
-    third.metric(
-        "bbox observation",
-        f"{int(analysis['person_detection_observations'])}건",
-    )
-    fourth.metric("confidence", f"{float(analysis['confidence_threshold']):.2f}")
-
-    fifth, sixth, seventh, eighth = st.columns(4)
     peak_bucket = str(analysis.get("peak_time_bucket", ""))
-    fifth.metric("peak 시간대", peak_bucket[11:16] if len(peak_bucket) >= 16 else "-")
-    sixth.metric(
-        "peak 관측량",
+    top_zone_id = str(analysis.get("top_zone_id", "-"))
+    first.metric("가장 붐빈 시간대", peak_bucket[11:16] if len(peak_bucket) >= 16 else "-")
+    second.metric(
+        "그 시간대 보행 관측",
         f"{int(analysis.get('peak_time_bucket_observations', 0))}건",
     )
-    seventh.metric("top zone", str(analysis.get("top_zone_id", "-")))
-    eighth.metric(
-        "top zone 관측량",
-        f"{int(analysis.get('top_zone_observations', 0))}건",
-    )
+    third.metric("가장 많이 보인 구역", format_zone_for_owner(top_zone_id))
+    fourth.metric("분석한 CCTV 영상", f"{int(analysis['clip_count'])}개")
 
     st.info(
-        "시간대 기준 peak는 전체 화면 관측량의 시간대 총합이고, "
-        "top zone은 단일 화면 grid 구역의 hotspot입니다. "
-        "두 지표는 시간 축과 공간 축이 다르므로 같은 기준으로 해석하면 안 됩니다."
+        "보행 관측은 CCTV 화면에서 사람으로 탐지된 횟수입니다. "
+        "같은 사람이 여러 장면에 보이면 여러 번 잡힐 수 있으므로, 실제 방문객 수로 해석하면 안 됩니다."
     )
+
+    with st.expander("검증용 세부 지표 보기", expanded=False):
+        detail = pd.DataFrame(
+            [
+                {
+                    "항목": "sampled frame",
+                    "값": f"{int(analysis['sampled_frames'])}장",
+                    "의미": "분석을 위해 일정 간격으로 뽑아 확인한 장면 수",
+                },
+                {
+                    "항목": "bbox observation",
+                    "값": f"{int(analysis['person_detection_observations'])}건",
+                    "의미": "sampled frame에서 사람 bbox가 잡힌 총 횟수",
+                },
+                {
+                    "항목": "confidence",
+                    "값": f"{float(analysis['confidence_threshold']):.2f}",
+                    "의미": "YOLO가 사람이라고 판단한 결과를 남기는 최소 신뢰도 기준",
+                },
+                {
+                    "항목": "top zone",
+                    "값": top_zone_id,
+                    "의미": "내부 grid id. 고객 화면에서는 위치 설명으로 변환해 표시",
+                },
+                {
+                    "항목": "top zone observation",
+                    "값": f"{int(analysis.get('top_zone_observations', 0))}건",
+                    "의미": "단일 화면 구역에서 가장 많이 잡힌 관측량",
+                },
+            ]
+        )
+        st.dataframe(detail, hide_index=True, width="stretch")
 
 
 def render_time_trend(dashboard_summary: pd.DataFrame) -> None:
@@ -212,16 +268,28 @@ def render_time_trend(dashboard_summary: pd.DataFrame) -> None:
     display["time_bucket"] = pd.to_datetime(display["time_bucket"]).dt.strftime(
         "%Y-%m-%d %H:%M"
     )
+    display["top_zone_label"] = display["top_zone_id"].map(format_zone_for_owner)
+    display["marketing_signal_label"] = display["marketing_signal"].map(
+        format_marketing_signal
+    )
     st.dataframe(
-        display,
+        display[
+            [
+                "time_bucket",
+                "total_person_detection_observations",
+                "marketing_signal_label",
+                "top_zone_label",
+                "top_zone_observations",
+            ]
+        ],
         hide_index=True,
         width="stretch",
         column_config={
             "time_bucket": "시간대",
-            "total_person_detection_observations": "총 bbox observation",
-            "marketing_signal": "마케팅 후보 신호",
-            "top_zone_id": "해당 시간대 top zone",
-            "top_zone_observations": "top zone observation",
+            "total_person_detection_observations": "보행 관측량",
+            "marketing_signal_label": "마케팅 후보",
+            "top_zone_label": "가장 많이 보인 화면 구역",
+            "top_zone_observations": "구역 관측량",
         },
     )
 
@@ -236,7 +304,13 @@ def build_heatmap_table(
     grid_rows: int,
     grid_cols: int,
 ) -> pd.DataFrame:
-    selected = summary.loc[summary["time_bucket"] == selected_time_bucket]
+    if selected_time_bucket == ALL_TIME_BUCKET:
+        selected = (
+            summary.groupby("zone_id", as_index=False)["person_detection_observations"]
+            .sum()
+        )
+    else:
+        selected = summary.loc[summary["time_bucket"] == selected_time_bucket]
     counts = {
         zone_id: 0
         for zone_id in grid_labels(rows=grid_rows, cols=grid_cols)
@@ -252,8 +326,8 @@ def build_heatmap_table(
     ]
     return pd.DataFrame(
         matrix,
-        index=[f"row {row}" for row in range(grid_rows)],
-        columns=[f"col {col}" for col in range(grid_cols)],
+        index=[ROW_LABELS.get(row, f"{row + 1}번째 줄") for row in range(grid_rows)],
+        columns=[f"왼쪽 {col + 1}" for col in range(grid_cols)],
     )
 
 
@@ -262,20 +336,35 @@ def render_grid_heatmap(
     summary: pd.DataFrame,
     dashboard_summary: pd.DataFrame,
 ) -> None:
-    st.subheader("2. 화면 grid heatmap")
+    st.subheader("3. 화면 구역별 보행 밀집도")
     st.caption(
-        "bbox bottom-center point를 화면 기준 6x4 grid에 넣어 집계했습니다. "
-        "이 grid는 실제 지면 좌표가 아니라 CCTV 화면상의 상대 구역입니다."
+        "CCTV 화면을 6x4 구역으로 나눠, 시간대별로 사람이 많이 보인 위치를 확인합니다. "
+        "이 구역은 실제 지면 좌표가 아니라 화면상의 상대 위치입니다."
+    )
+    st.info(
+        "아래 24칸은 검증 영상에 보이는 노란 6x4 grid와 같은 기준입니다. "
+        "각 칸의 숫자는 선택한 시간대에 그 화면 구역에서 사람이 보인 관측량이고, "
+        "색이 연하면 적게 보인 구역, 빨갛게 진하면 자주 보인 구역입니다."
     )
 
-    time_options = sorted(str(value) for value in dashboard_summary["time_bucket"].unique())
-    default_time = str(analysis.get("peak_time_bucket") or time_options[0])
-    default_index = time_options.index(default_time) if default_time in time_options else 0
+    time_bucket_options = sorted(
+        str(value) for value in dashboard_summary["time_bucket"].unique()
+    )
+    time_options = [ALL_TIME_BUCKET] + time_bucket_options
     selected_time = st.selectbox(
         "확인할 시간대",
         options=time_options,
-        index=default_index,
-        format_func=lambda value: pd.to_datetime(value).strftime("%H:%M"),
+        index=0,
+        format_func=lambda value: (
+            "전체 시간대"
+            if value == ALL_TIME_BUCKET
+            else pd.to_datetime(value).strftime("%H:%M")
+        ),
+    )
+    st.caption(
+        "시간대 목록은 임의로 고른 시간이 아니라 AIHub C0241 폴더에 실제로 있는 "
+        "8개 영상의 시작 시각을 1시간 단위로 묶은 결과입니다. "
+        "예를 들어 17시는 17:09와 17:51 두 clip이 합쳐진 값입니다."
     )
 
     grid = analysis.get("grid", {})
@@ -292,57 +381,85 @@ def render_grid_heatmap(
         heatmap.style.background_gradient(axis=None, cmap="YlOrRd"),
         width="stretch",
     )
-    st.caption(
-        "색이 진할수록 해당 시간대에 그 화면 구역에서 person bbox observation이 많았다는 뜻입니다."
-    )
+    st.caption("색상 범례: 연노랑 = 적음, 주황 = 중간, 진한 빨강 = 많음")
 
     zone_rows = (
-        summary.loc[summary["time_bucket"] == selected_time]
+        summary.groupby("zone_id", as_index=False)
+        .agg(
+            person_detection_observations=(
+                "person_detection_observations",
+                "sum",
+            ),
+            density_score=("density_score", "max"),
+            hotspot_rank=("hotspot_rank", "min"),
+            marketing_signal=("marketing_signal", "first"),
+        )
+        if selected_time == ALL_TIME_BUCKET
+        else summary.loc[summary["time_bucket"] == selected_time]
         .sort_values("person_detection_observations", ascending=False)
         .reset_index(drop=True)
+    )
+    if selected_time == ALL_TIME_BUCKET:
+        max_observations = zone_rows["person_detection_observations"].max()
+        if max_observations > 0:
+            zone_rows["density_score"] = (
+                zone_rows["person_detection_observations"] / max_observations
+            )
+        zone_rows["hotspot_rank"] = (
+            zone_rows["person_detection_observations"]
+            .rank(method="min", ascending=False)
+            .astype(int)
+        )
+        zone_rows = zone_rows.sort_values(
+            "person_detection_observations",
+            ascending=False,
+        ).reset_index(drop=True)
+    zone_rows["zone_label"] = zone_rows["zone_id"].map(format_zone_for_owner)
+    zone_rows["marketing_signal_label"] = zone_rows["marketing_signal"].map(
+        format_marketing_signal
     )
     st.dataframe(
         zone_rows[
             [
-                "zone_id",
+                "zone_label",
                 "person_detection_observations",
                 "density_score",
                 "hotspot_rank",
-                "marketing_signal",
+                "marketing_signal_label",
             ]
         ],
         hide_index=True,
         width="stretch",
         column_config={
-            "zone_id": "zone",
-            "person_detection_observations": "bbox observation",
+            "zone_label": "화면 구역",
+            "person_detection_observations": "보행 관측량",
             "density_score": st.column_config.NumberColumn(
-                "density score",
+                "상대 밀집도",
                 format="%.3f",
             ),
-            "hotspot_rank": "hotspot rank",
-            "marketing_signal": "마케팅 후보 신호",
+            "hotspot_rank": "밀집 순위",
+            "marketing_signal_label": "마케팅 후보",
         },
     )
 
 
 def render_marketing_interpretation(dashboard_summary: pd.DataFrame) -> None:
-    st.subheader("3. 마케팅 해석 후보")
+    st.subheader("4. 마케팅 해석 후보")
     peak = dashboard_summary.sort_values(
         "total_person_detection_observations",
         ascending=False,
     ).iloc[0]
     peak_time = pd.to_datetime(peak["time_bucket"]).strftime("%H:%M")
     st.info(
-        f"현재 L2-1 artifact 기준 전체 관측량 peak는 {peak_time}이며, "
-        f"총 {int(peak['total_person_detection_observations'])}건의 person bbox observation이 잡혔습니다. "
-        "이 값은 보행 관측량 후보이지 실제 방문객 수가 아닙니다."
+        f"이 데이터에서는 {peak_time}에 보행 관측량이 가장 높았습니다. "
+        f"해당 시간대에 CCTV 화면에서 사람이 보인 관측은 총 {int(peak['total_person_detection_observations'])}건입니다. "
+        "이 값은 시간대별 붐빔 정도를 비교하기 위한 지표이며, 실제 방문객 수가 아닙니다."
     )
     st.markdown(
         "- 오전 시간대 관측량이 높으면 아침 판촉 후보로 볼 수 있습니다.\n"
         "- 점심/오후 시간대 관측량은 매장 전면 노출 또는 간판 노출 후보로 볼 수 있습니다.\n"
         "- 늦은 저녁 관측량은 테이크아웃, 배달 픽업, 야간 간판 노출 후보로 볼 수 있습니다.\n"
-        "- 현재 marketing signal은 rule-based hypothesis이며 매출 상승 검증 결과가 아닙니다."
+        "- 현재 마케팅 후보는 규칙 기반 가설이며 매출 상승 검증 결과가 아닙니다."
     )
 
 
@@ -352,12 +469,12 @@ def render_raw_tables(
     summary: pd.DataFrame,
     results_dir: Path,
 ) -> None:
-    st.subheader("4. 원본 artifact 검증")
-    with st.expander("analysis.json"):
+    st.subheader("5. 개발/검증용 원본 artifact")
+    with st.expander("analysis.json", expanded=False):
         st.json(analysis)
-    with st.expander("summary.parquet sample"):
+    with st.expander("summary.parquet sample", expanded=False):
         st.dataframe(summary.head(50), hide_index=True, width="stretch")
-    with st.expander("events.parquet sample"):
+    with st.expander("events.parquet sample", expanded=False):
         st.dataframe(events.head(50), hide_index=True, width="stretch")
     st.caption(f"현재 읽는 L2-1 결과 폴더: {results_dir}")
 
@@ -394,9 +511,9 @@ def main() -> None:
 
     render_metric_cards(analysis)
     st.divider()
-    render_video_validation(analysis, results_dir)
-    st.divider()
     render_time_trend(dashboard_summary)
+    st.divider()
+    render_video_validation(analysis, results_dir)
     st.divider()
     render_grid_heatmap(analysis, summary, dashboard_summary)
     st.divider()
