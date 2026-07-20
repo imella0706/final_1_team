@@ -1,6 +1,6 @@
 # Visitor Flow L2 Dashboard
 
-C0241 8개 CCTV clip의 L2-1 집계 산출물을 읽어 시간대별 보행 관측량과 화면 grid heatmap을 보여주는 Streamlit POC입니다. YOLO bbox 검증 영상도 재생할 수 있습니다.
+C0241 8개 CCTV clip의 L2-1 집계 산출물을 읽어 시간대별 보행 관측량과 화면 기준 `6x4` 관측 분포를 보여주는 Streamlit POC입니다. YOLO bbox 검증 영상도 재생할 수 있습니다.
 
 이 화면은 YOLO를 다시 실행하지 않습니다. 입력은 이미 생성된 L2-1 artifact와 오프라인으로 생성한 preview video입니다.
 
@@ -43,7 +43,7 @@ outputs/visitor_flow_mvp/c0241_20210802_l2_1/
 # [Design Intent] L2-2 대시보드 실행에 필요한 Streamlit/Pandas/PyArrow 의존성을 설치한다.
 /home/imella0707/miniconda3/envs/ssakda/bin/python -m pip install -r apps/visitor_flow_l2_dashboard/requirements.txt
 
-# [Design Intent] L2-1 artifact를 읽어 시간대 chart와 grid heatmap을 표시한다.
+# [Design Intent] L2-1 artifact를 읽어 시간대 chart와 화면 기준 grid 관측 분포를 표시한다.
 /home/imella0707/miniconda3/envs/ssakda/bin/python -m streamlit run apps/visitor_flow_l2_dashboard/app.py
 ```
 
@@ -53,11 +53,11 @@ outputs/visitor_flow_mvp/c0241_20210802_l2_1/
 
 - 가장 붐빈 시간대
 - 시간대별 보행 관측량
-- 가장 많이 보인 화면 구역
+- 화면 기준 최다 관측 구역
 - 시간대별 전체 보행 관측량
 - 실제 영상에서 노란 `6x4` grid 기준 확인
-- 전체 시간대 또는 선택 시간대의 화면 구역별 밀집도
-- 마케팅 후보 해석
+- 전체 시간대 또는 선택 시간대의 화면 구역별 관측 분포
+- 시간대 기반 마케팅 후보 해석
 - 검증용 YOLO bbox/grid 영상
 - 개발/검증용 `analysis.json`, `summary.parquet`, `events.parquet` 원본 확인
 
@@ -67,7 +67,9 @@ outputs/visitor_flow_mvp/c0241_20210802_l2_1/
 - 같은 사람이 여러 sampled frame에 나오면 여러 건으로 집계됩니다.
 - tracking을 하지 않았으므로 순방문자 수가 아닙니다.
 - 화면 grid는 실제 지면 좌표가 아니라 CCTV 화면상의 상대 구역입니다.
+- 화면 grid는 원근 보정 전의 image-space grid입니다. 같은 보행로도 카메라에서 멀면 좁게 압축되고 가까우면 넓게 펼쳐져 보일 수 있습니다.
 - 히트맵 색상은 관측량의 상대 강도입니다. 연노랑은 적음, 주황은 중간, 진한 빨강은 많음을 뜻합니다.
+- 진한 빨강 구역은 실제 면적당 인구 밀도나 입간판 설치 최적 위치가 아닙니다. 해당 화면 칸에서 사람이 탐지된 횟수가 상대적으로 많다는 뜻입니다.
 - 시간대 목록은 임의 선택값이 아니라 AIHub C0241 폴더에 있는 영상 시작 시각을 1시간 단위로 묶은 결과입니다.
 - marketing signal은 dashboard validation용 rule-based hypothesis이며 매출 상승 검증 결과가 아닙니다.
 - preview 영상의 bbox는 tracking ID가 아닙니다.
