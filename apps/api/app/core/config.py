@@ -1,32 +1,57 @@
 from pathlib import Path
+from typing import Literal
 
-from pydantic import SecretStr
+from pydantic import SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 ENV_FILE = Path(__file__).resolve().parents[2] / ".env"
 
 
 class Settings(BaseSettings):
+    # [Design Intent] Authentication settings live in the same typed config as the
+    # API so insecure production combinations fail during process startup.
     app_name: str = "BrandMate AI"
     api_prefix: str = "/api/v1"
     environment: str = "local"
     web_origin: str = "http://localhost:5500"
+    additional_web_origins: str = (
+        "http://localhost:5501,http://127.0.0.1:5501,"
+        "http://localhost:5500,http://127.0.0.1:5500"
+    )
+    database_url: str = (
+        "postgresql+asyncpg://brandmate:brandmate-local-only@127.0.0.1:5433/brandmate"
+    )
+    auth_secret_key: SecretStr | None = None
+    auth_jwt_algorithm: Literal["HS256"] = "HS256"
+    auth_jwt_issuer: str = "brandmate-api"
+    auth_jwt_audience: str = "brandmate-web"
+    auth_access_token_minutes: int = 10
+    auth_refresh_token_days: int = 14
+    auth_refresh_cookie_name: str = "brandmate_refresh"
+    auth_refresh_cookie_secure: bool = False
+    auth_refresh_cookie_samesite: Literal["lax", "strict"] = "lax"
+    auth_email_verification_required: bool = False
+    auth_email_verification_hours: int = 24
+    auth_password_reset_minutes: int = 30
+    auth_email_delivery_enabled: bool = False
+    auth_public_web_url: str = "http://localhost:5500"
+    auth_smtp_host: str | None = None
+    auth_smtp_port: int = 587
+    auth_smtp_username: str | None = None
+    auth_smtp_password: SecretStr | None = None
+    auth_smtp_from_email: str | None = None
+    auth_smtp_starttls: bool = True
+    auth_email_timeout_seconds: float = 10.0
+    auth_outbox_poll_seconds: float = 2.0
+    auth_outbox_max_attempts: int = 5
+    auth_rate_limit_backend: Literal["memory", "postgres"] = "memory"
+    auth_signup_limit_per_5_minutes: int = 5
+    auth_login_limit_per_5_minutes: int = 10
+    auth_login_ip_limit_per_5_minutes: int = 50
+    auth_refresh_limit_per_minute: int = 30
     llm_base_url: str = "https://router.huggingface.co/v1"
     llm_api_key: SecretStr | None = None
     llm_timeout_seconds: float = 120
-    openai_base_url: str = "https://api.openai.com/v1"
-    openai_api_key: SecretStr | None = None
-    openai_chat_model: str | None = None
-    openai_vision_model: str | None = None
-    openai_image_model: str | None = None
-    openai_gpt_5_5_model: str | None = None
-    openai_gpt_5_4_model: str | None = None
-    openai_gpt_5_4_mini_model: str | None = None
-    openai_gpt_5_4_nano_model: str | None = None
-    openai_gpt_4_1_mini_model: str | None = None
-    nvidia_base_url: str | None = None
-    nvidia_api_key: SecretStr | None = None
-    nvidia_llama_model: str | None = None
     hf_image_provider: str = "auto"
     hf_image_edit_model: str = "black-forest-labs/FLUX.1-Kontext-dev"
     openai_base_url: str = "https://api.openai.com/v1"
@@ -83,6 +108,72 @@ class Settings(BaseSettings):
     product_visual_db_path: str = "product_visual_profiles.sqlite3"
     pexels_api_key: SecretStr | None = None
     unsplash_access_key: SecretStr | None = None
+
+    @property
+    def allowed_web_origins(self) -> list[str]:
+        origins = [self.web_origin]
+        origins.extend(value.strip() for value in self.additional_web_origins.split(","))
+        return list(dict.fromkeys(value.rstrip("/") for value in origins if value))
+
+    @model_validator(mode="after")
+    def validate_production_security(self) -> "Settings":
+        if not 1 <= self.auth_access_token_minutes <= 60:
+            raise ValueError("Access token lifetime must be between 1 and 60 minutes")
+        if not 1 <= self.auth_refresh_token_days <= 30:
+            raise ValueError("Refresh token lifetime must be between 1 and 30 days")
+        if not 1 <= self.auth_email_verification_hours <= 72:
+            raise ValueError("Email verification lifetime must be between 1 and 72 hours")
+        if not 5 <= self.auth_password_reset_minutes <= 60:
+            raise ValueError("Password reset lifetime must be between 5 and 60 minutes")
+        if not 1 <= self.auth_smtp_port <= 65535:
+            raise ValueError("SMTP port is invalid")
+        if not 1 <= self.auth_email_timeout_seconds <= 30:
+            raise ValueError("SMTP timeout must be between 1 and 30 seconds")
+        if not 0.5 <= self.auth_outbox_poll_seconds <= 60:
+            raise ValueError("Outbox poll interval must be between 0.5 and 60 seconds")
+        if not 1 <= self.auth_outbox_max_attempts <= 10:
+            raise ValueError("Outbox max attempts must be between 1 and 10")
+        rate_limits = (
+            self.auth_signup_limit_per_5_minutes,
+            self.auth_login_limit_per_5_minutes,
+            self.auth_login_ip_limit_per_5_minutes,
+            self.auth_refresh_limit_per_minute,
+        )
+        if any(limit < 1 for limit in rate_limits):
+            raise ValueError("Authentication rate limits must be positive")
+        if self.environment.lower() not in {"production", "prod"}:
+            return self
+
+        secret = self.auth_secret_key.get_secret_value() if self.auth_secret_key else ""
+        if len(secret.encode("utf-8")) < 32:
+            raise ValueError("BRANDMATE_AUTH_SECRET_KEY must be at least 32 bytes in production")
+        if not self.auth_refresh_cookie_secure:
+            raise ValueError("BRANDMATE_AUTH_REFRESH_COOKIE_SECURE must be true in production")
+        if not self.auth_refresh_cookie_name.startswith("__Host-"):
+            raise ValueError(
+                "BRANDMATE_AUTH_REFRESH_COOKIE_NAME must use the __Host- prefix in production"
+            )
+        if not self.auth_email_verification_required:
+            raise ValueError(
+                "BRANDMATE_AUTH_EMAIL_VERIFICATION_REQUIRED must be true in production"
+            )
+        if not self.auth_email_delivery_enabled:
+            raise ValueError("BRANDMATE_AUTH_EMAIL_DELIVERY_ENABLED must be true in production")
+        if not self.auth_smtp_host or not self.auth_smtp_from_email:
+            raise ValueError("SMTP host and from address are required in production")
+        if self.auth_smtp_username and not self.auth_smtp_password:
+            raise ValueError("SMTP password is required when SMTP username is configured")
+        if not self.auth_public_web_url.startswith("https://"):
+            raise ValueError("Authentication public web URL must use HTTPS in production")
+        if self.auth_rate_limit_backend != "postgres":
+            raise ValueError(
+                "BRANDMATE_AUTH_RATE_LIMIT_BACKEND must be postgres in production"
+            )
+        if not self.database_url.startswith("postgresql+asyncpg://"):
+            raise ValueError("Production authentication requires PostgreSQL via asyncpg")
+        if any(not origin.startswith("https://") for origin in self.allowed_web_origins):
+            raise ValueError("Production web origins must use HTTPS")
+        return self
 
     model_config = SettingsConfigDict(
         env_file=ENV_FILE,

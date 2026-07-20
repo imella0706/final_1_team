@@ -4,6 +4,13 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content="BrandMate 광고 문구와 이미지 생성 모델 통합 화면" />
+    <!-- [Design Intent] Leave empty for same-origin production. If the API uses a
+         separate HTTPS origin, set it here and add that exact origin to connect-src. -->
+    <meta name="brandmate-api-origin" content="" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; base-uri 'none'; object-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; connect-src 'self' http://localhost:7660 http://127.0.0.1:7660 http://34.55.162.157:7660; form-action 'self'"
+    />
     <title>BrandMate Ad Content Studio</title>
     <link rel="stylesheet" href="./styles.css?v=vision-models-20260717" />
   </head>
@@ -16,13 +23,111 @@
           <small>CONTENT STUDIO</small>
         </span>
       </a>
-      <div class="topbar-status">
-        <span class="status-dot" aria-hidden="true"></span>
-        <span id="api-state">API 확인 중</span>
+      <div class="topbar-actions">
+        <div class="topbar-status">
+          <span class="status-dot" aria-hidden="true"></span>
+          <span id="api-state">인증 확인 중</span>
+        </div>
+        <div class="auth-user" id="auth-user" hidden>
+          <span id="auth-user-name"></span>
+          <button class="topbar-command" id="security-button" type="button">보안</button>
+          <button class="topbar-command" id="logout-button" type="button">로그아웃</button>
+        </div>
       </div>
     </header>
 
-    <main>
+    <dialog class="auth-dialog" id="auth-dialog" aria-labelledby="auth-title">
+      <section class="auth-surface">
+        <div class="auth-heading">
+          <span class="brand-mark" aria-hidden="true">B</span>
+          <div>
+            <p class="eyebrow">BRANDMATE</p>
+            <h1 id="auth-title">Content Studio</h1>
+          </div>
+        </div>
+
+        <div class="auth-tabs" id="auth-tabs" role="tablist" aria-label="인증 방식">
+          <button id="login-tab" type="button" role="tab" aria-selected="true">로그인</button>
+          <button id="signup-tab" type="button" role="tab" aria-selected="false">회원가입</button>
+        </div>
+
+        <form class="auth-form" id="login-form">
+          <label for="login-email">이메일</label>
+          <input id="login-email" name="email" type="email" autocomplete="username" maxlength="320" required />
+          <label for="login-password">비밀번호</label>
+          <input id="login-password" name="password" type="password" autocomplete="current-password" maxlength="128" required />
+          <p class="auth-error" id="login-error" role="alert" hidden></p>
+          <button class="auth-submit" type="submit">로그인</button>
+          <button class="auth-link-button" id="forgot-password-button" type="button">비밀번호를 잊으셨나요?</button>
+        </form>
+
+        <form class="auth-form" id="signup-form" hidden>
+          <label for="signup-name">이름</label>
+          <input id="signup-name" name="displayName" autocomplete="name" maxlength="100" required />
+          <label for="signup-email">이메일</label>
+          <input id="signup-email" name="email" type="email" autocomplete="username" maxlength="320" required />
+          <label for="signup-password">비밀번호</label>
+          <input id="signup-password" name="password" type="password" autocomplete="new-password" minlength="12" maxlength="128" required />
+          <label for="signup-password-confirm">비밀번호 확인</label>
+          <input id="signup-password-confirm" name="passwordConfirm" type="password" autocomplete="new-password" minlength="12" maxlength="128" required />
+          <p class="auth-error" id="signup-error" role="alert" hidden></p>
+          <button class="auth-submit" type="submit">계정 만들기</button>
+        </form>
+
+        <form class="auth-form" id="forgot-password-form" hidden>
+          <h2>비밀번호 재설정</h2>
+          <p class="auth-description">가입한 이메일로 일회용 재설정 링크를 보냅니다.</p>
+          <label for="forgot-password-email">이메일</label>
+          <input id="forgot-password-email" name="email" type="email" autocomplete="email" maxlength="320" required />
+          <p class="auth-error" id="forgot-password-error" role="alert" hidden></p>
+          <button class="auth-submit" type="submit">재설정 메일 보내기</button>
+          <button class="auth-link-button auth-back-button" type="button">로그인으로 돌아가기</button>
+        </form>
+
+        <form class="auth-form" id="reset-password-form" hidden>
+          <h2>새 비밀번호 설정</h2>
+          <label for="reset-password">새 비밀번호</label>
+          <input id="reset-password" name="password" type="password" autocomplete="new-password" minlength="12" maxlength="128" required />
+          <label for="reset-password-confirm">새 비밀번호 확인</label>
+          <input id="reset-password-confirm" name="passwordConfirm" type="password" autocomplete="new-password" minlength="12" maxlength="128" required />
+          <p class="auth-error" id="reset-password-error" role="alert" hidden></p>
+          <button class="auth-submit" type="submit">비밀번호 변경</button>
+          <button class="auth-link-button auth-back-button" type="button">로그인으로 돌아가기</button>
+        </form>
+      </section>
+    </dialog>
+
+    <dialog class="auth-dialog" id="security-dialog" aria-labelledby="security-title">
+      <section class="auth-surface">
+        <div class="security-heading">
+          <div>
+            <p class="eyebrow">ACCOUNT SECURITY</p>
+            <h1 id="security-title">계정 보안</h1>
+          </div>
+          <button class="topbar-command" id="security-close-button" type="button">닫기</button>
+        </div>
+
+        <section class="security-section">
+          <h2>로그인된 기기</h2>
+          <p class="auth-description">모르는 기기는 즉시 로그아웃시키세요.</p>
+          <div class="session-list" id="session-list"></div>
+        </section>
+
+        <form class="auth-form security-section" id="change-password-form">
+          <h2>비밀번호 변경</h2>
+          <label for="current-password">현재 비밀번호</label>
+          <input id="current-password" name="currentPassword" type="password" autocomplete="current-password" maxlength="128" required />
+          <label for="new-password">새 비밀번호</label>
+          <input id="new-password" name="newPassword" type="password" autocomplete="new-password" minlength="12" maxlength="128" required />
+          <label for="new-password-confirm">새 비밀번호 확인</label>
+          <input id="new-password-confirm" name="newPasswordConfirm" type="password" autocomplete="new-password" minlength="12" maxlength="128" required />
+          <p class="auth-error" id="change-password-error" role="alert" hidden></p>
+          <button class="auth-submit" type="submit">비밀번호 변경 후 전체 로그아웃</button>
+        </form>
+      </section>
+    </dialog>
+
+    <main id="app-main" hidden>
       <section class="intro">
         <div>
           <p class="eyebrow">COPY + IMAGE MODEL PIPELINE</p>
@@ -360,6 +465,6 @@
       </div>
     </main>
 
-    <script src="./app.js?v=provider-groups-20260717"></script>
+    <script src="./app.js?v=auth-20260720"></script>
   </body>
 </html>

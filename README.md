@@ -141,17 +141,16 @@ python -m venv .venv
 .venv\Scripts\activate
 python -m pip install --upgrade pip
 pip install -e ".[dev]"
-copy .env.example .env
+copy .env.gcp.example .env
 ```
 
-GCP VM에서 실행할 때는 GCP 기준 예시 파일을 사용합니다.
+환경변수 예시는 로컬과 GCP 모두 `apps/api/.env.gcp.example`만 기준으로 사용하고,
+실행 값은 git에 포함되지 않는 `apps/api/.env`에 둡니다. 로컬에서는 DB 주소, origin,
+`ENVIRONMENT`, Refresh Cookie의 `Secure`/이름을 로컬 HTTP 환경에 맞게 변경해야 합니다.
 
 ```bash
 cp apps/api/.env.gcp.example apps/api/.env
 ```
-
-기존 `apps/api/.env.example`은 팀 협의 전까지 유지합니다. 휴가 중인 팀원 복귀 후
-기존 예시 파일을 삭제할지, 또는 GCP 기준 설정을 `.env.example`에 통합할지 결정합니다.
 
 ### 3. `.env` 설정
 
@@ -205,26 +204,26 @@ http://127.0.0.1:5500
 API 문서:
 
 ```text
-http://127.0.0.1:8000/docs
+http://127.0.0.1:7660/docs
 ```
 
 ### 5. API 서버만 따로 실행
 
 ```cmd
 cd apps\api
-.venv\Scripts\python.exe -m uvicorn app.extensions.ad_content.main:app --host 127.0.0.1 --port 8000
+.venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 7660
 ```
 
 상태 확인:
 
 ```cmd
-curl http://127.0.0.1:8000/health
+curl http://127.0.0.1:7660/health
 ```
 
 API 문서:
 
 ```text
-http://127.0.0.1:8000/docs
+http://127.0.0.1:7660/docs
 ```
 
 ### 6. 브라우저만 따로 실행
@@ -266,6 +265,7 @@ node --check ..\web\app.js
 
 ## 주요 문서
 
+- 인증 백엔드 구현 범위: [docs/Backend.md](docs/Backend.md)
 - 로컬 Qwen + ComfyUI FLUX 온보딩: [docs/LOCAL_AI_PIPELINE_ONBOARDING.md](docs/LOCAL_AI_PIPELINE_ONBOARDING.md)
 - API 실행 문서: [apps/api/README.md](apps/api/README.md)
 - 브라우저 실행 문서: [apps/web/README.md](apps/web/README.md)
