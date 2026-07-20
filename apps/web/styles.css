@@ -98,6 +98,232 @@ select {
   font-weight: 800;
 }
 
+.topbar-actions,
+.auth-user {
+  display: flex;
+  align-items: center;
+}
+
+.topbar-actions {
+  gap: 18px;
+}
+
+.auth-user {
+  min-width: 0;
+  gap: 10px;
+  padding-left: 18px;
+  border-left: 1px solid var(--line);
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.auth-user > span {
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.topbar-command {
+  padding: 7px 9px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--muted);
+  background: var(--panel);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.auth-dialog {
+  width: min(430px, calc(100% - 32px));
+  max-height: calc(100dvh - 32px);
+  padding: 0;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--ink);
+  background: var(--panel);
+  box-shadow: 0 28px 90px rgba(42, 35, 30, 0.22);
+}
+
+.auth-dialog::backdrop {
+  background: rgba(36, 33, 31, 0.48);
+  backdrop-filter: blur(4px);
+}
+
+.auth-surface {
+  padding: 30px;
+}
+
+.auth-heading {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  margin-bottom: 26px;
+}
+
+.auth-heading .eyebrow {
+  margin: 0 0 3px;
+  font-size: 9px;
+}
+
+.auth-heading h1 {
+  font-size: 26px;
+  line-height: 1;
+}
+
+.auth-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  padding: 3px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #eeeae2;
+}
+
+.auth-tabs button {
+  min-height: 38px;
+  border: 0;
+  border-radius: 5px;
+  color: var(--muted);
+  background: transparent;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.auth-tabs button[aria-selected="true"] {
+  color: var(--ink);
+  background: var(--panel);
+  box-shadow: 0 1px 4px rgba(53, 43, 35, 0.12);
+}
+
+.auth-form {
+  margin-top: 22px;
+}
+
+.auth-form h2,
+.security-section h2 {
+  margin: 0 0 8px;
+  font-size: 17px;
+}
+
+.auth-form label {
+  display: block;
+  margin: 15px 0 7px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.auth-form input {
+  width: 100%;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--ink);
+  background: #fff;
+  outline: none;
+}
+
+.auth-form input:focus {
+  border-color: var(--coral);
+  box-shadow: 0 0 0 3px rgba(233, 97, 67, 0.12);
+}
+
+.auth-submit {
+  width: 100%;
+  min-height: 46px;
+  margin-top: 22px;
+  border: 0;
+  border-radius: 6px;
+  color: #fff;
+  background: var(--coral-dark);
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.auth-submit:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
+
+.auth-error {
+  margin: 12px 0 0;
+  color: var(--coral-dark);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.auth-error.auth-notice {
+  color: var(--green);
+}
+
+.auth-description {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.auth-link-button {
+  display: block;
+  margin: 13px auto 0;
+  border: 0;
+  color: var(--muted);
+  background: transparent;
+  font-size: 12px;
+  font-weight: 800;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.security-heading,
+.session-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.security-heading {
+  margin-bottom: 24px;
+}
+
+.security-heading .eyebrow {
+  margin: 0 0 4px;
+}
+
+.security-section {
+  padding-top: 22px;
+  border-top: 1px solid var(--line);
+}
+
+.security-section + .security-section {
+  margin-top: 24px;
+}
+
+.session-list {
+  margin-top: 12px;
+}
+
+.session-item {
+  padding: 12px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.session-item strong,
+.session-item small {
+  display: block;
+}
+
+.session-item small {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 10px;
+}
+
 .status-dot {
   width: 7px;
   height: 7px;
@@ -990,6 +1216,23 @@ select:focus {
 @media (max-width: 760px) {
   .topbar {
     padding: 0 18px;
+  }
+
+  .topbar-status {
+    display: none;
+  }
+
+  .auth-user {
+    padding-left: 0;
+    border-left: 0;
+  }
+
+  .auth-user > span {
+    max-width: 90px;
+  }
+
+  .auth-surface {
+    padding: 24px;
   }
 
   main {

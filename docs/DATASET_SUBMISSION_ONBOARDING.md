@@ -1,5 +1,5 @@
 # BrandMate Dataset Submission Guide
-update: 2026.07.17
+update: 2026.07.19
 
 이 문서는 BrandMate 팀원이 데이터셋을 만들고 공유할 때 지켜야 하는 공통 규칙입니다.
 
@@ -196,7 +196,8 @@ processed/sns/v1/
   "dataset_name": "TODO",
   "version": "v1",
   "dataset_stage": "raw | curated | processed",
-  "status": "baseline | stable | deprecated",
+  "status": "experimental | baseline | stable | deprecated",
+  "artifact_role": "optional: source_pool | smoke_sample | mvp_sample | train_dataset | eval_subset | retrieval_index | api_payload",
   "owner": "TODO",
   "created_at": "YYYY-MM-DD",
   "source": {
@@ -226,10 +227,6 @@ processed/sns/v1/
   "storage": {
     "gcs_path": "TODO",
     "local_example_path": "TODO",
-    "package_docs": {
-      "manifest_path": "docs/manifest.json",
-      "description_path": "docs/description.md"
-    },
     "dvc_tracked": false
   },
   "reproducibility": {
@@ -302,10 +299,6 @@ AI가 모르는 값은 추측하지 말고 `TODO`로 남겨주세요.
   "storage": {
     "gcs_path": "gs://ssakda/projects/brandmate/data/processed/sns_trend/v1/cross_platform_signal_top_candidates/",
     "local_example_path": "data/processed/sns_trend/v1/cross_platform_signal_top_candidates/",
-    "package_docs": {
-      "manifest_path": "docs/manifest.json",
-      "description_path": "docs/description.md"
-    },
     "dvc_tracked": false
   },
   "reproducibility": {
@@ -327,9 +320,10 @@ AI가 모르는 값은 추측하지 말고 `TODO`로 남겨주세요.
 | 필드 | 의미 | 작성 예시 |
 | --- | --- | --- |
 | `dataset_name` | 데이터셋 이름입니다. 버전과 산출물 종류는 넣지 않습니다. | `sns_trend`, `aihub_food_image_text` |
-| `version` | 데이터셋 버전입니다. 같은 목적의 데이터셋이 바뀌면 `v2`, `v3`로 올립니다. | `v1` |
+| `version` | 데이터셋 release 번호입니다. 새 데이터가 들어왔거나, 선별 기준/생성 코드/출력 구조/사용 목적이 달라져 기존 버전과 구분해야 하면 `v2`, `v3`로 올립니다. 단, 매일/매주 자동으로 누적되는 운영 데이터는 version을 매번 올리기보다 `date`, `week`, `month` 같은 partition으로 관리할 수 있습니다. | `v1` |
 | `dataset_stage` | 데이터 단계입니다. 원본 전체면 `raw`, 선별본이면 `curated`, 모델이 바로 쓰는 가공본이면 `processed`입니다. | `curated` |
-| `status` | 현재 버전의 운영 상태입니다. 첫 기준점은 `baseline`, 안정화된 버전은 `stable`, 더 이상 쓰지 않으면 `deprecated`입니다. | `baseline` |
+| `status` | 현재 버전의 운영 상태입니다. 기능 확인/탐색용은 `experimental`, 첫 공식 기준점은 `baseline`, 안정화된 버전은 `stable`, 더 이상 쓰지 않으면 `deprecated`입니다. | `baseline` |
+| `artifact_role` | 선택 필드입니다. 같은 `dataset_name/version/stage` 아래에 여러 artifact가 있을 때 이 artifact의 역할을 구분합니다. | `source_pool`, `smoke_sample`, `mvp_sample`, `train_dataset`, `eval_subset`, `retrieval_index`, `api_payload` |
 | `owner` | 데이터셋 생성/관리 담당자입니다. | `giwoo`, `chaebin` |
 | `created_at` | 데이터셋 생성일입니다. | `2026-07-13` |
 | `source.provider` | 원본 제공처입니다. | `AIHub`, `Instagram`, `Kaggle`, `manual_crawl` |
@@ -352,8 +346,6 @@ AI가 모르는 값은 추측하지 말고 `TODO`로 남겨주세요.
 | `processing.output_files` | 생성된 주요 파일 목록입니다. | `["metadata.csv", "images/", "summary.json"]` |
 | `storage.gcs_path` | GCS에 업로드될 위치입니다. | `gs://ssakda/projects/brandmate/data/processed/sns/v1/` |
 | `storage.local_example_path` | 로컬 예시 경로입니다. | `~/final_1_team/data/sns_meme_v1` |
-| `storage.package_docs.manifest_path` | artifact root 기준 package manifest 상대경로입니다. Airflow는 `storage.gcs_path`와 조합해 읽습니다. | `docs/manifest.json` |
-| `storage.package_docs.description_path` | artifact root 기준 package description 상대경로입니다. Airflow는 `storage.gcs_path`와 조합해 읽습니다. | `docs/description.md` |
 | `storage.dvc_tracked` | DVC로 추적하는지 여부입니다. | `false` |
 | `reproducibility.generation_script_available` | 재생성 스크립트가 있는지 여부입니다. | `true`, `false` |
 | `reproducibility.generation_script_path` | 재생성 스크립트나 노트북 경로입니다. | `scripts/build_sns_dataset.py`, `Colab URL` |
@@ -361,6 +353,17 @@ AI가 모르는 값은 추측하지 말고 `TODO`로 남겨주세요.
 | `reproducibility.can_rebuild` | 같은 결과를 다시 만들 수 있는지 여부입니다. | `true`, `false`, `partial` |
 | `limitations` | 현재 데이터셋의 한계입니다. 숨기지 말고 적습니다. | `["카페 메뉴 데이터 부족"]` |
 | `next_version_plan` | 다음 버전에서 보강할 내용입니다. | `카페/베이커리 메뉴 추가 수집` |
+
+### Status 값 기준
+
+`status`는 데이터 단계나 artifact 역할이 아니라 운영 상태를 뜻합니다. 아래 4개 값만 사용합니다.
+
+| status | 의미 | 예시 |
+| --- | --- | --- |
+| `experimental` | 기능 확인/탐색용. 공식 비교 기준 아님 | `c0241_20210802` 8개 smoke sample |
+| `baseline` | 팀이 첫 공식 기준점으로 삼는 데이터 | `ju_ja_validation_selected` 후보 풀 또는 첫 processed 분석 결과 |
+| `stable` | 반복 실험/서비스/API에서 계속 쓰기로 고정한 버전 | 최종 dashboard/RAG/API 입력 데이터 |
+| `deprecated` | 더 이상 사용하지 않는 데이터 | 구조 변경 전 v1, 잘못된 샘플 |
 
 ### 작성 기준
 
@@ -372,6 +375,7 @@ AI가 모르는 값은 추측하지 말고 `TODO`로 남겨주세요.
 - `TODO`는 해당 항목이 필요하지만 아직 값을 모른다는 뜻입니다.
 - `curated` 데이터셋이면 `processing` 쪽은 비워도 됩니다.
 - `processed` 데이터셋이면 `input_dataset`, `artifact_name`, `preprocessing_steps`, `output_files`는 꼭 적어주세요.
+- 같은 dataset/version 아래에 후보 풀, MVP sample, 평가 subset처럼 여러 목적의 artifact를 함께 둘 때는 `artifact_role`을 추가합니다.
 - `limitations`에는 현재 데이터셋의 한계를 솔직하게 적어주세요.
 - `next_version_plan`에는 다음 버전에서 보강할 점을 적어주세요.
 - 공통 manifest 형식은 최소 필수 규격입니다. 데이터셋 특성상 추가로 기록해야 하는 정보가 있으면 `manifest.json`에 별도 section을 추가해주시기 바랍니다. 
@@ -536,44 +540,26 @@ MLOps/인프라 담당자용 전체 bucket 구조, DVC remote, 권한, 업로드
 `manifest.storage.gcs_path`에는 아래 규칙에 맞는 경로를 적습니다.
 
 ```text
-gs://ssakda/projects/brandmate/data/curated/{dataset_name}/v{version}/
+gs://ssakda/projects/brandmate/data/curated/{dataset_name}/v{version}/{artifact_name}/
 gs://ssakda/projects/brandmate/data/processed/{dataset_name}/v{version}/{artifact_name}/
 ```
 
 - 용량 정보는 폴더명에 넣지 않습니다. 용량은 manifest에 기록합니다.
 - 데이터셋 이름과 processed 산출물 이름은 분리합니다. 예를 들어 AIHub 음식 이미지 및 정보소개 텍스트 데이터로 음식 설명용 데이터를 만들었다면 `dataset_name`은 `aihub_food_image_text`, processed 산출물 이름인 `artifact_name`은 `food_description_data`로 기록합니다.
-- 데이터 파일만 올리지 말고, 데이터 패키지 안에 `docs/manifest.json`, `docs/description.md` 사본을 함께 둡니다.
-- 현재 운영 범위에서는 `data/manifests/{dataset_name}_{version}.json` 같은 중앙 manifest 사본을 만들지 않습니다. 나중에 Airflow/API가 전체 dataset 목록을 자동 조회해야 할 때는 `data/catalog/datasets.json` 같은 catalog/index를 별도 정책으로 도입합니다.
+- GCS에는 데이터 파일만 업로드합니다. `manifest.json`, `description.md` 사본은 GCS에 두지 않습니다.
 
-### Git metadata 원본과 GCS metadata 사본 구분
+### Metadata 관리 원칙
 
-metadata 파일명은 어디에 있든 항상 `manifest.json`, `description.md`로 유지합니다.
-파일명을 `git_manifest.json`, `gcs_manifest.json`처럼 나누지 않습니다.
+완벽한 데이터 계보 관리만 놓고 보면 GCS artifact 안에 metadata 사본을 함께 두는 방식이 더 엄밀합니다.
+하지만 현재 팀은 초기 스타트업/팀프로젝트 단계이고, 이미 Git과 GCS 양쪽에 docs가 있어 팀원이 혼동한 사례가 있었습니다.
+따라서 현재 운영 기준에서는 팀원의 혼동을 줄이는 것을 우선합니다.
 
-위치에 따라 역할이 다릅니다.
-
-| 위치 | 역할 | 수정 기준 |
-| --- | --- | --- |
-| `docs/datasets/{dataset_name}/{version}/manifest.json` | Git에서 관리하는 공식 metadata 원본 | 데이터셋 담당자가 수정하고 PR 리뷰 |
-| `docs/datasets/{dataset_name}/{version}/description.md` | Git에서 관리하는 공식 설명 문서 원본 | 데이터셋 담당자가 수정하고 PR 리뷰 |
-| `data/{stage}/{dataset_name}/{version}/{artifact_name}/docs/manifest.json` | GCS 데이터 패키지 안에 포함되는 metadata 사본 | 공식 원본 확인 후 MLOps 담당자가 동기화 |
-| `data/{stage}/{dataset_name}/{version}/{artifact_name}/docs/description.md` | GCS 데이터 패키지 안에 포함되는 설명 문서 사본 | 공식 원본 확인 후 MLOps 담당자가 동기화 |
-
-Git의 `docs/datasets/...` 아래 파일이 공식 원본입니다.
-GCS 데이터 패키지 내부 `docs/` 아래 파일은 데이터 파일 옆에 붙여두는 사본입니다.
-
-수정은 Git 원본에서 먼저 진행하고, 검수 후 GCS 사본에 반영합니다.
-
-GCS/DVC artifact 내부 `docs/`는 유지합니다. 데이터 패키지 하나만 내려받아도 실제 데이터와 설명서가 같이 있어야 하고,
-Airflow도 `storage.gcs_path`와 `storage.package_docs.*_path`를 조합해 해당 artifact 내부 metadata를 직접 검증할 수 있어야 합니다.
-
-중앙 manifest만 두는 구조로 바꾸지 않습니다. 중앙 파일 하나에 모든 metadata를 몰아두면 artifact 폴더만 봤을 때 데이터 맥락을 알기 어렵고,
-Git 원본, GCS 데이터, DVC pointer 사이의 참조 관계가 늘어납니다.
-
-나중에 dataset 이름과 version만으로 artifact 경로를 찾는 자동 탐색 기능이 필요해지면, 중앙 manifest 사본이 아니라
-`data/catalog/datasets.json` 같은 catalog/index를 별도로 도입합니다.
-이 catalog는 artifact 목록과 `artifact_root`를 찾기 위한 색인일 뿐이며, artifact 내부 `docs/manifest.json`, `docs/description.md`를 대체하지 않습니다.
-catalog/index는 DVC 추적 대상에서 제외합니다.
+- `manifest.json`, `description.md`는 Git의 `docs/datasets/...` 아래에서만 관리합니다.
+- GCS에는 데이터 파일만 업로드합니다.
+- GCS에 metadata 사본을 두지 않습니다. Git/GCS 양쪽 문서 불일치와 팀원 혼동을 막기 위해서입니다.
+- `status` 변경은 Git manifest만 수정합니다.
+- DVC는 공식 `processed` 산출물만 추적합니다.
+- catalog/index는 현재 도입하지 않습니다. 데이터셋 수가 늘어 Git metadata만으로 탐색이 어려워질 때 별도 정책으로 도입합니다.
 
 팀원이 GCS에 직접 업로드하거나 내려받아야 할 때는 아래 명령을 사용합니다.
 
@@ -607,3 +593,43 @@ week=2026-W28
 
 Airflow 실행 환경은 UTC일 수 있지만, 데이터 partition은 한국 서비스 기준에 맞춰
 `Asia/Seoul` 기준으로 계산합니다.
+
+### Version과 수집 partition 구분
+
+`version`은 팀이 구분해서 관리하는 데이터셋 release 번호입니다.
+새 데이터가 들어왔거나, 선별 기준/생성 코드/출력 구조/사용 목적이 달라져 기존 버전과 구분해야 하면 `v2`, `v3`로 올릴 수 있습니다.
+
+다만 매일/매주 자동으로 누적되는 운영 데이터는 version을 매번 올리면 관리가 지저분해집니다.
+이 경우에는 같은 version 아래에 `date`, `week`, `month` 같은 partition을 둡니다.
+
+예를 들어 `sns_trend`를 매주 같은 방식으로 크롤링한다면 아래처럼 같은 `v1`에 주차 partition을 둘 수 있습니다.
+
+```text
+data/processed/sns_trend/v1/week=2026-W28/cross_platform_signal_top_candidates/
+data/processed/sns_trend/v1/week=2026-W29/cross_platform_signal_top_candidates/
+data/processed/sns_trend/v1/week=2026-W30/cross_platform_signal_top_candidates/
+```
+
+반대로 팀이 새 release로 구분하는 편이 더 명확하면 version을 올립니다.
+특히 수동 선별 데이터, 고정 benchmark, 발표/서비스 기준 데이터처럼 자주 바뀌지 않는 데이터는 `v1`, `v2` 방식이 단순합니다.
+
+| 상황 | 추천 관리 방식 | 이유 |
+| --- | --- | --- |
+| AIHub food image/text처럼 자주 바뀌지 않는 고정 데이터셋 | `v1`, `v2` release 관리 | 팀원이 버전 단위로 이해하기 쉬움 |
+| 매주 크롤링되는 `sns_trend` | `week=YYYY-Www` partition 또는 필요 시 새 version | 반복 수집이라 매주 version을 올리면 version 의미가 흐려질 수 있음 |
+| 실제 운영형 CCTV/visitor_flow 일별 집계 | `date=YYYY-MM-DD` partition | 매일 쌓이는 운영 데이터라 일자 기준 조회가 중요 |
+| 선별 기준/생성 코드/출력 구조/사용 목적이 크게 바뀜 | 새 version | 기존 결과와 비교/재현 기준이 달라짐 |
+
+### CCTV/visitor_flow partition 기준
+
+중요한 예외: CCTV도 매일 찍히는 운영 데이터가 되면 주기적 데이터셋입니다.
+현재 `aihub_cctv_visitor_flow`가 낮은 변경 빈도로 분류되는 이유는 AIHub에서 받은 고정 샘플을 쓰기 때문입니다.
+실제 매장 CCTV 입력으로 전환하면 아래처럼 시간 partition을 둡니다.
+
+```text
+data/processed/visitor_flow/v1/store_id={store_id}/date=YYYY-MM-DD/
+data/processed/visitor_flow/v1/store_id={store_id}/week=YYYY-Www/
+```
+
+일 단위 운영/인력 배치 분석이 목적이면 `date=YYYY-MM-DD`를 우선 사용합니다.
+주간 리포트나 트렌드 비교가 목적이면 `week=YYYY-Www` 집계 artifact를 별도로 만듭니다.
