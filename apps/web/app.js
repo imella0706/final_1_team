@@ -68,6 +68,10 @@ const securityCloseButton = $("#security-close-button");
 const sessionList = $("#session-list");
 const changePasswordForm = $("#change-password-form");
 const changePasswordError = $("#change-password-error");
+const serviceSelection = $("#service-selection");
+const adStudio = $("#ad-studio");
+const openAdStudioButton = $("#open-ad-studio");
+const backToServicesButton = $("#back-to-services");
 
 let hasGeneratedAd = false;
 let referencePreviewDataUrl = null;
@@ -1121,6 +1125,8 @@ function showAuthGate(message = "", notice = false) {
   accessToken = null;
   currentUser = null;
   appMain.hidden = true;
+  serviceSelection.hidden = false;
+  adStudio.hidden = true;
   authUser.hidden = true;
   apiState.textContent = "로그인 필요";
   apiState.className = "offline";
@@ -1133,11 +1139,24 @@ function showAuthGate(message = "", notice = false) {
   }
 }
 
+function showServiceSelection() {
+  serviceSelection.hidden = false;
+  adStudio.hidden = true;
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
+function showAdStudio() {
+  serviceSelection.hidden = true;
+  adStudio.hidden = false;
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
 function showAuthenticated(session) {
   applySession(session);
   authUserName.textContent = currentUser.display_name;
   authUser.hidden = false;
   appMain.hidden = false;
+  showServiceSelection();
   if (authDialog.open) {
     authDialog.close();
   }
@@ -1519,6 +1538,8 @@ referenceCutoutToggle?.addEventListener("change", updateReferencePreview);
 referencePreviewClear?.addEventListener("click", clearReferencePreview);
 channelSelect?.addEventListener("change", updateChannelMode);
 addProductButton?.addEventListener("click", addProductRow);
+openAdStudioButton?.addEventListener("click", showAdStudio);
+backToServicesButton?.addEventListener("click", showServiceSelection);
 
 resetButton.addEventListener("click", () => {
   form.reset();
