@@ -14,7 +14,7 @@ import cv2
 from ultralytics import YOLO
 
 
-# [Design Intent] L1-1C는 방문객 수를 계산하는 단계가 아니라, 같은 프레임의
+# [Design Intent] L1-3은 방문객 수를 계산하는 단계가 아니라, 같은 프레임의
 # YOLO bbox와 AIHub 정답 bbox를 비교해 탐지 모델의 오류를 정량화하는 단계다.
 
 
@@ -118,10 +118,17 @@ def validate_label_video(
         )
     if abs(float(label_video["fps"]) - metadata["fps"]) > 1e-6:
         mismatches.append(f"fps label={label_video['fps']} video={metadata['fps']}")
-    if (int(label_width), int(label_height)) != (
-        metadata["width"],
-        metadata["height"],
-    ):
+    # [Design Intent] 일부 AIHub mp4는 codec macroblock padding 때문에 실제 frame
+    # height가 label resolution보다 8px 크게 읽힌다. 파일명/fps/frame_count가 맞고
+    # width가 동일하며 video height가 label height보다 16px 이하로 큰 경우는 같은 영상의
+    # 하단 패딩으로 간주한다. 그 외 resolution mismatch는 평가 신뢰성을 깨므로 중단한다.
+    label_resolution = (int(label_width), int(label_height))
+    video_resolution = (metadata["width"], metadata["height"])
+    has_small_bottom_padding = (
+        label_resolution[0] == video_resolution[0]
+        and 0 < video_resolution[1] - label_resolution[1] <= 16
+    )
+    if label_resolution != video_resolution and not has_small_bottom_padding:
         mismatches.append(
             "resolution "
             f"label={label_width}x{label_height} "
@@ -637,7 +644,7 @@ def main() -> None:
     )
 
     summary = {
-        "scope": "L1-1C_yolo_vs_aihub_label_evaluation",
+        "scope": "L1-3_yolo_vs_aihub_label_evaluation",
         "video": str(args.video),
         "label": str(args.label),
         "model": str(args.model),
