@@ -92,25 +92,73 @@ Naver Blog 채널은 예외입니다. 업로드 사진이 있으면 블로그 �
 
 ## 빠른 실행
 
-현재 표준 실행 경로는 Linux/GCP/WSL 기준의 서비스 관리 스크립트입니다.
-FastAPI, 정적 프론트엔드, ComfyUI를 같은 명령 체계에서 관리합니다.
+현재 GCP/WSL 기준 표준 실행 경로는 `scripts/manage_brandmate_services_gcp.sh`입니다.
+FastAPI, 정적 프론트엔드, Postgres, DB migration, ComfyUI를 같은 명령 체계에서 관리합니다. CCTV 상권분석 Streamlit은 아직 개발 중이므로 기본 실행에서는 제외합니다.
+
+이 스크립트는 현재 GCP 세팅과 발표용 로컬 시연 기준입니다. 다만 팀원 로컬 환경에 FLUX/ComfyUI가 없어도 스크립트가 자동으로 감지해 ComfyUI만 건너뜁니다. 이 경우 인증, 서비스 선택, 광고 생성 화면 진입, FastAPI 연동은 확인할 수 있고, FLUX 이미지 생성만 사용할 수 없습니다. 상권분석 Streamlit은 개발 중이라 기본값으로 띄우지 않습니다.
 
 ```bash
 # 서비스 시작
-./scripts/manage_brandmate_services.sh
+./scripts/manage_brandmate_services_gcp.sh
 
 # 상태 확인
-./scripts/manage_brandmate_services.sh status
+./scripts/manage_brandmate_services_gcp.sh status
 
 # 로그 확인
-./scripts/manage_brandmate_services.sh logs
+./scripts/manage_brandmate_services_gcp.sh logs
 
 # 서비스 종료
-./scripts/manage_brandmate_services.sh stop
+./scripts/manage_brandmate_services_gcp.sh stop
 
 # 서비스 재시작
-./scripts/manage_brandmate_services.sh restart
+./scripts/manage_brandmate_services_gcp.sh restart
 ```
+
+### 실행 모드
+
+| 대상 | 명령어 | 실행 범위 |
+| --- | --- | --- |
+| 팀원 기본 실행 | `./scripts/manage_brandmate_services_gcp.sh restart` | Postgres, DB migration, FastAPI, web, ComfyUI 자동 감지. 상권분석 Streamlit은 제외 |
+| 상권분석 담당 개발자 | `START_DASHBOARD=true ./scripts/manage_brandmate_services_gcp.sh restart` | 팀원 기본 실행 범위 + `apps/visitor_flow_l2_dashboard` Streamlit 대시보드 |
+
+### 팀원 로컬 확인
+
+팀원 PC에 FLUX/ComfyUI가 없어도 같은 명령을 사용합니다. ComfyUI가 설치되어 있으면 실행하고, 없으면 자동으로 skip합니다. 상권분석 Streamlit은 개발 중이므로 팀원 로컬에서는 기본적으로 실행하지 않습니다.
+
+```bash
+# [Design Intent] GCP/로컬 모두 같은 진입점을 사용한다. ComfyUI는 환경에 따라 자동 감지하고, 개발 중인 Streamlit은 기본 비활성화한다.
+./scripts/manage_brandmate_services_gcp.sh restart
+```
+
+접속:
+
+```text
+http://127.0.0.1:5501
+```
+
+주의:
+
+- ComfyUI가 없는 환경에서는 FLUX 이미지 생성만 사용할 수 없습니다.
+- 상권분석 Streamlit은 개발 중이므로 기본 실행에서는 뜨지 않습니다.
+- 상권분석 대시보드를 상권분석 담당 개발자가 직접 확인할 때만 `START_DASHBOARD=true ./scripts/manage_brandmate_services_gcp.sh restart`로 실행합니다.
+- 전체 광고 이미지 생성은 GCP/시연 머신에서 `./scripts/manage_brandmate_services_gcp.sh restart`로 확인합니다.
+
+### 팀원에게 공유할 로그인 방식
+
+GCP 서버가 떠 있는 경우 팀원은 로컬에 FLUX를 설치하지 않고 GCP의 BrandMate web URL로 접속해서 로그인합니다. GCP 외부 IP 또는 도메인은 보안상 README에 고정하지 말고 팀 채널에 별도로 공유합니다.
+
+```text
+http://<GCP_EXTERNAL_IP_OR_DOMAIN>:5501
+```
+
+현재 테스트 계정:
+
+```text
+id: admin@admin.com
+pw: brandmateadmin
+```
+
+이 계정은 로컬/시연용 테스트 계정입니다. 공개 배포 계정이나 운영 계정으로 쓰면 안 됩니다.
 
 아래 스크립트는 협의 전까지 유지하는 legacy 경로입니다. 현재 표준 실행 경로가 아닙니다.
 

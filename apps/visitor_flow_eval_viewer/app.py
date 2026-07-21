@@ -11,14 +11,14 @@ import pandas as pd
 import streamlit as st
 
 
-# [Design Intent] 이 앱은 단일 영상 L1-1C 결과를 설명하는 시연 화면이다.
+# [Design Intent] 이 앱은 단일 영상 L1-3 결과를 설명하는 시연 화면이다.
 # 실제 방문객 수, 시간대별 상권 피크, 최종 마케팅 처방으로 확대 해석하지 않는다.
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_RESULTS_DIR = (
     REPO_ROOT
     / "outputs"
     / "visitor_flow_mvp"
-    / "c0241_20210802_yolo_l1_1c"
+    / "c0241_20210802_yolo_l1_3"
 )
 
 REQUIRED_FILES = {
@@ -48,7 +48,7 @@ def validate_results_dir(results_dir: Path) -> list[Path]:
 def load_results(
     results_dir: Path,
 ) -> tuple[dict[str, Any], pd.DataFrame, pd.DataFrame]:
-    """Load the small L1-1C evaluation artifacts used by this POC."""
+    """Load the small L1-3 evaluation artifacts used by this POC."""
     summary = json.loads(
         (results_dir / REQUIRED_FILES["summary"]).read_text(encoding="utf-8")
     )
@@ -90,23 +90,33 @@ def render_scope_notice() -> None:
 
 def render_metric_cards(selected: pd.Series) -> None:
     first, second, third, fourth = st.columns(4)
-    first.metric("선택 confidence", f"{selected['confidence_threshold']:.2f}")
+    first.metric("임시 confidence", f"{selected['confidence_threshold']:.2f}")
     second.metric("F1", f"{selected['f1']:.3f}")
     third.metric("Precision", f"{selected['precision']:.3f}")
     fourth.metric("Recall", f"{selected['recall']:.3f}")
 
     fifth, sixth, seventh, eighth = st.columns(4)
     fifth.metric("샘플 프레임", f"{int(selected['sampled_frames'])}장")
-    sixth.metric("AIHub bbox", f"{int(selected['ground_truth_boxes'])}건")
-    seventh.metric("YOLO bbox", f"{int(selected['prediction_boxes'])}건")
+    sixth.metric("AIHub bbox 관측", f"{int(selected['ground_truth_boxes'])}건")
+    seventh.metric("YOLO bbox 관측", f"{int(selected['prediction_boxes'])}건")
     eighth.metric("TP / FP / FN", f"{int(selected['tp'])} / {int(selected['fp'])} / {int(selected['fn'])}")
+    st.info(
+        "AIHub bbox 관측과 YOLO bbox 관측은 사람 수가 아니라 frame-level person bbox observation count입니다. "
+        "같은 사람이 여러 sampled frame에 보이면 여러 건으로 반복 집계됩니다. "
+        "현재 L1-3 평가는 tracking 없이 bbox detection 성능만 비교하므로, 순방문자 수나 실제 유동인구 수로 해석하면 안 됩니다."
+    )
 
 
 def render_threshold_comparison(metrics: pd.DataFrame, selected_threshold: float) -> None:
     st.subheader("1. Confidence threshold 비교")
     st.write(
         "confidence를 높이면 화면은 깔끔해지지만 사람을 더 많이 놓칠 수 있습니다. "
-        "현재 선택값은 단일 영상에서 F1이 가장 높은 임시 후보입니다."
+        "F1은 Precision과 Recall의 균형을 보는 지표라서, L1-3에서는 단일 영상의 임시 threshold 후보를 고르는 기준으로 사용했습니다."
+    )
+    st.info(
+        f"현재 conf={selected_threshold:.2f}는 최종값이 아닙니다. "
+        "단일 영상 18개 sampled frame에서 Precision과 Recall 균형이 가장 좋은 임시 후보입니다. "
+        "최종 threshold는 L1-5에서 8개 clip으로 확장 평가한 뒤, 유동인구 분석 목적상 Recall 저하를 얼마나 허용할지 정해서 확정합니다."
     )
 
     chart_data = metrics.set_index("confidence_threshold")[[
@@ -141,7 +151,7 @@ def render_threshold_comparison(metrics: pd.DataFrame, selected_threshold: float
             "precision": st.column_config.NumberColumn("Precision", format="%.3f"),
             "recall": st.column_config.NumberColumn("Recall", format="%.3f"),
             "f1": st.column_config.NumberColumn("F1", format="%.3f"),
-            "selected": "임시 선택",
+            "selected": "임시 후보",
         },
     )
 
@@ -154,8 +164,8 @@ def render_frame_diagnostics(
 ) -> None:
     st.subheader("2. 프레임별 bbox 관측과 오류")
     st.caption(
-        "한 사람이 여러 sampled frame에 나오면 반복 집계됩니다. "
-        "YOLO bbox는 unique visitor count가 아닙니다."
+        "AIHub/YOLO bbox 관측은 frame 단위 bbox 총합입니다. "
+        "같은 사람이 여러 sampled frame에 나오면 반복 집계되며, unique visitor count가 아닙니다."
     )
 
     default_index = min(
@@ -176,8 +186,8 @@ def render_frame_diagnostics(
         "prediction_count",
     ]].rename(
         columns={
-            "gt_count": "AIHub reference bbox",
-            "prediction_count": "YOLO bbox",
+            "gt_count": "AIHub bbox 관측",
+            "prediction_count": "YOLO bbox 관측",
         }
     )
     st.line_chart(observation_chart, height=300)
@@ -204,8 +214,8 @@ def render_frame_diagnostics(
         column_config={
             "timestamp_sec": st.column_config.NumberColumn("영상 시점(초)", format="%.1f"),
             "frame_index": "frame",
-            "gt_count": "AIHub bbox",
-            "prediction_count": "YOLO bbox",
+            "gt_count": "AIHub bbox 관측",
+            "prediction_count": "YOLO bbox 관측",
             "tp": "TP",
             "fp": "reference-label FP",
             "fn": "FN",
@@ -259,6 +269,7 @@ def render_poc_decision(selected: pd.Series) -> None:
         st.error("아직 주장하면 안 됨")
         st.markdown(
             "- 실제 방문객 수와 중복 제거\n"
+            "- tracking 기반 순방문자/진입 이벤트 카운팅\n"
             "- 하루 시간대별 피크 비교\n"
             "- 구역 heatmap과 체류/동선\n"
             "- 점포별 운영·마케팅 최종 추천"
@@ -266,7 +277,7 @@ def render_poc_decision(selected: pd.Series) -> None:
 
     st.info(
         f"선택 threshold에서도 AIHub bbox 기준 약 {missed_rate:.1%}를 놓쳤습니다. "
-        "다음 검증은 C0241의 나머지 7개 영상으로 확장하는 L1-2입니다."
+        "다음 검증은 C0241의 나머지 7개 영상으로 확장하는 L1-5입니다."
     )
 
 
@@ -277,13 +288,13 @@ def main() -> None:
         layout="wide",
     )
     st.title("매장 앞 방문객 흐름 YOLO POC")
-    st.caption("C0241 · 2021-08-02 17:09 · 단일 180초 영상 · L1-1C 모델 검증")
+    st.caption("C0241 · 2021-08-02 17:09 · 단일 180초 영상 · L1-3 모델 검증")
     render_scope_notice()
 
     with st.sidebar:
         st.header("데이터 경로")
         results_path_text = st.text_input(
-            "L1-1C 결과 폴더",
+            "L1-3 결과 폴더",
             value=str(DEFAULT_RESULTS_DIR.relative_to(REPO_ROOT)),
         )
         st.caption("절대 경로 또는 저장소 루트 기준 상대 경로를 사용할 수 있습니다.")
