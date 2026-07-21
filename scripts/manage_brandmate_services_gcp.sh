@@ -131,7 +131,9 @@ start_process() {
     cd "$work_dir"
     # [Design Intent] Keep service logs durable outside the terminal session so
     # local and GCP smoke tests can be diagnosed after the shell is closed.
-    nohup "$@" >"$log_file" 2>&1 &
+    # Start each managed service in its own process group so `conda run`
+    # wrapper processes and their child Python servers can be stopped together.
+    nohup setsid "$@" >"$log_file" 2>&1 &
     echo "$!" >"$pid_file"
   )
   echo "[log] $name: $log_file"
@@ -358,7 +360,11 @@ stop_one() {
   fi
 
   echo "[stop] $name pid=$pid"
-  kill "$pid"
+  if kill -- "-$pid" >/dev/null 2>&1; then
+    :
+  else
+    kill "$pid" >/dev/null 2>&1 || true
+  fi
   rm -f "$pid_file"
 }
 
