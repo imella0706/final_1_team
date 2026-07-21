@@ -186,7 +186,7 @@ ensure_postgres() {
   while true; do
     if docker compose -f "$API_COMPOSE_FILE" exec -T brandmate-postgres \
       pg_isready -U brandmate -d brandmate >/dev/null 2>&1; then
-      echo "[ok] postgres ready: 127.0.0.1:5433"
+      echo "[ok] postgres ready: 127.0.0.1:55432"
       return 0
     fi
 
@@ -394,9 +394,9 @@ status_stack() {
   status_one comfyui "$COMFYUI_URL/system_stats"
   if docker compose -f "$API_COMPOSE_FILE" exec -T brandmate-postgres \
     pg_isready -U brandmate -d brandmate >/dev/null 2>&1; then
-    echo "[ok] postgres: 127.0.0.1:5433"
+    echo "[ok] postgres: 127.0.0.1:55432"
   else
-    echo "[down] postgres: 127.0.0.1:5433"
+    echo "[down] postgres: 127.0.0.1:55432"
   fi
 }
 

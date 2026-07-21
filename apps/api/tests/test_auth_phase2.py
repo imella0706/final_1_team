@@ -29,7 +29,7 @@ def build_phase2_test_app():
         web_origin="https://testserver",
         additional_web_origins="",
         database_url=(
-            "postgresql+asyncpg://brandmate_test:brandmate-test-only@127.0.0.1:5434/"
+            "postgresql+asyncpg://brandmate_test:brandmate-test-only@127.0.0.1:55433/"
             "brandmate_test"
         ),
         auth_secret_key=SecretStr("test-secret-key-with-at-least-32-bytes-long"),
