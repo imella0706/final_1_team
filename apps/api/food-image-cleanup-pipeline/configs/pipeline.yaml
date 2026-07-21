@@ -1,0 +1,130 @@
+project:
+  name: food-image-cleanup-pipeline
+  version: 0.2.0
+paths:
+  input_dir: data/input
+  mask_dir: data/masks
+  intermediate_dir: data/intermediate
+  detection_dir: data/detections
+  output_dir: data/output
+  report_dir: data/reports
+  model_dir: models
+  log_dir: logs
+image:
+  allowed_extensions:
+  - .jpg
+  - .jpeg
+  - .png
+  - .webp
+  max_file_size_mb: 25
+  min_long_side: 768
+  max_long_side: 1536
+  jpeg_quality: 95
+quality:
+  blur_threshold: 80.0
+  dark_mean_threshold: 55.0
+  bright_mean_threshold: 210.0
+  low_contrast_std_threshold: 28.0
+  clipping_ratio_threshold: 0.08
+models:
+  foreground_detector:
+    enabled: true
+    provider: yolo
+    weights: models/yolo11n.pt
+    confidence_threshold: 0.25
+    iou_threshold: 0.45
+    image_size: 960
+    max_detections: 100
+    target_classes:
+    - banana
+    - apple
+    - orange
+    - broccoli
+    - carrot
+    - sandwich
+    - pizza
+    - donut
+    - cake
+    - bowl
+    - cup
+    food_classes:
+    - banana
+    - apple
+    - orange
+    - broccoli
+    - carrot
+    - sandwich
+    - pizza
+    - donut
+    - cake
+    container_classes:
+    - bowl
+    - cup
+  segmenter:
+    enabled: true
+    provider: sam2
+    weights: models/sam2.1_t.pt
+    device: auto
+  removal_detector:
+    enabled: true
+    provider: yolo
+    weights: models/yolo11n.pt
+    target_classes:
+    - fork
+    - knife
+    - spoon
+  inpainter:
+    enabled: true
+    provider: big-lama
+    weights: models/big-lama.pt
+    device: auto
+    mask_dilation: 9
+  semantic_validator:
+    enabled: true
+    provider: openclip
+    model_name: ViT-B-32
+    pretrained: laion2b_s34b_b79k
+    cache_dir: models/openclip
+    device: auto
+    minimum_similarity: 0.8
+  matting:
+    enabled: true
+    provider: birefnet
+    model_id: ZhengPeng7/BiRefNet_HR
+    cache_dir: models/birefnet
+    device: auto
+    input_size: 1024
+  foreground_protection:
+    dilation: 11
+  background_generator:
+    enabled: true
+    provider: sana-1.6b
+    device: auto
+    seed: 42
+    providers:
+      sana-1.6b:
+        model_id: Efficient-Large-Model/Sana_1600M_1024px_BF16_diffusers
+        cache_dir: models/sana-1.6b
+        steps: 20
+        guidance_scale: 5.0
+      flux-schnell:
+        model_id: black-forest-labs/FLUX.1-schnell
+        cache_dir: models/flux-schnell
+        steps: 4
+        guidance_scale: 0.0
+  contact_shadow:
+    enabled: true
+    vertical_offset: 8
+    horizontal_offset: 3
+    blur_radius: 19
+    opacity: 0.22
+  harmonization:
+    enabled: true
+    max_brightness_delta: 12
+    max_contrast_delta: 0.1
+    max_saturation_delta: 0.08
+    max_hue_shift_degree: 3
+validation:
+  max_brightness_delta: 35.0
+  max_contrast_delta: 35.0
+  max_blur_score_drop_ratio: 0.2
