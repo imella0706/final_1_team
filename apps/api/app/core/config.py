@@ -19,7 +19,7 @@ class Settings(BaseSettings):
         "http://localhost:5500,http://127.0.0.1:5500"
     )
     database_url: str = (
-        "postgresql+asyncpg://brandmate:brandmate-local-only@127.0.0.1:55432/brandmate"
+        "postgresql+asyncpg://brandmate:brandmate-local-only@127.0.0.1:5433/brandmate"
     )
     auth_secret_key: SecretStr | None = None
     auth_jwt_algorithm: Literal["HS256"] = "HS256"

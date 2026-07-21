@@ -22,6 +22,17 @@ API_HOST="${API_HOST:-0.0.0.0}"
 API_PORT="${API_PORT:-7660}"
 WEB_HOST="${WEB_HOST:-0.0.0.0}"
 WEB_PORT="${WEB_PORT:-5501}"
+if [[ -n "${BRANDMATE_POSTGRES_PORT:-}" ]]; then
+  POSTGRES_PORT="$BRANDMATE_POSTGRES_PORT"
+elif grep -qi microsoft /proc/sys/kernel/osrelease 2>/dev/null; then
+  POSTGRES_PORT="55432"
+else
+  POSTGRES_PORT="5433"
+fi
+export BRANDMATE_POSTGRES_PORT="$POSTGRES_PORT"
+if [[ "$POSTGRES_PORT" != "5433" && -z "${BRANDMATE_DATABASE_URL:-}" ]]; then
+  export BRANDMATE_DATABASE_URL="postgresql+asyncpg://brandmate:brandmate-local-only@127.0.0.1:${POSTGRES_PORT}/brandmate"
+fi
 DASHBOARD_HOST="${DASHBOARD_HOST:-127.0.0.1}"
 DASHBOARD_PORT="${DASHBOARD_PORT:-8503}"
 COMFYUI_HOST="${COMFYUI_HOST:-127.0.0.1}"
@@ -186,7 +197,7 @@ ensure_postgres() {
   while true; do
     if docker compose -f "$API_COMPOSE_FILE" exec -T brandmate-postgres \
       pg_isready -U brandmate -d brandmate >/dev/null 2>&1; then
-      echo "[ok] postgres ready: 127.0.0.1:55432"
+      echo "[ok] postgres ready: 127.0.0.1:$POSTGRES_PORT"
       return 0
     fi
 
@@ -394,9 +405,9 @@ status_stack() {
   status_one comfyui "$COMFYUI_URL/system_stats"
   if docker compose -f "$API_COMPOSE_FILE" exec -T brandmate-postgres \
     pg_isready -U brandmate -d brandmate >/dev/null 2>&1; then
-    echo "[ok] postgres: 127.0.0.1:55432"
+    echo "[ok] postgres: 127.0.0.1:$POSTGRES_PORT"
   else
-    echo "[down] postgres: 127.0.0.1:55432"
+    echo "[down] postgres: 127.0.0.1:$POSTGRES_PORT"
   fi
 }
 

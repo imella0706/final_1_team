@@ -19,6 +19,16 @@ $ComposeFile = Join-Path $Root "docker-compose.api.yml"
 $ApiUrl = "http://127.0.0.1:7660"
 $WebUrl = "http://127.0.0.1:5501"
 $CosyVoiceUrl = "http://127.0.0.1:50000"
+$LocalPostgresPort = if ($env:BRANDMATE_POSTGRES_PORT) {
+    $env:BRANDMATE_POSTGRES_PORT
+} else {
+    "55432"
+}
+$env:BRANDMATE_POSTGRES_PORT = $LocalPostgresPort
+if (-not $env:BRANDMATE_DATABASE_URL) {
+    $env:BRANDMATE_DATABASE_URL = `
+        "postgresql+asyncpg://brandmate:brandmate-local-only@127.0.0.1:$LocalPostgresPort/brandmate"
+}
 $ApiLog = Join-Path $Root "api-server.log"
 $ApiErrorLog = Join-Path $Root "api-server-error.log"
 $WebLog = Join-Path $Root "web-server.log"
