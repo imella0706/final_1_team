@@ -1,3 +1,5 @@
+import asyncio
+
 from fastapi import APIRouter, HTTPException, status
 
 from app.core.config import settings
@@ -9,6 +11,12 @@ from app.extensions.ad_content.image_service import (
     generate_ad_image,
 )
 from app.extensions.ad_content.image_prompt import describe_blog_images, describe_reference_image
+from app.extensions.ad_content.naver_background_prompts import build_naver_background_prompt
+from app.extensions.ad_content.naver_image_enhancement import (
+    NaverImageEnhancementError,
+    NaverImageEnhancementNotConfiguredError,
+    enhance_naver_blog_image,
+)
 from app.extensions.ad_content.models import list_image_model_options
 from app.extensions.ad_content.vision_models import list_vision_model_options
 from app.extensions.ad_content.vision_service import (
@@ -112,15 +120,37 @@ async def generate_content(request: AdContentRequest) -> AdContentResponse:
         copy = await generate_ad_copy(copy_request)
 
         if is_naver_blog:
+            background_prompt = build_naver_background_prompt(copy_request.business_type)
             vision_prompt = {
                 "blog_images_prompt": blog_vision_prompt,
                 "blog_photo_notes": blog_photo_notes,
-                "image_generation": "skipped",
-                "product_visualization": "skipped",
+                "image_generation": "background_replacement_pending",
+                "product_visualization": "original_food_container_preservation_required",
+                "background_prompt": background_prompt.prompt,
+                "background_template": background_prompt.template,
+                "background_business_type": background_prompt.business_type,
             }
             image_prompt = ""
             negative_prompt = ""
-            image = _uploaded_blog_image_response(request)
+            try:
+                image = (
+                    await asyncio.to_thread(
+                        enhance_naver_blog_image, copy_request, request.blog_images[0]
+                    )
+                    if request.blog_images
+                    else _uploaded_blog_image_response(request)
+                )
+                vision_prompt["image_generation"] = "background_replacement_completed"
+            except NaverImageEnhancementNotConfiguredError as error:
+                image = _uploaded_blog_image_response(request)
+                vision_prompt["image_generation"] = "background_replacement_not_configured"
+                vision_prompt["image_enhancement_reason"] = str(error)
+            except NaverImageEnhancementError as error:
+                # 모델·GPU·검증 오류가 있어도 광고 문구 생성 API 자체는 실패시키지 않는다.
+                # 원본을 반환하고 응답 메타데이터로 운영자가 원인을 확인할 수 있게 한다.
+                image = _uploaded_blog_image_response(request)
+                vision_prompt["image_generation"] = "background_replacement_failed_fallback"
+                vision_prompt["image_enhancement_reason"] = str(error)
             visual_brief_payload: dict[str, object] = {}
             product_visualization_payload: dict[str, object] = {}
             image_valid = True
