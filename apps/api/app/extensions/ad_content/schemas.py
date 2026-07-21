@@ -95,6 +95,7 @@ class AudioProviderStatus(BaseModel):
     available: bool
     model: str
     voices: list[str] = Field(default_factory=list)
+    instructions_supported: bool = True
     detail: str = ""
 
 

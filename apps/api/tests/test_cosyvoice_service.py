@@ -19,6 +19,55 @@ def test_instruction_adds_speed_and_end_marker() -> None:
     assert instruction.endswith("<|endofprompt|>")
 
 
+def test_cross_lingual_text_contains_only_system_marker_and_script() -> None:
+    script = "오늘 준비한 신메뉴를 만나보세요."
+
+    tts_text = SERVER.CosyVoiceEngine._cross_lingual_text(script)
+
+    assert tts_text == f"You are a helpful assistant.<|endofprompt|>{script}"
+    assert "광고 성우" not in tts_text
+
+
+def test_generate_uses_cross_lingual_mode_without_instructions(
+    tmp_path, monkeypatch
+) -> None:
+    calls: list[tuple[str, str, bool, float]] = []
+
+    class FakeModel:
+        sample_rate = 24000
+
+        def inference_cross_lingual(
+            self, text: str, voice_path: str, stream: bool, speed: float
+        ):
+            calls.append((text, voice_path, stream, speed))
+            yield {"tts_speech": object()}
+
+    engine = SERVER.CosyVoiceEngine()
+    engine.voice_dir = tmp_path
+    (tmp_path / "default.wav").write_bytes(b"wav")
+    engine._model = FakeModel()
+    monkeypatch.setattr(engine, "_wav_bytes", lambda speech, sample_rate: b"audio")
+
+    audio, voice = engine.generate(
+        SERVER.TTSRequest(
+            input="Sale starts now.",
+            instructions="Read this instruction aloud.",
+            speed=1.1,
+        )
+    )
+
+    assert audio == b"audio"
+    assert voice == "default"
+    assert calls == [
+        (
+            "You are a helpful assistant.<|endofprompt|>Sale starts now.",
+            str(tmp_path / "default.wav"),
+            False,
+            1.1,
+        )
+    ]
+
+
 def test_voice_path_uses_default_voice(tmp_path) -> None:
     engine = SERVER.CosyVoiceEngine()
     engine.voice_dir = tmp_path

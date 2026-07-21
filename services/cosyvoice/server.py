@@ -145,6 +145,14 @@ class CosyVoiceEngine:
         self.model_name = os.getenv(
             "COSYVOICE_MODEL_NAME", "Fun-CosyVoice3-0.5B-2512"
         )
+        configured_mode = os.getenv(
+            "COSYVOICE_INFERENCE_MODE", "cross_lingual"
+        ).strip().lower()
+        self.inference_mode = (
+            configured_mode
+            if configured_mode in {"cross_lingual", "instruct"}
+            else "cross_lingual"
+        )
         self._model: Any | None = None
         self._load_error = ""
         self._load_lock = threading.Lock()
@@ -203,6 +211,10 @@ class CosyVoiceEngine:
         return " ".join(parts).strip() + "<|endofprompt|>"
 
     @staticmethod
+    def _cross_lingual_text(tts_text: str) -> str:
+        return f"You are a helpful assistant.<|endofprompt|>{tts_text}"
+
+    @staticmethod
     def _wav_bytes(speech: Any, sample_rate: int) -> bytes:
         import torch
 
@@ -219,20 +231,26 @@ class CosyVoiceEngine:
     def generate(self, request: TTSRequest) -> tuple[bytes, str]:
         model = self._ensure_model()
         resolved_voice, voice_path = self._voice_path(request.voice)
-        instruction = self._instruction(request.instructions, request.speed)
         tts_text = normalize_korean_tts_text(request.input)
 
         with self._generation_lock:
             try:
-                chunks = [
-                    result["tts_speech"]
-                    for result in model.inference_instruct2(
+                if self.inference_mode == "instruct":
+                    generator = model.inference_instruct2(
                         tts_text,
-                        instruction,
+                        self._instruction(request.instructions, request.speed),
                         str(voice_path),
                         stream=False,
+                        speed=request.speed,
                     )
-                ]
+                else:
+                    generator = model.inference_cross_lingual(
+                        self._cross_lingual_text(tts_text),
+                        str(voice_path),
+                        stream=False,
+                        speed=request.speed,
+                    )
+                chunks = [result["tts_speech"] for result in generator]
             except Exception as error:
                 raise RuntimeError(
                     f"CosyVoice 음성 생성 실패: {type(error).__name__}: {error}"
@@ -241,9 +259,12 @@ class CosyVoiceEngine:
         if not chunks:
             raise RuntimeError("CosyVoice가 빈 음성을 반환했습니다.")
 
-        import torch
+        if len(chunks) > 1:
+            import torch
 
-        speech = torch.cat(chunks, dim=-1) if len(chunks) > 1 else chunks[0]
+            speech = torch.cat(chunks, dim=-1)
+        else:
+            speech = chunks[0]
         return self._wav_bytes(speech, model.sample_rate), resolved_voice
 
     def health(self) -> dict[str, object]:
@@ -265,6 +286,8 @@ class CosyVoiceEngine:
             "ready": ready,
             "model_loaded": self._model is not None,
             "model": self.model_name,
+            "inference_mode": self.inference_mode,
+            "instructions_supported": self.inference_mode == "instruct",
             "voices": sorted(path.stem for path in self.voice_dir.glob("*.wav")),
             "detail": detail,
         }
@@ -298,6 +321,7 @@ async def generate_tts(request: TTSRequest) -> Response:
         headers={
             "X-BrandMate-Model": engine.model_name,
             "X-BrandMate-Voice": resolved_voice,
+            "X-BrandMate-Inference-Mode": engine.inference_mode,
             "X-Generation-Latency-Ms": str(round((perf_counter() - started_at) * 1000)),
         },
     )

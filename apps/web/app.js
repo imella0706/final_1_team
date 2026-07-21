@@ -1176,8 +1176,18 @@ async function loadAudioProviders() {
         ]),
       );
       configuredVoiceProviderLabel = `cosyvoice · ${cosyvoice.model}`;
+      if (voiceInstructions) {
+        voiceInstructions.disabled = !cosyvoice.instructions_supported;
+        voiceInstructions.title = cosyvoice.instructions_supported
+          ? ""
+          : "로컬 안전 모드에서는 기준 음성의 말투와 속도 설정을 사용합니다.";
+      }
     } else if (openai) {
       configuredVoiceProviderLabel = `openai · ${openai.model}`;
+      if (voiceInstructions) {
+        voiceInstructions.disabled = false;
+        voiceInstructions.title = "";
+      }
     }
     setText("#result-audio-model", configuredVoiceProviderLabel);
   } catch {

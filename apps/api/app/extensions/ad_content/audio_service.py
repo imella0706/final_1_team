@@ -236,6 +236,10 @@ async def list_audio_provider_statuses() -> list[AudioProviderStatus]:
                     cosyvoice_status.voices = [
                         str(voice) for voice in body["voices"] if str(voice).strip()
                     ]
+                if isinstance(body, dict):
+                    cosyvoice_status.instructions_supported = bool(
+                        body.get("instructions_supported", False)
+                    )
                 cosyvoice_status.detail = (
                     "CosyVoice 모델이 준비되었습니다."
                     if ready
