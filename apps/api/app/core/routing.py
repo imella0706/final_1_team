@@ -1,8 +1,17 @@
+from collections.abc import Sequence
+
 from fastapi import FastAPI
+from fastapi.params import Depends as DependsParam
 from fastapi.routing import APIRoute, APIRouter
 
 
-def register_router(app: FastAPI, router: APIRouter, *, prefix: str = "") -> None:
+def register_router(
+    app: FastAPI,
+    router: APIRouter,
+    *,
+    prefix: str = "",
+    dependencies: Sequence[DependsParam] = (),
+) -> None:
     # [Design Intent] FastAPI 0.139 can keep included routers lazy in this project,
     # leaving endpoints unreachable. Register concrete APIRoute objects so each
     # service entrypoint exposes the same runtime API surface.
@@ -15,7 +24,7 @@ def register_router(app: FastAPI, router: APIRouter, *, prefix: str = "") -> Non
             response_model=route.response_model,
             status_code=route.status_code,
             tags=route.tags,
-            dependencies=route.dependencies,
+            dependencies=[*route.dependencies, *dependencies],
             summary=route.summary,
             description=route.description,
             response_description=route.response_description,

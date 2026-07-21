@@ -1,5 +1,15 @@
 const pageHost = window.location.hostname || "127.0.0.1";
-const API_BASE_URL = `http://${pageHost}:7660/api/v1`;
+const configuredApiOrigin = document
+  .querySelector('meta[name="brandmate-api-origin"]')
+  ?.content.trim()
+  .replace(/\/$/, "");
+const isStaticDevelopmentPort = ["5500", "5501"].includes(window.location.port);
+const defaultApiOrigin = isStaticDevelopmentPort
+  ? `${window.location.protocol}//${pageHost}:7660`
+  : window.location.origin;
+// [Design Intent] Static local development talks to :7660. Production defaults
+// to a same-origin reverse proxy, avoiding HTTPS mixed-content and CORS drift.
+const API_BASE_URL = `${configuredApiOrigin || defaultApiOrigin}/api/v1`;
 
 const $ = (selector) => document.querySelector(selector);
 
@@ -59,6 +69,33 @@ const openAiVoiceOptions = [
   ["sage", "Sage · 따뜻하고 신뢰감 있음"],
   ["fable", "Fable · 표현력이 풍부함"],
 ];
+const appMain = $("#app-main");
+const authDialog = $("#auth-dialog");
+const authTabs = $("#auth-tabs");
+const authUser = $("#auth-user");
+const authUserName = $("#auth-user-name");
+const loginTab = $("#login-tab");
+const signupTab = $("#signup-tab");
+const loginForm = $("#login-form");
+const signupForm = $("#signup-form");
+const forgotPasswordForm = $("#forgot-password-form");
+const resetPasswordForm = $("#reset-password-form");
+const loginError = $("#login-error");
+const signupError = $("#signup-error");
+const forgotPasswordError = $("#forgot-password-error");
+const resetPasswordError = $("#reset-password-error");
+const forgotPasswordButton = $("#forgot-password-button");
+const logoutButton = $("#logout-button");
+const securityButton = $("#security-button");
+const securityDialog = $("#security-dialog");
+const securityCloseButton = $("#security-close-button");
+const sessionList = $("#session-list");
+const changePasswordForm = $("#change-password-form");
+const changePasswordError = $("#change-password-error");
+const serviceSelection = $("#service-selection");
+const adStudio = $("#ad-studio");
+const openAdStudioButton = $("#open-ad-studio");
+const backToServicesButton = $("#back-to-services");
 
 let hasGeneratedAd = false;
 let referencePreviewDataUrl = null;
@@ -66,6 +103,11 @@ let generatedVoiceDataUrl = "";
 let generatedVoiceExtension = "mp3";
 let configuredVoiceProviderLabel = "openai · gpt-4o-mini-tts";
 let latestNaverBlogPasteText = "";
+let accessToken = null;
+let currentUser = null;
+let refreshRequest = null;
+const initialActionParams = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+let pendingResetToken = initialActionParams.get("reset_token");
 
 const fallbackCopyModels = [
   {
@@ -1016,18 +1058,241 @@ async function readForm() {
   };
 }
 
-async function fetchJson(path, options = {}) {
-  const response = await fetch(`${API_BASE_URL}${path}`, options);
+class ApiRequestError extends Error {
+  constructor(message, status, code = "API_REQUEST_FAILED") {
+    super(message);
+    this.name = "ApiRequestError";
+    this.status = status;
+    this.code = code;
+  }
+}
+
+async function requestJson(path, options = {}, useAccessToken = false) {
+  const headers = new Headers(options.headers || {});
+  if (useAccessToken && accessToken) {
+    headers.set("Authorization", `Bearer ${accessToken}`);
+  }
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    ...options,
+    headers,
+    credentials: "include",
+  });
   let body = {};
   try {
     body = await response.json();
   } catch {
     body = {};
   }
+  return { response, body };
+}
+
+function toApiError(response, body) {
+  const error = body.error || {};
+  return new ApiRequestError(
+    error.message || body.detail || `API error (${response.status})`,
+    response.status,
+    error.code,
+  );
+}
+
+function applySession(session) {
+  accessToken = session.access_token;
+  currentUser = session.user;
+}
+
+async function authRequest(path, options = {}) {
+  const { response, body } = await requestJson(path, options, false);
   if (!response.ok) {
-    throw new Error(body.detail || `API error (${response.status})`);
+    throw toApiError(response, body);
   }
   return body;
+}
+
+async function refreshSession() {
+  if (!refreshRequest) {
+    const rotate = () => authRequest("/auth/refresh", { method: "POST" });
+    // [Design Intent] In-tab calls share one Promise and the Web Locks API
+    // serializes refresh rotation across tabs that share the same HttpOnly cookie.
+    const coordinated = navigator.locks?.request
+      ? navigator.locks.request("brandmate-auth-refresh", rotate)
+      : rotate();
+    refreshRequest = coordinated
+      .then((session) => {
+        applySession(session);
+        return session;
+      })
+      .finally(() => {
+        refreshRequest = null;
+      });
+  }
+  return refreshRequest;
+}
+
+async function fetchJson(path, options = {}, allowRefresh = true) {
+  const { response, body } = await requestJson(path, options, true);
+  if (response.status === 401 && allowRefresh) {
+    try {
+      await refreshSession();
+      return fetchJson(path, options, false);
+    } catch {
+      showAuthGate("세션이 만료되었습니다. 다시 로그인해 주세요.");
+      throw new ApiRequestError("로그인이 필요합니다.", 401, "AUTH_REQUIRED");
+    }
+  }
+  if (!response.ok) {
+    throw toApiError(response, body);
+  }
+  return body;
+}
+
+function setAuthMode(mode) {
+  const showLogin = mode === "login";
+  const showSignup = mode === "signup";
+  const showForgot = mode === "forgot";
+  const showReset = mode === "reset";
+  authTabs.hidden = !(showLogin || showSignup);
+  loginTab.setAttribute("aria-selected", String(showLogin));
+  signupTab.setAttribute("aria-selected", String(showSignup));
+  loginForm.hidden = !showLogin;
+  signupForm.hidden = !showSignup;
+  forgotPasswordForm.hidden = !showForgot;
+  resetPasswordForm.hidden = !showReset;
+  [loginError, signupError, forgotPasswordError, resetPasswordError].forEach((element) => {
+    element.hidden = true;
+    element.classList.remove("auth-notice");
+  });
+  window.setTimeout(() => {
+    const focusTarget = {
+      login: "#login-email",
+      signup: "#signup-name",
+      forgot: "#forgot-password-email",
+      reset: "#reset-password",
+    }[mode];
+    $(focusTarget)?.focus();
+  }, 0);
+}
+
+function showAuthGate(message = "", notice = false) {
+  accessToken = null;
+  currentUser = null;
+  appMain.hidden = true;
+  serviceSelection.hidden = false;
+  adStudio.hidden = true;
+  authUser.hidden = true;
+  apiState.textContent = "로그인 필요";
+  apiState.className = "offline";
+  setAuthMode("login");
+  loginError.textContent = message;
+  loginError.classList.toggle("auth-notice", notice);
+  loginError.hidden = !message;
+  if (!authDialog.open) {
+    authDialog.showModal();
+  }
+}
+
+function showServiceSelection() {
+  serviceSelection.hidden = false;
+  adStudio.hidden = true;
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
+function showAdStudio() {
+  serviceSelection.hidden = true;
+  adStudio.hidden = false;
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
+function showAuthenticated(session) {
+  applySession(session);
+  authUserName.textContent = currentUser.display_name;
+  authUser.hidden = false;
+  appMain.hidden = false;
+  showServiceSelection();
+  if (authDialog.open) {
+    authDialog.close();
+  }
+}
+
+function setFormBusy(authForm, busy) {
+  const submit = authForm.querySelector('button[type="submit"]');
+  submit.disabled = busy;
+}
+
+function renderSessions(sessions) {
+  sessionList.replaceChildren();
+  sessions.forEach((session) => {
+    const row = document.createElement("div");
+    row.className = "session-item";
+    const description = document.createElement("div");
+    const name = document.createElement("strong");
+    const lastSeen = document.createElement("small");
+    name.textContent = `${session.device_name}${session.current ? " · 현재 기기" : ""}`;
+    lastSeen.textContent = `최근 사용 ${new Date(session.last_seen_at).toLocaleString("ko-KR")}`;
+    description.append(name, lastSeen);
+    row.append(description);
+    if (!session.current) {
+      const revokeButton = document.createElement("button");
+      revokeButton.type = "button";
+      revokeButton.className = "topbar-command";
+      revokeButton.textContent = "로그아웃";
+      revokeButton.addEventListener("click", async () => {
+        revokeButton.disabled = true;
+        try {
+          await fetchJson(`/auth/sessions/${session.id}`, { method: "DELETE" });
+          await loadSessions();
+        } catch (error) {
+          window.alert(error.message);
+        } finally {
+          revokeButton.disabled = false;
+        }
+      });
+      row.append(revokeButton);
+    }
+    sessionList.append(row);
+  });
+}
+
+async function loadSessions() {
+  const body = await fetchJson("/auth/sessions");
+  renderSessions(body.sessions);
+}
+
+async function bootstrapAuth() {
+  const verifyToken = initialActionParams.get("verify_token");
+  if (verifyToken) {
+    try {
+      await authRequest("/auth/verify-email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token: verifyToken }),
+      });
+      // [Design Intent] Action tokens arrive in the URL fragment, which is never
+      // sent to the static web server, and are removed from browser history here.
+      window.history.replaceState(
+        {},
+        "",
+        `${window.location.pathname}${window.location.search}`,
+      );
+      showAuthGate("이메일 인증이 완료되었습니다. 로그인해 주세요.", true);
+    } catch (error) {
+      showAuthGate(error.message);
+    }
+    return;
+  }
+  if (pendingResetToken) {
+    appMain.hidden = true;
+    authUser.hidden = true;
+    setAuthMode("reset");
+    if (!authDialog.open) authDialog.showModal();
+    return;
+  }
+  try {
+    const session = await refreshSession();
+    showAuthenticated(session);
+    await Promise.all([loadModels(), loadAudioProviders()]);
+  } catch {
+    showAuthGate();
+  }
 }
 
 function fillSelect(select, models) {
@@ -1382,6 +1647,8 @@ referenceCutoutToggle?.addEventListener("change", updateReferencePreview);
 referencePreviewClear?.addEventListener("click", clearReferencePreview);
 channelSelect?.addEventListener("change", updateChannelMode);
 addProductButton?.addEventListener("click", addProductRow);
+openAdStudioButton?.addEventListener("click", showAdStudio);
+backToServicesButton?.addEventListener("click", showServiceSelection);
 
 resetButton.addEventListener("click", () => {
   form.reset();
@@ -1493,7 +1760,196 @@ copyNaverBlogButton?.addEventListener("click", async () => {
   }
 });
 
+loginTab.addEventListener("click", () => setAuthMode("login"));
+signupTab.addEventListener("click", () => setAuthMode("signup"));
+forgotPasswordButton.addEventListener("click", () => setAuthMode("forgot"));
+[...document.querySelectorAll(".auth-back-button")].forEach((button) => {
+  button.addEventListener("click", () => setAuthMode("login"));
+});
+authDialog.addEventListener("cancel", (event) => event.preventDefault());
+
+loginForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  loginError.hidden = true;
+  setFormBusy(loginForm, true);
+  const data = new FormData(loginForm);
+  try {
+    const session = await authRequest("/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        email: data.get("email"),
+        password: data.get("password"),
+      }),
+    });
+    loginForm.reset();
+    showAuthenticated(session);
+    await Promise.all([loadModels(), loadAudioProviders()]);
+  } catch (error) {
+    loginError.textContent = error.message;
+    loginError.hidden = false;
+  } finally {
+    setFormBusy(loginForm, false);
+  }
+});
+
+signupForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  signupError.hidden = true;
+  const data = new FormData(signupForm);
+  if (data.get("password") !== data.get("passwordConfirm")) {
+    signupError.textContent = "비밀번호가 일치하지 않습니다.";
+    signupError.hidden = false;
+    return;
+  }
+  setFormBusy(signupForm, true);
+  try {
+    const credentials = {
+      email: data.get("email"),
+      password: data.get("password"),
+    };
+    const created = await authRequest("/auth/signup", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        ...credentials,
+        display_name: data.get("displayName"),
+      }),
+    });
+    if (!created.user.email_verified) {
+      $("#login-email").value = credentials.email;
+      signupForm.reset();
+      showAuthGate("인증 메일을 보냈습니다. 이메일의 링크를 확인해 주세요.", true);
+      return;
+    }
+    const session = await authRequest("/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(credentials),
+    });
+    signupForm.reset();
+    showAuthenticated(session);
+    await Promise.all([loadModels(), loadAudioProviders()]);
+  } catch (error) {
+    signupError.textContent = error.message;
+    signupError.hidden = false;
+  } finally {
+    setFormBusy(signupForm, false);
+  }
+});
+
+forgotPasswordForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  setFormBusy(forgotPasswordForm, true);
+  forgotPasswordError.hidden = true;
+  forgotPasswordError.classList.remove("auth-notice");
+  const data = new FormData(forgotPasswordForm);
+  try {
+    const result = await authRequest("/auth/password-reset/request", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: data.get("email") }),
+    });
+    forgotPasswordError.textContent = result.message;
+    forgotPasswordError.classList.add("auth-notice");
+    forgotPasswordError.hidden = false;
+  } catch (error) {
+    forgotPasswordError.textContent = error.message;
+    forgotPasswordError.hidden = false;
+  } finally {
+    setFormBusy(forgotPasswordForm, false);
+  }
+});
+
+resetPasswordForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  resetPasswordError.hidden = true;
+  const data = new FormData(resetPasswordForm);
+  if (data.get("password") !== data.get("passwordConfirm")) {
+    resetPasswordError.textContent = "비밀번호가 일치하지 않습니다.";
+    resetPasswordError.hidden = false;
+    return;
+  }
+  setFormBusy(resetPasswordForm, true);
+  try {
+    await authRequest("/auth/password-reset/confirm", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        token: pendingResetToken,
+        new_password: data.get("password"),
+      }),
+    });
+    pendingResetToken = null;
+    window.history.replaceState(
+      {},
+      "",
+      `${window.location.pathname}${window.location.search}`,
+    );
+    resetPasswordForm.reset();
+    showAuthGate("비밀번호가 변경되었습니다. 새 비밀번호로 로그인해 주세요.", true);
+  } catch (error) {
+    resetPasswordError.textContent = error.message;
+    resetPasswordError.hidden = false;
+  } finally {
+    setFormBusy(resetPasswordForm, false);
+  }
+});
+
+securityButton.addEventListener("click", async () => {
+  securityButton.disabled = true;
+  try {
+    await loadSessions();
+    securityDialog.showModal();
+  } catch (error) {
+    window.alert(error.message);
+  } finally {
+    securityButton.disabled = false;
+  }
+});
+
+securityCloseButton.addEventListener("click", () => securityDialog.close());
+
+changePasswordForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  changePasswordError.hidden = true;
+  const data = new FormData(changePasswordForm);
+  if (data.get("newPassword") !== data.get("newPasswordConfirm")) {
+    changePasswordError.textContent = "새 비밀번호가 일치하지 않습니다.";
+    changePasswordError.hidden = false;
+    return;
+  }
+  setFormBusy(changePasswordForm, true);
+  try {
+    await fetchJson("/auth/password/change", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        current_password: data.get("currentPassword"),
+        new_password: data.get("newPassword"),
+      }),
+    });
+    changePasswordForm.reset();
+    securityDialog.close();
+    showAuthGate("비밀번호가 변경되어 모든 기기에서 로그아웃되었습니다.", true);
+  } catch (error) {
+    changePasswordError.textContent = error.message;
+    changePasswordError.hidden = false;
+  } finally {
+    setFormBusy(changePasswordForm, false);
+  }
+});
+
+logoutButton.addEventListener("click", async () => {
+  logoutButton.disabled = true;
+  try {
+    await authRequest("/auth/logout", { method: "POST" });
+  } finally {
+    logoutButton.disabled = false;
+    showAuthGate();
+  }
+});
+
 showEmptyState();
 updateChannelMode();
-loadModels();
-loadAudioProviders();
+bootstrapAuth();

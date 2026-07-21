@@ -1,0 +1,40 @@
+services:
+  brandmate-postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: brandmate
+      POSTGRES_USER: brandmate
+      POSTGRES_PASSWORD: brandmate-local-only
+    ports:
+      - "127.0.0.1:5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U brandmate -d brandmate"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    volumes:
+      - brandmate-postgres-data:/var/lib/postgresql/data
+
+  brandmate-test-postgres:
+    image: postgres:16-alpine
+    profiles: ["test"]
+    environment:
+      POSTGRES_DB: brandmate_test
+      POSTGRES_USER: brandmate_test
+      POSTGRES_PASSWORD: brandmate-test-only
+    ports:
+      - "127.0.0.1:5434:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U brandmate_test -d brandmate_test"]
+      interval: 2s
+      timeout: 2s
+      retries: 15
+    tmpfs:
+      # [Design Intent] Integration-test data is disposable and must never share
+      # the local development database volume.
+      - /var/lib/postgresql/data
+
+volumes:
+  # [Design Intent] Authentication data survives container recreation in local
+  # development; production credentials and storage belong in managed secrets/DB.
+  brandmate-postgres-data:
