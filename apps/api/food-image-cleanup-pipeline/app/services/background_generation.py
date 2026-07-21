@@ -87,13 +87,16 @@ class BackgroundGenerator:
             ) from exc
         self._torch = torch
 
-    def generate(self, prompt: str, width: int, height: int) -> np.ndarray:
+    def generate(
+        self, prompt: str, width: int, height: int, *, seed: int | None = None
+    ) -> np.ndarray:
         self._load()
         assert self._pipeline is not None and self._torch is not None
         width, height = max(64, width - width % 16), max(64, height - height % 16)
         generator = None
-        if self.seed is not None:
-            generator = self._torch.Generator(device="cpu").manual_seed(int(self.seed))
+        active_seed = self.seed if seed is None else seed
+        if active_seed is not None:
+            generator = self._torch.Generator(device="cpu").manual_seed(int(active_seed))
         call_args: dict[str, Any] = {
             "prompt": prompt,
             "width": width,

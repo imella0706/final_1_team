@@ -93,12 +93,15 @@ def enhance_naver_blog_image(
     input_path = input_dir / f"naver_{request_id}{suffix}"
     metadata_path = input_dir / f"naver_{request_id}_metadata.json"
     output_path = root / "data" / "output" / f"naver_{request_id}_background_replaced.jpg"
+    report_path = root / "data" / "reports" / f"naver_{request_id}_background_replacement_report.json"
     prompt = build_naver_background_prompt(copy_request.business_type)
     metadata = {
         "business_type": prompt.business_type,
         "food_category": prompt.business_type,
-        "background_prompt": prompt.prompt,
-        "foreground_position": "center_lower",
+        # 업종 분위기 프롬프트는 보존하고, 파이프라인의 EfficientNet-B0가
+        # top/45 카메라 제약과 전경 배치 영역을 추가한다.
+        "background_prompt_base": prompt.prompt,
+        "camera_angle_manual": False,
         "light_direction": "upper_left" if prompt.template == "pub" else "left",
     }
     input_path.write_bytes(image_bytes)
@@ -137,9 +140,20 @@ def enhance_naver_blog_image(
             "음식 사진 배경 교체에 실패했습니다" + (f": {detail[0]}" if detail else "")
         )
 
+    selected_prompt = prompt.prompt
+    if report_path.is_file():
+        try:
+            report = json.loads(report_path.read_text(encoding="utf-8"))
+            selected_prompt = str(
+                report.get("stages", {}).get("step_7_background_prompt", {}).get("prompt", selected_prompt)
+            )
+        except (OSError, ValueError, TypeError):
+            # 합성 자체는 성공했으므로 보고서 표시 오류 때문에 API 응답을 실패시키지 않는다.
+            pass
+
     return AdImageResponse(
         model="food-image-cleanup-pipeline",
-        prompt=prompt.prompt,
+        prompt=selected_prompt,
         image_base64=base64.b64encode(output_path.read_bytes()).decode("ascii"),
         media_type="image/jpeg",
         latency_ms=round((time.perf_counter() - started) * 1000),

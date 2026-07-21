@@ -9,13 +9,21 @@
 ```text
 네이버 블로그 선택 + 음식 사진 업로드
 → API가 업로드 사진을 파이프라인 작업 파일로 저장
-→ YOLO/SAM 2.1/BiRefNet으로 음식·용기 전경 분리
+→ SAM 2.1/BiRefNet 품질 검사로 음식·용기 전경 분리
 → 업종별 빈 배경 프롬프트로 Sana 또는 FLUX 배경 생성
-→ 그림자·색상 조화·의미 검증
+→ 그림자·색상 조화·OpenCLIP 차단 검증
 → 합성 JPG를 네이버 광고 문구 응답의 image로 반환
 ```
 
 모델 준비 전이거나 처리 중 오류가 나면 광고 문구 API 전체를 실패시키지 않고 원본 사진을 반환한다. 이때 응답의 `vision_prompt.image_generation`과 `vision_prompt.image_enhancement_reason`에서 원인을 확인한다.
+
+음식 탐지 실패 또는 OpenCLIP 검증 실패 시에도 동일하게 원본 사진을 반환한다. 파이프라인은 광고 합성 JPG를 저장하지 않고 `food_detection_failed` 또는 `semantic_validation_failed` 보고서와 디버그 산출물만 남긴다.
+
+## 음식 탐지 모델
+
+네이버 채널에서 이미지 보정이 활성화되면 같은 파이프라인 설정을 사용한다. 기본 탐지 프로필은 `food_specialized`이며, 학습한 음식 전용 YOLO11n 가중치 `food-image-cleanup-pipeline/models/best.pt`로 음식 위치를 찾는다. 실행 보고서의 `step_2_yolo_detection.model`과 `step_2_yolo_detection.profile`이 각각 `models/best.pt`, `food_specialized`인지 확인하면 실제 적용 여부를 알 수 있다.
+
+비교 또는 장애 진단을 위해서만 `configs/pipeline.yaml`의 `models.foreground_detector.active_profile`을 `coco_yolo11n`으로 바꿔 기본 COCO YOLO11n을 선택할 수 있다. 운영 기본값은 학습 모델을 사용하는 `food_specialized`다.
 
 ## 업종별 배경 프롬프트
 
@@ -51,3 +59,14 @@ BRANDMATE_NAVER_IMAGE_CLEANUP_TIMEOUT_SECONDS=600
 3. 응답의 `vision_prompt.image_generation`이 `background_replacement_completed`인지 확인한다.
 4. `image.media_type`이 `image/jpeg`, `image.model`이 `food-image-cleanup-pipeline`인지 확인한다.
 
+## 각도 기반 후보 배경 선택
+
+네이버 채널은 업종별 기본 프롬프트를 `background_prompt_base`로 전달한다. 파이프라인은 업로드 사진의 EfficientNet-B0 분류 결과 또는 JSON 수동 각도를 바탕으로 해당 프롬프트에 `top` 또는 `45` 카메라 제약을 추가한다. 그러므로 네이버 API가 임의의 눈높이 배경을 고정해서 사용하는 구조가 아니다.
+
+생성기는 음식·접시·컵이 없는 배경 후보를 기본 3장 생성한다. 중앙 여백, 색온도, YOLO 음식 미검출 여부로 후보를 고르고, 원본 음식·접시는 캔버스 너비의 55~70%로 재배치해 합성한다. 탑뷰는 중앙·약한 원형 그림자, 45도는 하단 중앙·일반 접지 그림자를 사용한다.
+
+API 응답에서 이미지가 원본으로 돌아오면 파이프라인 보고서에서 다음 상태를 우선 확인한다.
+
+- `background_food_detected`: 생성 배경에 음식이 남아 있음
+- `geometry_validation_failed`: 각도·위치·전경 크기 정책 실패
+- `semantic_validation_failed`: OpenCLIP 전경 의미 보존 실패

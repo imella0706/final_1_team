@@ -20,13 +20,25 @@ class QualityMetrics:
     def to_dict(self) -> dict:
         return asdict(self)
 
-def analyze_quality(image: np.ndarray, config: QualityConfig) -> QualityMetrics:
+def analyze_quality(
+    image: np.ndarray, config: QualityConfig, mask: np.ndarray | None = None
+) -> QualityMetrics:
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    brightness = float(gray.mean())
-    contrast = float(gray.std())
-    blur = float(cv2.Laplacian(gray, cv2.CV_64F).var())
-    shadow = float(np.mean(gray <= 5))
-    highlight = float(np.mean(gray >= 250))
+    if mask is not None:
+        if mask.shape != gray.shape:
+            raise ValueError("mask must match image dimensions")
+        selector = mask > 0
+        if not np.any(selector):
+            raise ValueError("quality mask is empty")
+    else:
+        selector = np.ones(gray.shape, dtype=bool)
+    pixels = gray[selector]
+    laplacian = cv2.Laplacian(gray, cv2.CV_64F)[selector]
+    brightness = float(pixels.mean())
+    contrast = float(pixels.std())
+    blur = float(laplacian.var())
+    shadow = float(np.mean(pixels <= 5))
+    highlight = float(np.mean(pixels >= 250))
     h, w = gray.shape
     return QualityMetrics(
         width=w, height=h,

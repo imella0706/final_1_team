@@ -1,19 +1,41 @@
 # 코랩 실행 안내
 
-`notebooks/01_colab_background_replacement.ipynb`를 GPU 런타임에서 위에서 아래 순서로 실행한다. 이 노트북은 `venv`를 만들지 않고 `/content/food-image-cleanup-packages` 전용 폴더에만 파이프라인 의존성을 설치한다. 이후 모델 다운로드와 추론 subprocess에만 이 폴더를 `PYTHONPATH`로 우선 적용하므로, `huggingface_hub` 버전이 다른 Gradio 등의 전역 패키지를 변경하지 않는다.
+`notebooks/01_colab_background_replacement.ipynb`를 GPU 런타임에서 위에서 아래 순서로 실행한다. 노트북은 전역 패키지를 바꾸지 않고 `/content/food-image-cleanup-packages`에 파이프라인 의존성만 설치한다.
 
-처음 실행할 때는 다음 작업이 수행된다.
+기본 코랩 검증은 YOLO11n, SAM 2.1 Tiny, Big-LaMa, BiRefNet HR, Sana 1.6B, OpenCLIP을 사용한다. 기본 배경 생성기는 접근 토큰이 필요 없는 `sana-1.6b`이며, FLUX.1 Schnell로 바꾸려면 Hugging Face 접근 권한과 토큰이 필요하다.
 
-- Google Drive의 프로젝트 폴더를 연결한다.
-- 가상환경에 YOLO, SAM 실행용 라이브러리, BiRefNet, FLUX, OpenCLIP 의존성을 설치한다.
-- YOLO11n, SAM 2.1 Tiny, Big-LaMa, BiRefNet HR, FLUX.1 Schnell, OpenCLIP 모델을 내려받는다.
-- 음식 사진 한 장을 업로드하고 카페·음식점·주점 등의 메타데이터를 작성한다.
-- 전경 분리, 빈 배경 생성, 합성, 보고서 확인을 실행한다.
+## 학습한 음식 탐지 모델 사용
 
-FLUX와 BiRefNet은 용량이 크므로 GPU 런타임과 넉넉한 Drive 저장 공간이 필요하다. 모델은 `models/`에 보존되므로 다음 실행부터는 이미 받은 모델을 건너뛴다.
+배경 교체 테스트의 기본 탐지기는 학습한 음식 전용 YOLO11n 가중치 `models/best.pt`다. `scripts/download_models.py`는 공용 기본 모델만 내려받으므로, 이 학습 가중치는 Google Drive의 프로젝트 폴더 `models/best.pt`에 직접 둬야 한다.
 
-FLUX.1 Schnell은 Hugging Face의 gated 모델이다. [FLUX.1 Schnell 모델 페이지](https://huggingface.co/black-forest-labs/FLUX.1-schnell)에서 접근 조건에 동의하고 읽기 권한 토큰을 만든 뒤, 노트북의 FLUX 토큰 입력 셀에 입력해야 한다. 전체 체크포인트에는 약 23.8GB의 변환기 파일이 포함되므로 Drive의 여유 공간도 확인한다.
+`notebooks/01_colab_background_replacement.ipynb`는 실행 전 파일 존재를 확인하고, 결과 보고서의 `step_2_yolo_detection`에서 다음을 검증한다.
 
-기본 배경 생성기는 `sana-1.6b`이다. `Efficient-Large-Model/Sana_1600M_1024px_BF16_diffusers`를 사용하며 FLUX 인증 토큰 없이 실행할 수 있다. 노트북의 `BACKGROUND_PROVIDER`를 `flux-schnell`로 바꾸면 FLUX를, `sana-1.6b`로 두면 Sana를 사용한다. Sana 1.6B는 20단계·guidance 5.0, FLUX는 4단계·guidance 0.0으로 각각 모델 특성에 맞는 기본값을 사용한다.
+```json
+{
+  "model": "models/best.pt",
+  "profile": "food_specialized"
+}
+```
 
-YOLO11n은 기본 COCO 클래스만 가지므로 일부 한식·디저트·접시 조합을 음식으로 탐지하지 못할 수 있다. 노트북은 전체 단계 검증이 중단되지 않도록 이 경우 중앙 전경 상자로 대체 실행하고, 보고서에 `step_2_detection_fallback`을 남긴다. 이는 연결·실행 검증용 대책이며 실제 서비스 결과에서는 이 표시가 없는 입력을 우선 사용하거나 음식·용기 특화 탐지 모델을 추가해야 한다.
+기본 COCO 모델과 비교하려면 노트북의 `DETECTOR_PROFILE` 값을 `coco_yolo11n`으로 바꾼다. 이 경우 `models/yolo11n.pt`와 COCO 클래스 목록을 사용한다.
+
+## 운영과 동일한 안전 정책
+
+- YOLO11n이 음식·용기를 찾지 못하면 중앙 사각형으로 광고 이미지를 만들지 않는다.
+- OpenCLIP 유사도 0.8 미만이면 BiRefNet 결과를 버리고 SAM 마스크로 재합성한다.
+- 재시도도 실패하면 최종 광고 JPG를 저장하지 않고 실패 보고서와 디버그 산출물만 남긴다.
+
+노트북 마지막 셀에서 실행 보고서의 `debug_artifacts`를 통해 원본·안정화 SAM 구조 마스크, BiRefNet/SAM 알파 마스크, RGBA 전경, OpenCLIP 전경 비교 이미지, 최종 또는 거부된 합성 이미지를 확인한다.
+
+## 각도 분류와 후보 선택 확인
+
+노트북은 `models/efficientnet_best.pt`가 있는지 확인하고, 실행 보고서의 `step_7_camera_angle_classification`에서 `top` 또는 `45` 분류 결과·확률을 표시한다. JSON에 수동 각도를 지정하려면 아래처럼 작성한다.
+
+```json
+{
+  "camera_angle_manual": true,
+  "camera_angle_label": "top"
+}
+```
+
+`step_8_background_generation`에는 기본 3개 후보의 시드·중앙 여백 점수·색온도 점수·배경 음식 탐지 결과·선택 후보 번호가 기록된다. 후보 파일은 `data/intermediate/*_generated_background_candidate_*.jpg`에 저장된다. 마지막으로 `step_9_foreground_placement`의 전경 너비 비율이 0.55~0.70인지, `step_14_background_geometry_validation`이 통과했는지 확인한다.

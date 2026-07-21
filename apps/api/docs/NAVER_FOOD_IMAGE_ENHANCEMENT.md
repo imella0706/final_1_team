@@ -79,6 +79,8 @@ BRANDMATE_NAVER_IMAGE_CLEANUP_TIMEOUT_SECONDS=600
 
 `BRANDMATE_NAVER_IMAGE_CLEANUP_PYTHON`은 API와 파이프라인이 서로 다른 가상환경을 사용할 때 필요하다. 해당 Python 환경에는 `food-image-cleanup-pipeline/requirements-local.txt`의 의존성과 각 모델 파일이 준비돼야 한다.
 
+파이프라인은 `food-image-cleanup-pipeline/models/efficientnet_best.pt`의 EfficientNet-B0를 기본 촬영 각도 분류기로 사용한다. 업로드 음식 사진을 `top` 또는 `45`로 판단한 뒤, 업종별 배경 프롬프트에 해당 시점의 카메라 제약을 적용한다. 따라서 탑뷰 접시에는 수직 탑뷰 빈 테이블, 45도 음식 사진에는 사선 테이블 배경이 생성된다. 실행 보고서의 `step_7_camera_angle_classification`에서 모델 경로·라벨·확률을 확인할 수 있다.
+
 ## 7. 요청 및 결과 확인
 
 요청에는 네이버 블로그 채널과 음식 사진을 포함한다.
@@ -126,3 +128,19 @@ BRANDMATE_NAVER_IMAGE_CLEANUP_TIMEOUT_SECONDS=600
 
 현재 API 가상환경이 삭제된 시스템 Python 경로를 참조하는 경우에는 먼저 API 또는 파이프라인 가상환경을 재생성해야 한다. 정상 Python 경로를 `BRANDMATE_NAVER_IMAGE_CLEANUP_PYTHON`에 지정한 뒤 API를 재시작한다.
 
+## 9. 각도 기반 후보 생성과 합성 품질 정책
+
+네이버 채널의 이미지 보정은 업종별 기본 프롬프트를 그대로 생성기에 넘기지 않는다. 먼저 `food-image-cleanup-pipeline/models/efficientnet_best.pt`의 EfficientNet-B0로 사진을 `top` 또는 `45`로 판별한다. 호출 JSON에 `camera_angle_manual: true` 및 `camera_angle_label`이 있으면 이 수동 값이 우선한다.
+
+| 각도 | 생성 배경 | 전경 배치 | 그림자 |
+| --- | --- | --- | --- |
+| `top` | 수직 탑뷰 빈 테이블 | 중앙, 너비 55~70% | 짧고 약한 원형 |
+| `45` | 45도 테이블·실내 빈 배경 | 하단 중앙, 너비 55~70% | 일반 접지 그림자 |
+
+Sana 또는 FLUX는 서로 다른 시드로 기본 3장, 설정에 따라 최대 4장의 배경 후보를 만든다. 후보 중 다음 기준의 점수가 가장 높은 한 장만 사용한다.
+
+1. 음식이 놓일 중앙 영역이 충분히 비어 있는가
+2. 원본 음식 사진의 색온도와 과도하게 다르지 않은가
+3. YOLO가 생성 배경에서 음식을 검출하지 않았는가
+
+원본 음식·접시 전경은 다시 생성하지 않고 9px feather 알파로 합성한다. 제한된 밝기 조화·가장자리 색 번짐 제거 후 OpenCLIP 전경 비교, 배경 음식 탐지, 기하 검증을 모두 수행한다. 음식이 포함된 배경 또는 잘못된 전경 크기·위치는 광고 JPG로 반환하지 않고 원본 이미지를 유지한다. 상세 후보 점수와 선택 결과는 파이프라인 보고서의 `step_8_background_generation`, `step_9_foreground_placement`, `step_14_background_geometry_validation`에서 확인할 수 있다.

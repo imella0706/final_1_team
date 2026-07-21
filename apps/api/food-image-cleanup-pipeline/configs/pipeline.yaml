@@ -5,7 +5,6 @@ paths:
   input_dir: data/input
   mask_dir: data/masks
   intermediate_dir: data/intermediate
-  detection_dir: data/detections
   output_dir: data/output
   report_dir: data/reports
   model_dir: models
@@ -17,7 +16,6 @@ image:
   - .png
   - .webp
   max_file_size_mb: 25
-  min_long_side: 768
   max_long_side: 1536
   jpeg_quality: 95
 quality:
@@ -30,36 +28,26 @@ models:
   foreground_detector:
     enabled: true
     provider: yolo
-    weights: models/yolo11n.pt
+    # 기본값은 학습한 음식 전용 YOLO11n 가중치다.
+    # 기본 COCO YOLO11n을 쓰려면 active_profile을 coco_yolo11n으로 바꾼다.
+    active_profile: food_specialized
     confidence_threshold: 0.25
     iou_threshold: 0.45
     image_size: 960
     max_detections: 100
-    target_classes:
-    - banana
-    - apple
-    - orange
-    - broccoli
-    - carrot
-    - sandwich
-    - pizza
-    - donut
-    - cake
-    - bowl
-    - cup
-    food_classes:
-    - banana
-    - apple
-    - orange
-    - broccoli
-    - carrot
-    - sandwich
-    - pizza
-    - donut
-    - cake
-    container_classes:
-    - bowl
-    - cup
+    # 운영에서는 탐지 실패를 결과 생성으로 감추지 않는다. 연결 테스트에서만 true로 둔다.
+    allow_center_fallback_for_diagnostics: false
+    profiles:
+      food_specialized:
+        weights: models/best.pt
+        target_classes: [food]
+        food_classes: [food]
+        container_classes: []
+      coco_yolo11n:
+        weights: models/yolo11n.pt
+        target_classes: [banana, apple, orange, broccoli, carrot, sandwich, pizza, donut, cake, bowl, cup]
+        food_classes: [banana, apple, orange, broccoli, carrot, sandwich, pizza, donut, cake]
+        container_classes: [bowl, cup]
   segmenter:
     enabled: true
     provider: sam2
@@ -94,13 +82,44 @@ models:
     cache_dir: models/birefnet
     device: auto
     input_size: 1024
+    # BiRefNet은 SAM 구조 마스크의 미세 보정만 담당하며 품질 검사 실패 시 SAM으로 되돌린다.
+    threshold: 0.50
+    # 전경 경계는 7~9px 수준으로 부드럽게 전환한다.
+    feather_kernel: 9
+    allowed_dilation: 11
+    minimum_iou: 0.55
+    minimum_area_ratio: 0.60
+    maximum_area_ratio: 1.40
+    maximum_extra_components: 2
+    # BiRefNet이 거부돼도 SAM 마스크의 작은 잡음과 내부 투명 구멍은 보정한다.
+    sam_closing_kernel: 15
+    sam_min_component_area: 256
+    sam_fill_holes: true
   foreground_protection:
     dilation: 11
+  camera_angle_classifier:
+    # 학습된 EfficientNet-B0가 원본 음식 사진을 top 또는 45로 분류한다.
+    # 네이버 채널·로컬·코랩의 배경 프롬프트 선택에서 동일하게 사용된다.
+    enabled: true
+    provider: torchvision-efficientnet-b0
+    weights: models/efficientnet_best.pt
+    device: auto
+    minimum_confidence: 0.60
+    # 낮은 확률에서도 모델의 최고 확률 클래스를 사용하되 보고서에 low_confidence를 남긴다.
+    fallback_on_low_confidence: false
+    fallback_angle: 45
   background_generator:
     enabled: true
     provider: sana-1.6b
     device: auto
     seed: 42
+    candidate_count: 3
+    # 생성 후보 중 음식이 없고, 중앙이 비어 있으며 원본과 색온도가 가까운 후보를 선택한다.
+    candidate_selection_enabled: true
+  foreground_placement:
+    # 접시/음식 전경을 결과 캔버스 너비의 55~70% 범위로 조절한다.
+    top_width_ratio: 0.62
+    angle_45_width_ratio: 0.64
     providers:
       sana-1.6b:
         model_id: Efficient-Large-Model/Sana_1600M_1024px_BF16_diffusers

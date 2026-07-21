@@ -1,0 +1,7 @@
+# EfficientNet-B0 촬영 각도 분류 학습용 최소 의존성(로컬).
+# CUDA 버전에 맞는 PyTorch 휠은 사용 중인 환경을 유지하는 것이 가장 안전하다.
+Pillow>=10.4
+torch>=2.3,<2.7
+torchvision>=0.18,<0.22
+tqdm>=4.66
+matplotlib>=3.8

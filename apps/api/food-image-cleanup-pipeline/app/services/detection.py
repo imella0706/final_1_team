@@ -63,6 +63,37 @@ class DetectionResult:
         }
 
 
+def resolve_foreground_detector_config(config: dict[str, Any]) -> dict[str, Any]:
+    """선택된 탐지기 프로필을 일반 YOLO 탐지 설정으로 펼친다.
+
+    음식 특화 모델과 COCO 기본 모델은 클래스명이 다르므로, 가중치만 바꾸지 않고
+    target_classes·food_classes·container_classes를 함께 전환한다.
+    """
+
+    profiles = config.get("profiles")
+    if not profiles:
+        return dict(config)
+    if not isinstance(profiles, dict):
+        raise DetectorConfigurationError("foreground_detector.profiles는 객체여야 합니다.")
+
+    active_profile = str(config.get("active_profile", "food_specialized"))
+    profile = profiles.get(active_profile)
+    if not isinstance(profile, dict):
+        available = ", ".join(sorted(str(name) for name in profiles))
+        raise DetectorConfigurationError(
+            f"알 수 없는 음식 탐지 프로필입니다: {active_profile}. 선택 가능: {available}"
+        )
+
+    resolved = {
+        key: value
+        for key, value in config.items()
+        if key not in {"profiles", "active_profile"}
+    }
+    resolved.update(profile)
+    resolved["active_profile"] = active_profile
+    return resolved
+
+
 class UltralyticsDetector:
     def __init__(self, config: dict[str, Any]) -> None:
         if not config.get("enabled", False):

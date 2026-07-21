@@ -140,6 +140,9 @@ async def generate_content(request: AdContentRequest) -> AdContentResponse:
                     if request.blog_images
                     else _uploaded_blog_image_response(request)
                 )
+                if request.blog_images:
+                    # 파이프라인이 EfficientNet-B0 각도 분류 결과를 반영해 실제 사용한 프롬프트다.
+                    vision_prompt["background_prompt"] = image.prompt
                 vision_prompt["image_generation"] = "background_replacement_completed"
             except NaverImageEnhancementNotConfiguredError as error:
                 image = _uploaded_blog_image_response(request)

@@ -74,13 +74,59 @@ class OpenCLIPSemanticValidator:
 
     def similarity_masked(self, original: np.ndarray, processed: np.ndarray, mask: np.ndarray) -> float:
         """Compare only preserved food/container pixels, not intentionally replaced backgrounds."""
+        reference, candidate = self.masked_comparison_images(original, processed, mask)
+        return self.similarity(reference, candidate)
+
+    @staticmethod
+    def masked_comparison_images(
+        original: np.ndarray, processed: np.ndarray, mask: np.ndarray, padding: int = 12
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """Return matched crops with every replaced-background pixel neutralized."""
         if original.shape[:2] != mask.shape or processed.shape[:2] != mask.shape:
             raise ValueError("mask must match both images")
-        binary = (mask > 0).astype(np.uint8)
+        alpha = np.clip(mask.astype(np.float32) / 255.0, 0.0, 1.0)
+        binary = alpha > 0
         if not np.any(binary):
             raise ValueError("foreground mask is empty")
         ys, xs = np.where(binary)
-        padding = 12
         y1, y2 = max(0, ys.min() - padding), min(mask.shape[0], ys.max() + padding + 1)
         x1, x2 = max(0, xs.min() - padding), min(mask.shape[1], xs.max() + padding + 1)
-        return self.similarity(original[y1:y2, x1:x2], processed[y1:y2, x1:x2])
+        crop_alpha = alpha[y1:y2, x1:x2, None]
+        neutral = np.full_like(original[y1:y2, x1:x2], 127)
+        reference = np.clip(
+            original[y1:y2, x1:x2].astype(np.float32) * crop_alpha
+            + neutral.astype(np.float32) * (1.0 - crop_alpha),
+            0,
+            255,
+        ).astype(np.uint8)
+        candidate = np.clip(
+            processed[y1:y2, x1:x2].astype(np.float32) * crop_alpha
+            + neutral.astype(np.float32) * (1.0 - crop_alpha),
+            0,
+            255,
+        ).astype(np.uint8)
+        return reference, candidate
+
+    @staticmethod
+    def paired_masked_comparison_images(
+        original: np.ndarray,
+        original_mask: np.ndarray,
+        processed: np.ndarray,
+        processed_mask: np.ndarray,
+        padding: int = 12,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """Compare foreground crops even when the dish was resized or relocated."""
+        def crop(image: np.ndarray, mask: np.ndarray) -> np.ndarray:
+            ys, xs = np.where(mask > 0)
+            if len(xs) == 0:
+                raise ValueError("foreground mask is empty")
+            y1, y2 = max(0, ys.min() - padding), min(mask.shape[0], ys.max() + padding + 1)
+            x1, x2 = max(0, xs.min() - padding), min(mask.shape[1], xs.max() + padding + 1)
+            alpha = (mask[y1:y2, x1:x2].astype(np.float32) / 255.0)[:, :, None]
+            view = image[y1:y2, x1:x2]
+            neutral = np.full_like(view, 127)
+            return np.clip(view.astype(np.float32) * alpha + neutral * (1.0 - alpha), 0, 255).astype(np.uint8)
+
+        reference, candidate = crop(original, original_mask), crop(processed, processed_mask)
+        candidate = cv2.resize(candidate, (reference.shape[1], reference.shape[0]), interpolation=cv2.INTER_LANCZOS4)
+        return reference, candidate
