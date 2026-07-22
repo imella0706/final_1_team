@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import time
 from collections import defaultdict
 from pathlib import Path
 from typing import Any
@@ -25,8 +26,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--video", required=True, type=Path, help="Input mp4 path")
     parser.add_argument("--label", required=True, type=Path, help="AIHub label JSON")
     parser.add_argument("--model", required=True, type=Path, help="YOLO weight path")
-    parser.add_argument("--device", default="cpu", help="Inference device: cpu, cuda, 0")
-    parser.add_argument("--imgsz", default=960, type=int, help="YOLO inference image size")
+    parser.add_argument(
+        "--device", default="cpu", help="Inference device: cpu, cuda, 0"
+    )
+    parser.add_argument(
+        "--imgsz", default=960, type=int, help="YOLO inference image size"
+    )
     parser.add_argument(
         "--sample-every-sec",
         default=10.0,
@@ -163,15 +168,26 @@ def collect_predictions(
     frame_indices: list[int],
     fps: float,
     labels: dict[int, list[dict[str, Any]]],
-) -> dict[int, list[dict[str, Any]]]:
+    model: YOLO | None = None,
+) -> tuple[dict[int, list[dict[str, Any]]], dict[str, float]]:
     # [Design Intent] 가장 낮은 confidence에서 YOLO를 한 번만 실행한 뒤,
     # 저장된 confidence를 필터링해 여러 threshold를 동일 조건에서 비교한다.
-    model = YOLO(str(model_path))
+    model_load_started = time.perf_counter()
+    if model is None:
+        model = YOLO(str(model_path))
+    model_load_wall_time_sec = time.perf_counter() - model_load_started
+
     cap = cv2.VideoCapture(str(video_path))
     if not cap.isOpened():
         raise RuntimeError(f"failed to open video: {video_path}")
 
     predictions: dict[int, list[dict[str, Any]]] = defaultdict(list)
+    speed_totals_ms = {
+        "preprocess": 0.0,
+        "inference": 0.0,
+        "postprocess": 0.0,
+    }
+    prediction_started = time.perf_counter()
     try:
         for frame_index in frame_indices:
             cap.set(cv2.CAP_PROP_POS_FRAMES, frame_index)
@@ -187,6 +203,9 @@ def collect_predictions(
                 imgsz=imgsz,
                 verbose=False,
             )[0]
+
+            for speed_name in speed_totals_ms:
+                speed_totals_ms[speed_name] += float(result.speed.get(speed_name, 0.0))
 
             if result.boxes is not None:
                 xyxy_values = result.boxes.xyxy.cpu().tolist()
@@ -210,7 +229,31 @@ def collect_predictions(
     finally:
         cap.release()
 
-    return predictions
+    prediction_wall_time_sec = time.perf_counter() - prediction_started
+    sampled_frames = len(frame_indices)
+    inference_time_sec = speed_totals_ms["inference"] / 1000.0
+    timing = {
+        "model_load_wall_time_sec": round(model_load_wall_time_sec, 6),
+        "prediction_pipeline_wall_time_sec": round(prediction_wall_time_sec, 6),
+        "ultralytics_preprocess_time_sec": round(
+            speed_totals_ms["preprocess"] / 1000.0, 6
+        ),
+        "ultralytics_inference_time_sec": round(inference_time_sec, 6),
+        "ultralytics_postprocess_time_sec": round(
+            speed_totals_ms["postprocess"] / 1000.0, 6
+        ),
+        "prediction_pipeline_fps": round(
+            sampled_frames / prediction_wall_time_sec
+            if prediction_wall_time_sec > 0.0
+            else 0.0,
+            6,
+        ),
+        "inference_fps": round(
+            sampled_frames / inference_time_sec if inference_time_sec > 0.0 else 0.0,
+            6,
+        ),
+    }
+    return predictions, timing
 
 
 def bbox_iou(
@@ -391,9 +434,7 @@ def detail_row(
     iou: float | None,
 ) -> dict[str, Any]:
     gt_bbox = ground_truth["bbox"] if ground_truth else ("", "", "", "")
-    prediction_bbox = (
-        prediction["bbox"] if prediction else ("", "", "", "")
-    )
+    prediction_bbox = prediction["bbox"] if prediction else ("", "", "", "")
     return {
         "confidence_threshold": threshold,
         "frame_index": frame_index,
@@ -570,6 +611,7 @@ def save_selected_previews(
 
 
 def main() -> None:
+    evaluation_started = time.perf_counter()
     args = parse_args()
     thresholds = validate_args(args)
     label_data = read_label(args.label)
@@ -594,7 +636,7 @@ def main() -> None:
         f"conf_thresholds={thresholds}, iou_threshold={args.iou_threshold}"
     )
 
-    prediction_candidates = collect_predictions(
+    prediction_candidates, timing = collect_predictions(
         video_path=args.video,
         model_path=args.model,
         device=args.device,
@@ -658,6 +700,12 @@ def main() -> None:
         "selected_threshold": selected["confidence_threshold"],
         "selected_metrics": selected,
         "threshold_metrics": metrics_rows,
+        "timing": {
+            **timing,
+            "evaluation_wall_time_sec": round(
+                time.perf_counter() - evaluation_started, 6
+            ),
+        },
         "limitations": [
             "This evaluates sampled-frame bbox detection, not unique visitors.",
             "Results cover one C0241 clip and do not prove generalization.",
