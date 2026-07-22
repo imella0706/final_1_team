@@ -1,4 +1,4 @@
-"""Validate seed data and train a Qwen2.5-7B meme-copy LoRA adapter.
+"""Validate seed data and train a Qwen2.5-7B meme-copy QLoRA adapter.
 
 This is an offline research utility. It never runs as part of the FastAPI service.
 Run with ``--validate-only`` before installing the optional GPU dependencies.
@@ -45,6 +45,10 @@ DEFAULT_COMPARISON_FILES = [
 ]
 DEFAULT_TREND_CARD_FILE = PROJECT_ROOT / "gather_data" / "trendcard.json"
 IMMUTABLE_REVISION_PATTERN = re.compile(r"^[0-9a-f]{40}$")
+DEFAULT_MAX_LENGTH = 4096
+QLORA_QUANT_TYPE = "nf4"
+QLORA_USE_DOUBLE_QUANT = True
+QLORA_OPTIMIZER = "paged_adamw_8bit"
 
 
 class SeedMetadata(BaseModel):
@@ -130,7 +134,24 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--epochs", type=float, default=3.0)
     parser.add_argument("--learning-rate", type=float, default=2e-4)
-    parser.add_argument("--max-length", type=int, default=16384)
+    parser.add_argument(
+        "--max-length",
+        type=int,
+        default=DEFAULT_MAX_LENGTH,
+        help=(
+            "Maximum prompt+completion tokens. Defaults to 4096 for a practical "
+            "single-T4 QLoRA smoke run; rows are never silently truncated."
+        ),
+    )
+    parser.add_argument(
+        "--compute-dtype",
+        choices=("auto", "float16", "bfloat16"),
+        default="auto",
+        help=(
+            "4-bit matmul compute dtype. 'auto' uses bfloat16 when the CUDA device "
+            "supports it (for example A100) and float16 otherwise (for example T4)."
+        ),
+    )
     parser.add_argument("--gradient-accumulation-steps", type=int, default=8)
     parser.add_argument("--lora-r", type=int, default=16)
     parser.add_argument("--lora-alpha", type=int, default=32)
@@ -490,6 +511,76 @@ def _validate_cli(args: argparse.Namespace) -> None:
         raise SystemExit("--lora-dropout must be in [0, 1)")
 
 
+def _resolve_compute_dtype(torch: Any, requested: str) -> tuple[str, Any]:
+    """Resolve QLoRA compute dtype without importing Torch at module import time."""
+
+    if requested == "auto":
+        requested = "bfloat16" if torch.cuda.is_bf16_supported() else "float16"
+    if requested == "bfloat16" and not torch.cuda.is_bf16_supported():
+        raise SystemExit(
+            "--compute-dtype=bfloat16 was requested, but this CUDA device does not "
+            "report BF16 support. Use --compute-dtype=float16 or auto."
+        )
+    return requested, getattr(torch, requested)
+
+
+def _build_quantization_config(
+    BitsAndBytesConfig: Any,
+    compute_dtype: Any,
+) -> Any:
+    """Build the fixed 4-bit NF4 + double-quant QLoRA contract."""
+
+    return BitsAndBytesConfig(
+        load_in_4bit=True,
+        bnb_4bit_quant_type=QLORA_QUANT_TYPE,
+        bnb_4bit_use_double_quant=QLORA_USE_DOUBLE_QUANT,
+        bnb_4bit_compute_dtype=compute_dtype,
+    )
+
+
+def _load_qlora_model(
+    *,
+    AutoModelForCausalLM: Any,
+    BitsAndBytesConfig: Any,
+    prepare_model_for_kbit_training: Any,
+    torch: Any,
+    base_revision: str,
+    compute_dtype: Any,
+) -> tuple[Any, Any]:
+    """Load and prepare the quantized base while keeping the path unit-testable."""
+
+    quantization_config = _build_quantization_config(
+        BitsAndBytesConfig,
+        compute_dtype,
+    )
+    model = AutoModelForCausalLM.from_pretrained(
+        BASE_MODEL,
+        revision=base_revision,
+        quantization_config=quantization_config,
+        torch_dtype=compute_dtype,
+        device_map={"": torch.cuda.current_device()},
+        low_cpu_mem_usage=True,
+        trust_remote_code=False,
+    )
+    model = prepare_model_for_kbit_training(
+        model,
+        use_gradient_checkpointing=True,
+        gradient_checkpointing_kwargs={"use_reentrant": False},
+    )
+    model.config.use_cache = False
+    return model, quantization_config
+
+
+def _quantization_manifest(compute_dtype_name: str) -> dict[str, Any]:
+    return {
+        "method": "bitsandbytes",
+        "load_in_4bit": True,
+        "quant_type": QLORA_QUANT_TYPE,
+        "use_double_quant": QLORA_USE_DOUBLE_QUANT,
+        "compute_dtype": compute_dtype_name,
+    }
+
+
 def _require_reviewed(examples: list[SeedExample], allow_unreviewed: bool) -> None:
     unreviewed = [
         example.example_id
@@ -547,32 +638,44 @@ def _train(
     try:
         import torch
         from datasets import Dataset
-        from peft import LoraConfig
-        from transformers import AutoModelForCausalLM, AutoTokenizer, set_seed
+        from peft import LoraConfig, prepare_model_for_kbit_training
+        from transformers import (
+            AutoModelForCausalLM,
+            AutoTokenizer,
+            BitsAndBytesConfig,
+            set_seed,
+        )
         from trl import SFTConfig, SFTTrainer
     except ImportError as error:
         raise SystemExit(
-            "LoRA dependencies are not installed. From apps/api, install the project and "
+            "QLoRA dependencies are not installed. From apps/api, install the project and "
             "requirements-lora.txt before training."
         ) from error
 
     if not torch.cuda.is_available():
         raise SystemExit(
-            "CUDA GPU was not detected. Qwen2.5-7B LoRA training is intentionally blocked "
+            "CUDA GPU was not detected. Qwen2.5-7B QLoRA training is intentionally blocked "
             "on CPU. Use --validate-only on this machine or move the run to a CUDA host."
         )
 
     output_dir = _prepare_output_dir(args.output_dir)
     set_seed(args.seed)
-    dtype = torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16
+    compute_dtype_name, compute_dtype = _resolve_compute_dtype(
+        torch,
+        args.compute_dtype,
+    )
     device = torch.cuda.get_device_properties(0)
     vram_gb = round(device.total_memory / (1024**3), 2)
-    print(f"CUDA device: {device.name} ({vram_gb} GiB); dtype={dtype}", flush=True)
-    if vram_gb < 40:
+    print(
+        f"CUDA device: {device.name} ({vram_gb} GiB); "
+        f"QLoRA=4-bit {QLORA_QUANT_TYPE}; compute_dtype={compute_dtype_name}",
+        flush=True,
+    )
+    if vram_gb < 15:
         print(
-            "WARNING: less than 40 GiB VRAM was detected. The production prompt and full "
-            "JSON completion are long, so this full-precision-base LoRA configuration may "
-            "run out of memory. Use a larger host before reducing max length.",
+            "WARNING: less than 15 GiB VRAM was detected. Even 4-bit QLoRA can run out "
+            "of memory with the production prompt and full JSON completion. Reduce "
+            "--max-length only after checking the measured sequence lengths.",
             flush=True,
         )
 
@@ -605,13 +708,14 @@ def _train(
         f"max={max(token_lengths)} (limit={args.max_length})",
         flush=True,
     )
-    model = AutoModelForCausalLM.from_pretrained(
-        BASE_MODEL,
-        revision=args.base_revision,
-        torch_dtype=dtype,
-        trust_remote_code=False,
+    model, _quantization_config = _load_qlora_model(
+        AutoModelForCausalLM=AutoModelForCausalLM,
+        BitsAndBytesConfig=BitsAndBytesConfig,
+        prepare_model_for_kbit_training=prepare_model_for_kbit_training,
+        torch=torch,
+        base_revision=args.base_revision,
+        compute_dtype=compute_dtype,
     )
-    model.config.use_cache = False
 
     peft_config = LoraConfig(
         task_type="CAUSAL_LM",
@@ -638,8 +742,9 @@ def _train(
         gradient_accumulation_steps=args.gradient_accumulation_steps,
         gradient_checkpointing=True,
         gradient_checkpointing_kwargs={"use_reentrant": False},
-        bf16=dtype == torch.bfloat16,
-        fp16=dtype == torch.float16,
+        bf16=compute_dtype_name == "bfloat16",
+        fp16=compute_dtype_name == "float16",
+        optim=QLORA_OPTIMIZER,
         max_length=args.max_length,
         completion_only_loss=True,
         assistant_only_loss=False,
@@ -692,6 +797,7 @@ def _train(
         "token_length_min": min(token_lengths),
         "token_length_max": max(token_lengths),
         "max_length": args.max_length,
+        "quantization": _quantization_manifest(compute_dtype_name),
         "training": {
             "epochs": args.epochs,
             "learning_rate": args.learning_rate,
@@ -700,12 +806,13 @@ def _train(
             "gradient_accumulation_steps": args.gradient_accumulation_steps,
             "effective_train_batch_size": args.gradient_accumulation_steps,
             "gradient_checkpointing": True,
+            "optimizer": QLORA_OPTIMIZER,
             "packing": False,
             "eval_strategy": "epoch",
             "save_strategy": "epoch",
         },
         "runtime": {
-            "dtype": str(dtype),
+            "compute_dtype": compute_dtype_name,
             "cuda_version": torch.version.cuda,
             "gpu_name": device.name,
             "gpu_vram_gb": vram_gb,
@@ -725,6 +832,7 @@ def _train(
                 "datasets",
                 "peft",
                 "trl",
+                "bitsandbytes",
             )
         },
     }

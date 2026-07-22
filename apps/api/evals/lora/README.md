@@ -1,14 +1,14 @@
-# Meme LoRA 실험 준비 scaffold
+# Meme QLoRA 실험 준비 scaffold
 
 이 디렉터리는 현재 수동 TrendCard(`gogumafarm:1bf390d89536004b`)를 사용하는
-광고 문구 LoRA의 **학습 경로와 데이터 계약을 검증하기 위한 준비물**입니다.
+광고 문구 QLoRA의 **학습 경로와 데이터 계약을 검증하기 위한 준비물**입니다.
 현재 seed 규모로 품질 우위나 일반화를 주장할 수는 없습니다.
 
 ## 포함 파일
 
 - `train.seed.jsonl`: 서로 다른 상호·상품으로 작성한 학습 seed 12개
 - `validation.seed.jsonl`: 학습 split과 상호·상품이 겹치지 않는 검증 seed 3개
-- `../../scripts/train_meme_lora.py`: 검증 및 TRL/PEFT LoRA 학습 CLI
+- `../../scripts/train_meme_lora.py`: 검증 및 TRL/PEFT 4-bit QLoRA 학습 CLI
 - `../../requirements-lora.txt`: API 기본 의존성과 분리한 선택적 학습 의존성
 
 seed 행은 간결한 `request + gold` 형태입니다. 학습 CLI가 실행 시점에 다음을 수행합니다.
@@ -28,7 +28,7 @@ loss를 주지 않고 assistant completion에만 loss를 계산합니다.
 외부 패키지 설치나 GPU 없이 `apps/api`에서 실행할 수 있습니다.
 
 ```powershell
-python -m scripts.train_meme_lora --validate-only
+python -m scripts.train_meme_lora --validate-only --allow-unreviewed-seeds
 ```
 
 검증 항목은 다음과 같습니다.
@@ -46,7 +46,7 @@ python -m scripts.train_meme_lora --validate-only
 `source_lineage_id`)를 넣고 아래처럼 비교 대상을 추가합니다.
 
 ```powershell
-python -m scripts.train_meme_lora --validate-only `
+python -m scripts.train_meme_lora --validate-only --allow-unreviewed-seeds `
   --overlap-file evals/lora/additional.candidates.jsonl
 ```
 
@@ -70,6 +70,7 @@ split한 뒤 embedding 기반 near-duplicate 검사도 별도로 수행해야 �
 검토하고 두 status를 모두 `reviewed`로 변경해야 합니다. `--allow-unreviewed-seeds`는
 adapter 연결만 확인하는 engineering smoke run에만 사용할 수 있으며 결과를 품질 평가에
 사용하면 안 됩니다.
+플래그를 빼면 현재 seed의 미검수 상태를 알리며 검증이 의도적으로 중단됩니다.
 
 검수 시 확인할 내용:
 
@@ -91,11 +92,17 @@ python -m pip install -e .
 python -m pip install -r requirements-lora.txt
 ```
 
-현재 스크립트는 QLoRA가 아니라 BF16/FP16 base 위의 일반 LoRA입니다. production prompt와
-전체 JSON completion이 길어 기본 sequence limit도 16,384 token입니다. Qwen 7B base와
-activation을 함께 올리므로 40 GiB 미만 VRAM에서는 OOM 위험이 높습니다. CUDA가 없으면
-모델을 다운로드하기 전에 명확한 오류로 종료합니다. CPU 학습 fallback은 제공하지 않습니다.
-토큰화 후 limit을 넘는 행이 있으면 조용히 자르지 않고 학습을 중단합니다.
+현재 스크립트는 Qwen base를 bitsandbytes 4-bit NF4와 double quantization으로 불러오고
+LoRA adapter만 학습하는 QLoRA 방식입니다. `prepare_model_for_kbit_training()`과 gradient
+checkpointing을 사용하며 optimizer는 `paged_adamw_8bit`입니다. `--compute-dtype auto`는
+BF16을 지원하는 A100 같은 GPU에서는 BF16, 지원하지 않는 T4 같은 GPU에서는 FP16을
+선택합니다. 필요하면 `--compute-dtype float16` 또는 `bfloat16`으로 명시할 수 있습니다.
+
+production prompt와 전체 JSON completion이 길기 때문에 기본 sequence limit은 T4 smoke에
+현실적인 4,096 token으로 낮췄습니다. 토큰화 후 limit을 넘는 행은 조용히 자르지 않고
+학습을 중단합니다. 이 경우 측정된 최장 길이를 확인한 뒤 VRAM 여유가 있을 때만
+`--max-length`를 올리세요. 4-bit여도 입력 길이와 activation에 따라 T4에서 OOM이 날 수
+있습니다. CUDA가 없으면 모델 다운로드 전에 종료하며 CPU 학습 fallback은 제공하지 않습니다.
 
 ## 학습 실행
 
@@ -107,6 +114,8 @@ python -m scripts.train_meme_lora `
   --base-revision <QWEN_2_5_7B_COMMIT_SHA> `
   --output-dir ../../outputs/lora/qwen2.5-7b-meme/run-001 `
   --epochs 3 `
+  --max-length 4096 `
+  --compute-dtype auto `
   --seed 42
 ```
 
@@ -118,13 +127,15 @@ python -m scripts.train_meme_lora `
 - train/validation 경로와 SHA-256
 - 누수 검사를 통과한 모든 비교 corpus 경로와 SHA-256
 - 데이터 수, seed, LoRA rank/alpha/dropout/target modules
-- epoch, learning rate, gradient accumulation, dtype/GPU와 completion-only loss 사용 여부
+- 4-bit/NF4/double-quant 설정, bitsandbytes 버전, 실제 compute dtype
+- epoch, learning rate, paged optimizer, gradient accumulation, GPU와 completion-only loss 사용 여부
 
 ## 동일 base로 서빙
 
-공정 비교에서는 hosted Qwen과 로컬 LoRA를 비교하지 않습니다. 동일 revision, tokenizer,
-chat template, dtype/quantization을 사용하는 한 vLLM 서버에서 base와 adapter를 함께
-노출합니다. 예시는 Linux/WSL CUDA 환경 기준이며 vLLM 설치는 이 scaffold 범위 밖입니다.
+공정 비교에서는 hosted Qwen과 로컬 QLoRA adapter를 비교하지 않습니다. 동일 revision,
+tokenizer, chat template을 사용하는 한 vLLM 서버에서 base와 adapter를 함께 노출합니다.
+QLoRA의 4-bit 설정은 **학습 시 base 로딩 방식**이며 adapter 자체가 4-bit 모델이 되는 것은
+아닙니다. 예시는 Linux/WSL CUDA 환경 기준이며 vLLM 설치는 이 scaffold 범위 밖입니다.
 
 ```bash
 vllm serve Qwen/Qwen2.5-7B-Instruct \
@@ -136,6 +147,13 @@ vllm serve Qwen/Qwen2.5-7B-Instruct \
 `/v1/models`에서 base와 `brandmate-meme`가 모두 보이는지 확인한 뒤 같은 sampling,
 max tokens, structured-output 조건으로 요청해야 합니다. production에서 runtime adapter
 업로드 기능은 켜지 않습니다.
+
+현재 Colab 생성 서버에서 쓰는 `Qwen2.5-7B-Instruct-AWQ`에 이 adapter를 바로 붙일 수 있다고
+가정하면 안 됩니다. AWQ base 위 LoRA 지원 여부는 vLLM·CUDA·quantization 조합에 따라
+달라질 수 있으며, 학습에 사용한 원본 base commit과 AWQ checkpoint의 계보도 확인해야
+합니다. 가장 안전한 호환성 기준은 학습 manifest의 원본 `base_model`과 immutable
+`base_revision`으로 base와 adapter를 먼저 함께 서빙하는 것입니다. AWQ를 사용하려면 별도
+smoke에서 base/adapter 둘 다 로드되고 동일 요청에 응답하는지 검증한 후 평가하세요.
 
 ## 평가 시 최소 실험군
 

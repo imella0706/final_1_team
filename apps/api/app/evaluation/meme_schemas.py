@@ -1,6 +1,6 @@
 """Schemas used by the text-only meme advertising judge."""
 
-from typing import Annotated
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator
 
@@ -43,6 +43,19 @@ class MemeJudgeRequestFacts(BaseModel):
     blog_photo_notes: list[str]
 
 
+class MemeJudgeCopyStructure(BaseModel):
+    """Explicit, data-driven copy contract supplied by the TrendCard."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    subject_source: Literal["primary_product", "any_product", "business_name"]
+    subject_position: Literal["before_marker", "unrestricted"]
+    marker_occurrences: int = Field(ge=1, le=5)
+    reason_source: Literal["input_features", "none"]
+    minimum_reason_count: int = Field(ge=0, le=5)
+    reason_ending: str
+
+
 class MemeJudgeTrendContext(BaseModel):
     """The allow-listed TrendCard fields visible to the judge."""
 
@@ -53,6 +66,7 @@ class MemeJudgeTrendContext(BaseModel):
     usage_rules: list[str]
     prohibited_usage: list[str]
     copy_markers: list[str]
+    copy_structure: MemeJudgeCopyStructure | None = None
 
 
 class MemeJudgeVisibleResult(BaseModel):
@@ -81,7 +95,10 @@ class MemeJudgeInput(BaseModel):
 
     request_facts: MemeJudgeRequestFacts
     trend_context: MemeJudgeTrendContext
-    operational_requirements: list[NonEmptyText] = Field(min_length=1, max_length=20)
+    deterministic_validation_requirements: list[NonEmptyText] = Field(
+        min_length=1,
+        max_length=20,
+    )
     customer_visible_result: MemeJudgeVisibleResult
 
 

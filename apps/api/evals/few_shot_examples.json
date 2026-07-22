@@ -16,8 +16,8 @@
       "promotion": null
     },
     "good_output": {
-      "primary_copy": "고소한 흑임자 크림도, 시원한 아이스 한 잔도. 그래서 니가 좋아, 흑임자 크림라떼.",
-      "channel_post_opening": "고소한 흑임자 크림이 시원하게 올라서 니가 좋아, 흑임자 크림라떼.",
+      "primary_copy": "흑임자 크림라떼 니가 좋아~\n고소한 흑임자 크림을 올려서 좋아~\n아이스로 제공해서 좋아~",
+      "channel_post_opening": "흑임자 크림라떼 니가 좋아~\n고소한 흑임자 크림을 올려서 좋아~\n아이스로 제공해서 좋아~",
       "publish_cta": "오늘 시원하게 만나보세요.",
       "publish_hashtags": ["#흑임자크림라떼", "#구름잔"],
       "product_name_preserved": true,
@@ -25,18 +25,22 @@
       "failure_codes": []
     },
     "bad_output": {
-      "primary_copy": "니가 좋아, 흑임자 크림라떼, 아이스, 흑임자 크림.",
+      "primary_copy": "니가 좋아, 흑임자 크림라떼.",
       "channel_post_opening": "니가 좋아, 흑임자 크림라떼, 흑임자 크림, 아이스.",
       "publish_cta": "지금 만나보세요.",
       "publish_hashtags": ["#흑임자크림라떼", "#구름잔"],
       "product_name_preserved": true,
       "language": "ko",
-      "failure_codes": ["mechanical_template_copy", "feature_enumeration"]
+      "failure_codes": [
+        "trend_subject_not_before_marker",
+        "trend_reason_count_insufficient",
+        "feature_enumeration"
+      ]
     },
     "rationale": [
-      "good은 입력된 제공 방식과 크림 특징을 좋아하는 이유로 연결한다.",
-      "good은 대표 상품 하나에 고백 구조를 집중한다.",
-      "bad는 상품과 특징을 쉼표로 나열해 문장과 관계를 만들지 못한다."
+      "good은 대표 상품을 먼저 부르고 marker를 한 번만 쓴다.",
+      "good은 입력된 제공 방식과 크림 특징을 서로 다른 이유로 연결하고 각 이유를 '좋아'로 끝낸다.",
+      "bad는 marker를 대상보다 먼저 쓰고 특징 기반 이유를 만들지 않는다."
     ],
     "demonstrates": [
       "single_product_focus",
@@ -61,8 +65,8 @@
       "promotion": null
     },
     "good_output": {
-      "primary_copy": "니가 좋아, 대파 치즈 베이글. 레몬 홍차와 세트로 구성해 함께라서 더 좋은 한 끼.",
-      "channel_post_opening": "니가 좋아, 대파 치즈 베이글. 레몬 홍차와 세트로 구성해 곁을 맞췄어요.",
+      "primary_copy": "대파 치즈 베이글 니가 좋아~\n대파와 치즈를 넣어서 좋아~\n레몬 홍차와 세트로 구성돼서 좋아~",
+      "channel_post_opening": "대파 치즈 베이글 니가 좋아~\n대파와 치즈를 넣어서 좋아~\n레몬 홍차와 세트로 구성돼서 좋아~",
       "publish_cta": "두 메뉴의 조합을 만나보세요.",
       "publish_hashtags": ["#대파치즈베이글", "#레몬홍차", "#소담굽기"],
       "product_name_preserved": true,
@@ -70,21 +74,22 @@
       "failure_codes": []
     },
     "bad_output": {
-      "primary_copy": "니가 좋아, 대파 치즈 베이글, 레몬 홍차.",
+      "primary_copy": "대파 치즈 베이글 니가 좋아~",
       "channel_post_opening": "니가 좋아, 대파 치즈 베이글, 레몬 홍차, 세트.",
       "publish_cta": "지금 만나보세요!",
       "publish_hashtags": ["#대파치즈베이글", "#레몬홍차"],
       "product_name_preserved": true,
       "language": "ko",
       "failure_codes": [
-        "product_enumeration",
-        "required_term_missing"
+        "trend_reason_count_insufficient",
+        "trend_subject_not_before_marker",
+        "product_enumeration"
       ]
     },
     "rationale": [
-      "good은 두 상품을 단순 나열하지 않고 서로 곁을 맞추는 세트 관계로 표현한다.",
-      "good은 입력에 있는 재료와 세트 정보만 사용한다.",
-      "bad는 두 상품명을 밈 뒤에 그대로 이어 붙여 조합의 이유가 보이지 않는다."
+      "good은 대표 상품을 먼저 부른 뒤 두 입력 특징을 이유로 리듬을 완성한다.",
+      "good은 두 상품을 단순 나열하지 않고 입력된 세트 관계를 두 번째 이유로 사용한다.",
+      "bad는 이유 반복이 없고 채널 문구에서는 대상보다 marker를 먼저 쓴다."
     ],
     "demonstrates": [
       "multi_product_relationship",
@@ -109,8 +114,8 @@
       "promotion": "평일 점심 주문 시 만두 2개 제공"
     },
     "good_output": {
-      "primary_copy": "들깨와 버섯을 담은 한 그릇, 평일 점심에도 결국 니가 좋아, 들깨 버섯 칼국수.",
-      "channel_post_opening": "평일 점심에도 결국 니가 좋아, 들깨 버섯 칼국수. 한 그릇 주문하면 만두 2개도 함께 드려요.",
+      "primary_copy": "들깨 버섯 칼국수 니가 좋아~\n들깨와 버섯을 넣어서 좋아~\n1인분 주문이 가능해서 좋아~",
+      "channel_post_opening": "들깨 버섯 칼국수 니가 좋아~\n들깨와 버섯을 넣어서 좋아~\n1인분 주문이 가능해서 좋아~\n평일 점심 주문 시 만두 2개를 함께 드려요.",
       "publish_cta": "평일 점심에 따뜻하게 즐겨보세요.",
       "publish_hashtags": ["#들깨버섯칼국수", "#평일점심", "#밤결식탁"],
       "product_name_preserved": true,
@@ -118,22 +123,22 @@
       "failure_codes": []
     },
     "bad_output": {
-      "primary_copy": "니가 좋아, 들깨 버섯 칼국수, 만두 2개, 평일 점심.",
-      "channel_post_opening": "니가 좋아, 들깨 버섯 칼국수, 1인분, 만두 2개.",
+      "primary_copy": "들깨 버섯 칼국수 니가 좋아~\n몸에 좋아~\n속이 편해서 좋아~",
+      "channel_post_opening": "들깨 버섯 칼국수 니가 좋아~\n건강해서 좋아~\n든든해서 좋아~",
       "publish_cta": "건강한 한 끼를 바로 주문하세요.",
       "publish_hashtags": ["#들깨버섯칼국수 #평일점심", "#밤결식탁"],
       "product_name_preserved": true,
       "language": "ko",
       "failure_codes": [
-        "mechanical_template_copy",
+        "trend_reason_not_grounded",
         "unsupported_claim",
         "hashtag_format_invalid"
       ]
     },
     "rationale": [
-      "good은 밈 표현을 상품 훅에 쓰고 프로모션은 다음 문장에 분리한다.",
-      "good은 입력에 있는 재료, 주문 단위, 제공 조건만 사용한다.",
-      "bad는 상품과 혜택, 시간 조건을 한 줄에 나열해 핵심 관계를 흐린다."
+      "good은 대표 상품 뒤에 marker를 한 번 쓰고 두 입력 특징을 이유로 반복한다.",
+      "good은 프로모션을 리듬 뒤의 사실 문장에 분리한다.",
+      "bad는 입력에 없는 건강·포만감 주장을 이유로 만든다."
     ],
     "demonstrates": [
       "promotion_integration",

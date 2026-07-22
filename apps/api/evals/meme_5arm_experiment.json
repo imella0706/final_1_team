@@ -1,6 +1,6 @@
 {
   "experiment_id": "single-trendcard-five-arm-v1",
-  "description": "현재 수동 TrendCard 한 장에서 prompt 전략과 LoRA adapter를 비교하는 smoke 평가",
+  "description": "현재 수동 TrendCard 한 장에서 prompt 전략과 QLoRA adapter를 비교하는 smoke 평가",
   "base_model": "Qwen/Qwen2.5-7B-Instruct",
   "trend_card_path": "../../../gather_data/trendcard.json",
   "dataset_path": "meme_ad_copy_cases.json",
@@ -33,10 +33,10 @@
     },
     {
       "id": "lora",
-      "label": "TrendCard + LoRA",
+      "label": "TrendCard + QLoRA",
       "strategy": "lora",
       "enabled": false,
-      "disabled_reason": "LoRA adapter와 GPU serving endpoint가 아직 준비되지 않았습니다.",
+      "disabled_reason": "QLoRA adapter와 GPU serving endpoint가 아직 준비되지 않았습니다.",
       "base_url": null,
       "model": null,
       "api_key_env": null,

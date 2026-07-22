@@ -61,6 +61,40 @@ class CurationMeta(BaseModel):
     notes: str = Field(default="", max_length=500)
 
 
+class CopyStructure(BaseModel):
+    """Data-driven constraints for one application of a text pattern.
+
+    The fields describe *how* a card's copy should be assembled without
+    teaching the validator about any particular meme phrase.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    subject_source: Literal["primary_product", "any_product", "business_name"]
+    subject_position: Literal["before_marker", "unrestricted"] = "unrestricted"
+    marker_occurrences: int = Field(default=1, ge=1, le=5)
+    reason_source: Literal["input_features", "none"] = "none"
+    minimum_reason_count: int = Field(default=0, ge=0, le=5)
+    reason_ending: str = Field(default="", max_length=30)
+
+    @model_validator(mode="after")
+    def validate_reason_contract(self) -> "CopyStructure":
+        if self.reason_source == "input_features":
+            if self.minimum_reason_count < 1:
+                raise ValueError(
+                    "input_features reason_source에는 minimum_reason_count가 필요합니다"
+                )
+            if not self.reason_ending.strip():
+                raise ValueError(
+                    "input_features reason_source에는 reason_ending이 필요합니다"
+                )
+        elif self.minimum_reason_count or self.reason_ending.strip():
+            raise ValueError(
+                "reason_source가 none이면 reason count와 ending을 지정할 수 없습니다"
+            )
+        return self
+
+
 class TrendCard(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -84,6 +118,7 @@ class TrendCard(BaseModel):
     # 생성용 필드: LLM 프롬프트에 선별 주입된다.
     text_patterns: list[str] = Field(default_factory=list, max_length=10)
     copy_markers: list[str] = Field(default_factory=list, max_length=10)
+    copy_structure: CopyStructure | None = None
     suitable_channels: list[str] = Field(default_factory=list, max_length=10)
     suitable_tones: list[str] = Field(default_factory=list, max_length=10)
     target_audiences: list[str] = Field(default_factory=list, max_length=20)

@@ -177,6 +177,9 @@ class FewShotOutput(BaseModel):
             "unsupported_claim",
             "hashtag_format_invalid",
             "channel_contract_incomplete",
+            "trend_subject_not_before_marker",
+            "trend_reason_count_insufficient",
+            "trend_reason_not_grounded",
         ]
     ] = Field(default_factory=list, max_length=10)
 
@@ -429,7 +432,7 @@ TrendCard 응용 참고 예시 (좋은 예시만)
 --------------------------------------------------
 아래 예시는 text_patterns를 상품 사실에 맞게 변형하는 방법만 보여줍니다.
 primary_copy는 화면의 첫 광고 문구, channel_post_opening은
-channel_recommendation.caption의 첫 문장에 대응합니다.
+channel_recommendation.caption의 도입부에 대응합니다.
 publish_cta와 publish_hashtags까지 모두 자연스러운 한국어로 작성하고,
 상품명은 번역·축약하지 않으며 required_terms는 정확한 문자열로 포함하세요.
 product_name_preserved, language, failure_codes는 예시 품질을 설명하는 주석이며
@@ -447,7 +450,7 @@ TrendCard 응용 대조 예시 (좋은 예시 + 피해야 할 예시)
 --------------------------------------------------
 good은 관계와 이유를 만든 결과이고 bad는 단순 치환·나열로 피해야 할 결과입니다.
 primary_copy는 화면의 첫 광고 문구, channel_post_opening은
-channel_recommendation.caption의 첫 문장에 대응합니다.
+channel_recommendation.caption의 도입부에 대응합니다.
 good처럼 상품명을 원문 그대로 유지하고, marker와 required_terms를 필요한 위치에
 정확히 포함하며, publish_cta와 publish_hashtags까지 자연스러운 한국어로 작성하세요.
 bad.failure_codes는 피해야 할 위반 유형입니다. product_name_preserved, language,
@@ -464,10 +467,12 @@ failure_codes는 예시 주석이며 최종 광고 JSON에 새 필드로 추가�
 --------------------------------------------------
 최종 응답을 쓰기 전에 내부적으로만 다음 순서로 점검하세요.
 1. 사용자 입력에서 사용할 수 있는 상품, 특징, 혜택, 금지 표현을 구분한다.
-2. 대표 상품 하나 또는 여러 상품의 실제 관계를 선택한다.
-3. text_patterns의 문장 구조를 현재 상품과 상황에 맞는 자연스러운 광고 훅으로 변형한다.
-4. 화면용 문구와 실제 채널 게시물 모두에 응용 표현이 들어갔는지 확인한다.
-5. 단순 상품명 나열, 예시 사실 혼입, 입력에 없는 주장, 금지 표현을 제거한다.
+2. copy_structure에서 대상의 출처와 위치, marker 횟수, 입력 특징 기반 이유의 최소 개수와 종결 표현을 추출한다.
+3. subject_source에 맞는 대표 대상을 선택하고 subject_position과 marker_occurrences를 지킨다.
+4. 서로 다른 입력 특징을 reason_source로 사용해 필요한 수만큼 이유를 만들고, 각 이유를 reason_ending으로 끝내 반복 리듬을 만든다.
+5. text_patterns를 현재 상품과 상황에 맞게 자연스럽게 변형하되 입력에 없는 맛, 색, 재료, 효능, 혜택은 추가하지 않는다.
+6. 화면용 첫 광고 문구와 channel_recommendation.caption 도입부가 같은 구조를 모두 갖췄는지 확인한다.
+7. 단순 상품명 나열, 예시 사실 혼입, 입력에 없는 주장, 금지 표현을 제거한다.
 
 이 점검 과정이나 분석은 출력하지 말고 요청된 최종 JSON 객체만 출력하세요."""
         return _append_user_block(messages, block)

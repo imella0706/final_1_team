@@ -27,7 +27,7 @@ from app.modules.model_runtime.llm.registry import (
 
 
 JUDGE_MODEL_KEY = "openai/gpt-4.1-mini"
-JUDGE_PROMPT_VERSION = "meme-judge-v3-qualitative-advisory"
+JUDGE_PROMPT_VERSION = "meme-judge-v4-trend-structure-aware"
 
 
 class MemeJudgeNotConfiguredError(RuntimeError):
@@ -63,8 +63,8 @@ def _visible_blog_section_texts(content: AdCopyContent) -> list[str]:
     return texts
 
 
-def _operational_requirements(request: AdCopyRequest) -> list[str]:
-    """Describe the production copy gates without exposing experiment metadata."""
+def _deterministic_validation_requirements(request: AdCopyRequest) -> list[str]:
+    """Describe retained Production-validator checks without ranking semantics."""
 
     requirements = [
         "고객에게 노출되는 광고 문구는 자연스러운 한국어로 작성되어야 한다.",
@@ -72,8 +72,8 @@ def _operational_requirements(request: AdCopyRequest) -> list[str]:
         "request_facts.required_terms의 모든 필수어가 고객 노출 문구에 포함되어야 한다.",
         "request_facts.prohibited_terms의 금지어는 고객 노출 문구에 포함되면 안 된다.",
         (
-            "headlines[0] 또는 body_copies[0] 중 적어도 하나에 "
-            "trend_context.copy_markers 중 하나가 포함되어야 한다."
+            "고객 노출 도입 문구는 trend_context.copy_markers와 copy_structure의 "
+            "대상 위치, marker 횟수, 이유 개수 및 종결 표현을 따라야 한다."
         ),
         (
             "TrendCard 표현이 있는 한 문장에 여러 상품명을 쉼표로 기계적으로 "
@@ -84,8 +84,8 @@ def _operational_requirements(request: AdCopyRequest) -> list[str]:
         requirements.extend(
             [
                 (
-                    "Instagram caption의 첫 문장에 trend_context.copy_markers 중 "
-                    "하나가 포함되어야 한다."
+                    "Instagram caption 도입부도 trend_context.copy_markers와 "
+                    "copy_structure를 따라야 한다."
                 ),
                 (
                     "Instagram caption의 전체 원문(앞뒤 공백 제외)이 publish_body에 "
@@ -157,8 +157,15 @@ def build_meme_judge_input(
             usage_rules=trend_card.usage_rules,
             prohibited_usage=trend_card.prohibited_usage,
             copy_markers=trend_card.copy_markers,
+            copy_structure=(
+                trend_card.copy_structure.model_dump()
+                if trend_card.copy_structure is not None
+                else None
+            ),
         ),
-        operational_requirements=_operational_requirements(request),
+        deterministic_validation_requirements=(
+            _deterministic_validation_requirements(request)
+        ),
         customer_visible_result=MemeJudgeVisibleResult(
             headlines=content.headlines,
             body_copies=content.body_copies,
@@ -183,17 +190,25 @@ def build_meme_judge_messages(judge_input: MemeJudgeInput) -> list[dict[str, str
 - 정확 문자열 포함 여부(required_terms, prohibited_terms, copy_markers, 상품명), 한국어 여부,
   CTA·해시태그·publish_body 조립 여부는 별도의 deterministic validator가 판정한다.
 - 위 항목을 독자적으로 누락/위반이라고 단정하지 말고, hard_failures에도 기록하지 않는다.
-- operational_requirements는 배경 정보일 뿐 이 응답에서 다시 판정할 항목이 아니다.
+- deterministic_validation_requirements는 유지되는 Production validator의 배경 정보이며
+  Judge 순위에서 후보를 제외하는 조건으로 다시 판정하지 않는다.
 
 정성 평가 기준:
 - naturalness: 밈을 모르는 고객도 광고 문구로 자연스럽게 읽을 수 있는가
-- pattern_fidelity: text_patterns의 리듬과 의도를 창의적으로 응용했으며 기계적인 복사처럼 보이지 않는가
+- pattern_fidelity: trend_context.meaning, text_patterns, usage_rules, copy_markers에 제시된
+  구조와 리듬을 창의적으로 응용했으며 기계적인 복사처럼 보이지 않는가. 특히 해당
+  TrendCard가 '대상 제시 → 선호 표현 → 입력 특징에 근거한 이유 절 → 종결 표현 반복'처럼
+  단계가 있는 패턴을 정의한다면, marker 하나만 등장한 결과는 높은 점수를 주지 않는다.
+  copy_structure가 있으면 subject_source, subject_position, marker_occurrences,
+  reason_source, minimum_reason_count, reason_ending을 명시적인 패턴 계약으로 평가한다.
+  이유 절은 request_facts.features·required_terms 등 입력 사실에서 가져와야 하며,
+  text_patterns가 요구하는 이유 개수와 반복 리듬까지 얼마나 살렸는지 평가한다.
 - product_relevance: 실제 상품, 특징, 혜택과 밈 응용 표현이 설득력 있게 연결되는가
 - factuality: 문맥상 요청으로 뒷받침되지 않는 효능·가격·판매 방식 등의 주장을 만들지 않았는가
 - channel_readiness: 정확 문자열 검사와 조립 검사를 제외하고, 지정 채널에 어울리는 문체와 흐름을 갖췄는가
 
 각 점수는 1부터 5까지의 정수입니다. hard_failures 필드는 하위 호환을 위해 남아 있지만
-운영 통과 여부를 결정하지 않는 advisory 정성 의견입니다. 명백하게 오해를 유발하는 주장,
+순위에서 후보를 자동 제외하지 않는 advisory 정성 의견입니다. 명백하게 오해를 유발하는 주장,
 유해 표현, prohibited_usage의 의미적 위반처럼 문자열 검사만으로 판단하기 어려운 중대한
 정성 위험만 짧게 기록하세요. 확신할 수 없으면 빈 배열을 출력하세요.
 단순한 문체 선호나 경미한 어색함은 점수와 reason에만 반영하세요.

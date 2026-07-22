@@ -3,7 +3,7 @@ import json
 from app.modules.ad_copy.schemas import AdCopyRequest
 from app.modules.ad_copy.trend_context import TrendCard
 
-PROMPT_VERSION = "channel-split-pipeline-v12-production-repair"
+PROMPT_VERSION = "channel-split-pipeline-v13-trend-structure"
 
 
 def build_trend_card_prompt_block(
@@ -16,9 +16,10 @@ def build_trend_card_prompt_block(
 
     channel_post_rule = {
         "instagram": (
-            "channel_recommendation.caption의 첫 문장에 text_patterns를 응용한 표현을 "
-            "한 번 넣고, channel_recommendation.publish_body에도 그 caption을 그대로 "
-            "포함하세요."
+            "channel_recommendation.caption의 도입부에 text_patterns와 copy_structure를 "
+            "따르는 완성 표현을 한 번 넣으세요. marker는 첫 문장에 두고 이유 문장은 "
+            "그 직후에 이어 쓰며, channel_recommendation.publish_body에도 그 caption을 "
+            "그대로 포함하세요."
         ),
         "naver_blog": (
             "검색용 제목은 사실 중심으로 유지하고, channel_recommendation.publish_body의 "
@@ -46,6 +47,9 @@ def build_trend_card_prompt_block(
         "meaning": card.meaning,
         "text_patterns": card.text_patterns,
         "copy_markers": card.copy_markers,
+        "copy_structure": (
+            card.copy_structure.model_dump() if card.copy_structure is not None else None
+        ),
         "suitable_channels": card.suitable_channels,
         "suitable_tones": card.suitable_tones,
         "target_audiences": card.target_audiences,
@@ -67,15 +71,18 @@ TrendCard 활용 규칙:
 2. text_patterns를 그대로 복사하지 말고 입력된 상품, 특징, 상황에 맞게 자연스럽게 변형하세요.
 3. 모든 플레이스홀더를 사용자 입력 정보로 자연스럽게 교체하고, 결과에 중괄호 형태의 플레이스홀더를 남기지 마세요.
 4. 상품명, 실제 특징, 실제 혜택을 참고 패턴보다 우선하세요.
-5. 사용자가 화면에서 바로 보는 headlines[0] 또는 body_copies[0] 중 최소 하나에 text_patterns를 응용한 표현을 한 번 반영하세요.
+5. 사용자가 화면에서 바로 보는 headlines[0]과 body_copies[0]을 합친 도입부에 text_patterns를 응용한 완성 표현을 한 번 반영하세요.
 6. 실제 채널 게시물에도 반드시 반영하세요: {channel_post_rule}
 7. 여러 상품을 하나의 플레이스홀더에 기계적으로 나열하지 마세요. 대표 상품을 선택하거나 상품 사이의 조합과 관계를 자연스럽게 표현하세요.
 8. 현재 카드의 usage_rules는 반드시 따르고 prohibited_usage에 해당하는 방식은 사용하지 마세요.
-9. 고객이 읽는 각 완성 문구 안에서는 응용 표현을 최대 한 번만 사용하세요. caption을 publish_body에 다시 담는 것처럼 같은 게시물을 구조화 필드에 중복 저장하는 것은 허용됩니다.
+9. copy_structure가 있으면 고객이 읽는 각 완성 문구 안에서 marker를 marker_occurrences에 지정된 횟수만큼만 사용하세요. copy_structure가 없으면 응용 표현을 최대 한 번만 사용하세요. caption을 publish_body에 다시 담는 것처럼 같은 게시물을 구조화 필드에 중복 저장하는 것은 허용됩니다.
 10. TrendCard를 모르는 고객도 상품과 혜택을 이해할 수 있게 작성하세요.
 11. 입력에 없는 상품 정보, 특징, 혜택을 만들지 마세요.
 12. copy_markers는 고객 문구에서 그대로 유지해야 하는 짧은 핵심 표현입니다. 상품명이나 특징을 copy_markers로 대체하지 마세요.
-13. Instagram에서는 headlines[0] 또는 body_copies[0]과 caption의 첫 문장에 copy_markers 중 하나를 정확히 포함하세요.
+13. Instagram에서는 headlines[0]과 body_copies[0]을 합친 도입부 및 caption의 첫 문장에 copy_markers 중 하나를 정확히 포함하세요.
+14. copy_structure가 있으면 해당 필드를 문구 조립 계약으로 따르세요. subject_source의 대상을 subject_position에 놓고, 한 응용 표현 안의 marker 수를 marker_occurrences와 정확히 맞추세요.
+15. reason_source가 input_features이면 marker 뒤에 입력 특징을 근거로 한 서로 다른 이유를 쓰세요. 이유 수는 입력에서 사용할 수 있는 특징 수와 minimum_reason_count 중 작은 값 이상이어야 하며, 각 이유는 reason_ending으로 끝내세요.
+16. 이유를 자연스럽게 변형할 수 있지만 근거가 된 입력 특징을 식별할 수 있어야 합니다. 입력에 없는 맛, 색, 재료, 효능, 혜택을 이유로 추가하지 마세요.
 """
 
 BUSINESS_TYPE_LABELS = {

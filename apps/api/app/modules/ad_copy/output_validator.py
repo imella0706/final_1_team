@@ -137,6 +137,174 @@ def _contains_trend_reference(text: str, card: TrendCard) -> bool:
     return any(marker in normalized for marker in _trend_markers(card))
 
 
+def _atomic_sales_features(features: list[str]) -> list[str]:
+    """Split user-provided feature rows into distinct, reusable facts."""
+
+    atomic: list[str] = []
+    for feature in _sales_features(features):
+        parts = re.split(r"\s*(?:[,;/·]|\s+(?:및|그리고)\s+)\s*", feature)
+        for part in parts:
+            cleaned = part.strip()
+            if cleaned and cleaned not in atomic:
+                atomic.append(cleaned)
+    return atomic
+
+
+_FEATURE_ANCHOR_STOPWORDS = {
+    "가능",
+    "구성",
+    "사용",
+    "제공",
+    "조리",
+    "직접",
+    "함께",
+    "넣은",
+    "넣어",
+    "더한",
+    "만든",
+    "올린",
+}
+
+
+def _feature_anchors(feature: str) -> set[str]:
+    return {
+        token.casefold()
+        for token in re.findall(r"[0-9A-Za-z가-힣]+", feature)
+        if len(token) >= 2 and token.casefold() not in _FEATURE_ANCHOR_STOPWORDS
+    }
+
+
+def _marker_matches(text: str, card: TrendCard) -> list[re.Match[str]]:
+    markers = _trend_markers(card)
+    if not markers:
+        return []
+    pattern = "|".join(re.escape(marker) for marker in markers)
+    return list(re.finditer(pattern, text.casefold()))
+
+
+def _reason_segments_after_marker(
+    text: str,
+    *,
+    marker_end: int,
+    ending: str,
+) -> list[str]:
+    tail = text[marker_end:]
+    ending_pattern = re.compile(
+        rf"{re.escape(ending)}\s*[~～!?.。！？]*(?=\s|$)",
+        re.IGNORECASE,
+    )
+    segments: list[str] = []
+    previous_end = 0
+    for match in ending_pattern.finditer(tail):
+        segment = tail[previous_end : match.start()].strip(" \t\r\n,.;:!?'\"~～—-")
+        if segment:
+            segments.append(segment)
+        previous_end = match.end()
+    return segments
+
+
+def _grounded_reason_count(
+    reasons: list[str],
+    feature_units: list[str],
+) -> tuple[int, int]:
+    unmatched_features = set(range(len(feature_units)))
+    grounded = 0
+    ungrounded = 0
+    for reason in reasons:
+        normalized_reason = re.sub(r"[^0-9a-z가-힣]+", "", reason.casefold())
+        candidates: list[tuple[int, int]] = []
+        for index in unmatched_features:
+            matching_anchors = [
+                anchor
+                for anchor in _feature_anchors(feature_units[index])
+                if anchor in normalized_reason
+            ]
+            if matching_anchors:
+                candidates.append((sum(map(len, matching_anchors)), index))
+        if not candidates:
+            ungrounded += 1
+            continue
+        _, matched_index = max(candidates)
+        unmatched_features.remove(matched_index)
+        grounded += 1
+    return grounded, ungrounded
+
+
+def _trend_structure_failures(
+    text: str,
+    request: AdCopyRequest,
+    card: TrendCard,
+    *,
+    scope: str,
+) -> list[tuple[str, str]]:
+    structure = card.copy_structure
+    if structure is None:
+        return []
+
+    marker_matches = _marker_matches(text, card)
+    failures: list[tuple[str, str]] = []
+    if len(marker_matches) != structure.marker_occurrences:
+        failures.append(
+            (
+                f"trend_marker_count_invalid_in_{scope}",
+                f"TrendCard 응용 표현의 marker는 {scope}에서 "
+                f"{structure.marker_occurrences}회여야 하지만 {len(marker_matches)}회입니다: "
+                f"{card.meme_id}",
+            )
+        )
+    if not marker_matches:
+        return failures
+
+    first_marker = marker_matches[0]
+    if structure.subject_position == "before_marker":
+        subject_candidates = {
+            "primary_product": request.product_names[:1],
+            "any_product": request.product_names,
+            "business_name": [request.business_name],
+        }[structure.subject_source]
+        prefix = text[: first_marker.start()]
+        if not any(subject and subject in prefix for subject in subject_candidates):
+            failures.append(
+                (
+                    f"trend_subject_not_before_marker_in_{scope}",
+                    f"TrendCard의 {structure.subject_source} 대상이 {scope}에서 "
+                    f"marker보다 먼저 나와야 합니다: {card.meme_id}",
+                )
+            )
+
+    if structure.reason_source != "input_features":
+        return failures
+
+    feature_units = _atomic_sales_features(request.features)
+    required_reasons = min(structure.minimum_reason_count, len(feature_units))
+    if required_reasons == 0:
+        return failures
+    reasons = _reason_segments_after_marker(
+        text,
+        marker_end=first_marker.end(),
+        ending=structure.reason_ending,
+    )
+    grounded_count, ungrounded_count = _grounded_reason_count(reasons, feature_units)
+    if len(reasons) < required_reasons:
+        failures.append(
+            (
+                f"trend_reason_count_insufficient_in_{scope}",
+                f"TrendCard 응용 표현은 {scope}에서 입력 특징 기반 이유가 "
+                f"최소 {required_reasons}개 필요하고 각 이유는 "
+                f"'{structure.reason_ending}'로 끝나야 합니다: {card.meme_id}",
+            )
+        )
+    if grounded_count < required_reasons or ungrounded_count:
+        failures.append(
+            (
+                f"trend_reason_not_grounded_in_{scope}",
+                f"TrendCard의 이유 문장은 {scope}에서 서로 다른 입력 특징으로만 "
+                f"근거를 대야 합니다: {card.meme_id}",
+            )
+        )
+    return failures
+
+
 def _first_sentence(text: str) -> str:
     for part in re.split(r"(?:\r?\n)+|(?<=[.!?。！？])\s+", text.strip()):
         if part.strip():
@@ -210,7 +378,7 @@ def _has_mechanical_product_enumeration(
         recommendation.publish_body,
     ]
     for text in customer_texts:
-        for sentence in re.split(r"(?:\r?\n)+|(?<=[.!?。！？])\s+", text):
+        for sentence in re.split(r"(?:\r?\n)+|[~～]+|(?<=[.!?。！？])\s+", text):
             if not _contains_trend_reference(sentence, card):
                 continue
             mentioned_products = [
@@ -381,7 +549,7 @@ def validate_copy_output(
 ) -> CopyValidationResult:
     warnings: list[str] = []
     failure_codes: list[str] = []
-    visible_primary_copy_text = " ".join(content.headlines[:1] + content.body_copies[:1])
+    visible_primary_copy_text = "\n".join(content.headlines[:1] + content.body_copies[:1])
     visible_fields = _customer_visible_fields(content)
     customer_text = " ".join(value for _, value in visible_fields)
     is_blog = request.channel.value == "naver_blog"
@@ -465,6 +633,13 @@ def validate_copy_output(
                 "선택한 TrendCard가 화면에 표시되는 첫 광고 문구에 반영되지 않았습니다: "
                 f"{trend_card.meme_id}",
             )
+        for code, warning in _trend_structure_failures(
+            visible_primary_copy_text,
+            request,
+            trend_card,
+            scope="primary_copy",
+        ):
+            _add_failure(warnings, failure_codes, code, warning)
         for warning in _trend_post_warnings(
             content, request.channel.value, trend_card
         ):
@@ -476,6 +651,14 @@ def validate_copy_output(
                 else "trend_marker_missing_in_channel_post"
             )
             _add_failure(warnings, failure_codes, code, warning)
+        if request.channel.value == "instagram":
+            for code, warning in _trend_structure_failures(
+                content.channel_recommendation.caption,
+                request,
+                trend_card,
+                scope="instagram_caption",
+            ):
+                _add_failure(warnings, failure_codes, code, warning)
         if _has_mechanical_product_enumeration(content, request, trend_card):
             _add_failure(
                 warnings,
@@ -574,7 +757,10 @@ def remove_prohibited_terms(text: str, prohibited_terms: list[str]) -> str:
     for term in prohibited_terms:
         if term:
             cleaned = cleaned.replace(term, "")
-    return " ".join(cleaned.split())
+    normalized_lines = [
+        " ".join(line.split()) for line in cleaned.splitlines() if line.strip()
+    ]
+    return "\n".join(normalized_lines)
 
 
 def _feature_value(features: list[str], label: str) -> str:
@@ -625,16 +811,26 @@ def _render_trend_pattern(
         "takeout": "가볍게 챙겨 가고 싶은 순간",
         "visit": "카페에 들르고 싶은 순간",
     }.get(request.situation.value, "메뉴가 생각나는 순간")
+    feature_units = _atomic_sales_features(request.features)
     pattern = card.text_patterns[0] if card.text_patterns else card.display_name
     replacements = {
+        "{대표상품}": primary_product,
         "{메뉴}": primary_product,
         "{상품}": primary_product,
         "{상황}": situation,
         "{방문을 유도할 대상}": request.business_name,
     }
+    for index, feature in enumerate(feature_units, start=1):
+        replacements[f"{{입력특징{index}}}"] = feature
     rendered = pattern
     for placeholder, value in replacements.items():
         rendered = rendered.replace(placeholder, value)
+    rendered_lines = [
+        line
+        for line in rendered.splitlines()
+        if not re.search(r"\{입력특징\d+\}", line)
+    ]
+    rendered = "\n".join(rendered_lines)
     return re.sub(r"\{[^{}]+\}", primary_product, rendered).strip()
 
 

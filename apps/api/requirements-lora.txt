@@ -1,4 +1,4 @@
-# Offline Qwen2.5-7B LoRA experiment dependencies.
+# Offline Qwen2.5-7B 4-bit QLoRA experiment dependencies.
 # Install the API project itself first: python -m pip install -e .
 torch>=2.4,<3
 transformers>=4.48,<6
@@ -6,4 +6,5 @@ accelerate>=1.2,<2
 datasets>=3.2,<5
 peft>=0.14,<1
 trl>=0.24,<1
+bitsandbytes>=0.45,<1
 safetensors>=0.4,<1

@@ -66,9 +66,20 @@ JUDGE_SCORE_KEYS = (
     "channel_readiness",
     "overall_score",
 )
+JUDGE_SCORE_MINIMUM = 1
+JUDGE_SCORE_MAXIMUM = 5
+JUDGE_OVERALL_SCORE_MAXIMUM = 5.0
+JUDGE_SCORE_LABELS = (
+    ("naturalness", "자연스러움"),
+    ("pattern_fidelity", "패턴 충실도"),
+    ("product_relevance", "상품 관련성"),
+    ("factuality", "사실성"),
+    ("channel_readiness", "채널 게시 준비도"),
+    ("overall_score", "Judge 종합"),
+)
 DEFAULT_EXTERNAL_REQUEST_LIMIT = 20
 
-OPERATIONAL_FAILURE_LABELS = {
+VALIDATION_FAILURE_LABELS = {
     "generation_failed": "광고 문구 생성 실패",
     "production_rule_validation_failed": "Production validator 실패",
     "required_term_metric_unavailable": "필수어 반영률을 계산할 수 없음",
@@ -97,14 +108,14 @@ def _stable_unique(values: list[str]) -> list[str]:
 
 
 def deterministic_validation_evidence(record: dict[str, Any]) -> dict[str, Any]:
-    """Build the authoritative, machine-derived release decision for a trial.
+    """Build machine-derived validation diagnostics for a trial.
 
     Production-validator messages remain useful detail, but only stable failure
-    codes are exposed as the decision contract. This keeps an LLM Judge's
-    qualitative observations from becoming release-gate facts.
+    codes are exposed as the deterministic diagnostic contract. These
+    diagnostics do not determine whether an arm may enter the Judge ranking.
     """
 
-    reasons = operational_failure_reasons(record)
+    reasons = validation_failure_reasons(record)
     production_codes = record.get("production_failure_codes")
     codes = [
         str(code)
@@ -123,7 +134,7 @@ def deterministic_validation_evidence(record: dict[str, Any]) -> dict[str, Any]:
         "authoritative": True,
         "passed": not reasons,
         "failure_codes": codes,
-        "failure_details": [_display_operational_failure(reason) for reason in reasons],
+        "failure_details": [_display_validation_failure(reason) for reason in reasons],
     }
 
 
@@ -201,13 +212,8 @@ def _output_contract_failure_reasons(record: dict[str, Any]) -> list[str]:
     return reasons
 
 
-def operational_failure_reasons(record: dict[str, Any]) -> list[str]:
-    """Return deterministic release-gate failures for one trial.
-
-    The release gate remains separate from the qualitative LLM Judge score and
-    can derive validity for reports created before ``operational_valid`` was
-    persisted.
-    """
+def validation_failure_reasons(record: dict[str, Any]) -> list[str]:
+    """Return deterministic validator and output-contract diagnostics."""
 
     if not record.get("generation_success"):
         return ["generation_failed"]
@@ -241,12 +247,6 @@ def operational_failure_reasons(record: dict[str, Any]) -> list[str]:
             reasons.append(label)
     reasons.extend(_output_contract_failure_reasons(record))
     return reasons
-
-
-def record_operationally_valid(record: dict[str, Any]) -> bool:
-    """Whether one output passes every deterministic release gate."""
-
-    return not operational_failure_reasons(record)
 
 
 def parse_args() -> argparse.Namespace:
@@ -617,14 +617,12 @@ async def evaluate_trial(
                     "generation_success": False,
                     "schema_valid": False,
                     "rule_valid": False,
-                    "operational_valid": False,
-                    "operational_failure_reasons": ["generation_failed"],
                     "deterministic_validation": {
                         "authoritative": True,
                         "passed": False,
                         "failure_codes": ["generation_failed"],
                         "failure_details": [
-                            OPERATIONAL_FAILURE_LABELS["generation_failed"]
+                            VALIDATION_FAILURE_LABELS["generation_failed"]
                         ],
                     },
                     "error_type": parse_failure_type(error),
@@ -756,8 +754,6 @@ async def evaluate_trial(
                 "repair_error": getattr(generated, "repair_error", None),
             }
         )
-        record["operational_failure_reasons"] = operational_failure_reasons(record)
-        record["operational_valid"] = not record["operational_failure_reasons"]
         record["deterministic_validation"] = deterministic_validation_evidence(record)
 
         if judge_enabled:
@@ -851,10 +847,6 @@ def summarize_arm(arm: MemeEvalArm, records: list[dict[str, Any]]) -> dict[str, 
                 sum(bool(record.get("rule_valid")) for record in subset),
                 len(subset),
             ),
-            "operational_pass_rate_percent": _percent(
-                sum(record_operationally_valid(record) for record in subset),
-                len(subset),
-            ),
             "judge_overall_score": (
                 round(
                     mean(
@@ -893,14 +885,6 @@ def summarize_arm(arm: MemeEvalArm, records: list[dict[str, Any]]) -> dict[str, 
         "repair_success_rate_percent": _percent(
             sum(bool(record.get("repair_success")) for record in repair_attempted),
             len(repair_attempted),
-        ),
-        "operational_pass_rate_percent": _percent(
-            sum(record_operationally_valid(record) for record in records),
-            len(records),
-        ),
-        "final_operational_pass_rate_percent": _percent(
-            sum(record_operationally_valid(record) for record in records),
-            len(records),
         ),
         "marker_compliance_rate_percent": _percent(
             sum(bool(record.get("marker_compliant")) for record in generated),
@@ -978,14 +962,6 @@ def build_paired_analysis(
     for arm in arms:
         paired = paired_by_arm[arm.id]
         judged = [record for record in paired if record.get("judge_success")]
-        operationally_valid = [
-            record for record in paired if record_operationally_valid(record)
-        ]
-        # Only deterministic validation can block an arm from ranking. The LLM
-        # Judge supplies qualitative scores and non-authoritative advice.
-        ranking_eligible = bool(paired) and all(
-            record_operationally_valid(record) for record in paired
-        )
         arm_scores.append(
             {
                 "arm_id": arm.id,
@@ -999,26 +975,14 @@ def build_paired_analysis(
                     sum(bool(record.get("rule_valid")) for record in paired),
                     len(paired),
                 ),
-                "operational_pass_rate_percent": _percent(
-                    len(operationally_valid),
-                    len(paired),
-                ),
                 "judge_advisory_finding_rate_percent": _percent(
                     sum(bool(_judge_advisory_findings(record)) for record in judged),
                     len(judged),
                 ),
-                "ranking_eligible": ranking_eligible,
             }
         )
 
     paired_coverage = _percent(len(complete_keys), len(block_keys))
-    eligible_scores = [item for item in arm_scores if item["ranking_eligible"]]
-    eligible_arm_ids = [item["arm_id"] for item in eligible_scores]
-    operational_status = (
-        "eligible_arms_present"
-        if eligible_scores
-        else "no_operationally_eligible_arm"
-    )
     if not fixtures_reviewed:
         status = "fixture_not_reviewed"
         ranking: list[dict[str, Any]] = []
@@ -1031,13 +995,13 @@ def build_paired_analysis(
     elif len(complete_keys) != len(block_keys):
         status = "incomplete_paired_coverage"
         ranking = []
-    elif not eligible_scores:
-        status = "no_operationally_eligible_arm"
+    elif not complete_keys:
+        status = "incomplete_paired_coverage"
         ranking = []
     else:
         status = "complete"
         ordered = sorted(
-            eligible_scores,
+            arm_scores,
             key=lambda item: item["judge_overall_score"] or -1,
             reverse=True,
         )
@@ -1061,8 +1025,6 @@ def build_paired_analysis(
         "paired_coverage_percent": paired_coverage,
         "decision_eligible": decision_eligible,
         "decision_ineligibility_reasons": decision_ineligibility_reasons or [],
-        "operational_status": operational_status,
-        "operationally_eligible_arm_ids": eligible_arm_ids,
         "complete_block_ids": [
             {"case_id": case_id, "repeat": repeat}
             for case_id, repeat in complete_keys
@@ -1079,9 +1041,9 @@ def build_paired_analysis(
         ),
         "note": (
             "순위는 모든 arm의 생성과 judge가 같은 case/repeat에서 완료되고 "
-            "fixture 사람 검수와 전체 실험 범위가 충족되며, 해당 arm이 모든 deterministic "
-            "운영 규칙을 통과한 경우에만 표시합니다. Judge 정성 의견은 순위를 탈락시키지 않습니다. "
-            "동점은 같은 rank입니다."
+            "fixture 사람 검수와 전체 실험 범위가 충족된 경우 Judge 종합 점수로 표시합니다. "
+            "Production validator 결과와 Judge advisory 의견은 별도 진단이며 순위 후보를 "
+            "제외하지 않습니다. 동점은 같은 rank입니다."
         ),
     }
 
@@ -1128,11 +1090,11 @@ def _customer_visible_output(output: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _display_operational_failure(reason: Any) -> str:
+def _display_validation_failure(reason: Any) -> str:
     text_reason = str(reason)
     if text_reason.startswith("production_rule: "):
         return text_reason.removeprefix("production_rule: ")
-    return OPERATIONAL_FAILURE_LABELS.get(text_reason, text_reason)
+    return VALIDATION_FAILURE_LABELS.get(text_reason, text_reason)
 
 
 def _ordered_trials(report: dict[str, Any]) -> list[dict[str, Any]]:
@@ -1165,6 +1127,25 @@ def _ordered_trials(report: dict[str, Any]) -> list[dict[str, Any]]:
     )
 
 
+def _judge_result_markdown(judge: dict[str, Any]) -> list[str]:
+    """Render every Judge score with its five-point maximum visible."""
+
+    lines = [
+        "Judge 점수는 후보 비교에 사용하며 advisory_findings는 별도 탈락 조건이 아닙니다.",
+        "",
+    ]
+    for key, label in JUDGE_SCORE_LABELS:
+        value = judge.get(key)
+        lines.append(f"- {label}(5점): `{value if value is not None else '-'}`")
+    findings = judge.get("advisory_findings") or []
+    lines.append(
+        "- Judge advisory: "
+        + (", ".join(str(value) for value in findings) if findings else "없음")
+    )
+    lines.append(f"- 평가 근거: {judge.get('reason') or '기록 없음'}")
+    return lines
+
+
 def _candidate_detail_markdown(report: dict[str, Any]) -> list[str]:
     lines = [
         "## 후보별 생성 출력",
@@ -1180,14 +1161,7 @@ def _candidate_detail_markdown(report: dict[str, Any]) -> list[str]:
         arm_id = str(record.get("arm_id") or "unknown-arm")
         repeat = record.get("repeat") or "-"
         generated = bool(record.get("generation_success"))
-        operational = record_operationally_valid(record)
-        status = (
-            "생성 실패"
-            if not generated
-            else "운영 통과"
-            if operational
-            else "운영 실패"
-        )
+        status = "생성 성공" if generated else "생성 실패"
         summary = html.escape(
             f"{case_id} · repeat {repeat} · {arm_id} · {status}",
             quote=True,
@@ -1220,7 +1194,6 @@ def _candidate_detail_markdown(report: dict[str, Any]) -> list[str]:
                     + "`"
                 ),
                 f"- Production validator: `{'통과' if record.get('rule_valid') else '실패'}`",
-                f"- 운영 gate: `{'통과' if operational else '실패'}`",
                 f"- Judge 대상: `{record.get('judge_target') or '기록 없음'}`",
                 "",
             ]
@@ -1256,28 +1229,26 @@ def _candidate_detail_markdown(report: dict[str, Any]) -> list[str]:
             )
 
         rule_warnings = record.get("rule_warnings") or []
-        operational_failures = operational_failure_reasons(record)
+        validation_failures = validation_failure_reasons(record)
         deterministic = record.get("deterministic_validation")
         if not isinstance(deterministic, dict):
             deterministic = deterministic_validation_evidence(record)
         lines.extend(["", "### 검증 결과", ""])
-        lines.append(
-            "- 최종 운영 판정: deterministic validator의 failure_codes가 authoritative입니다."
-        )
+        lines.append("- deterministic failure_codes는 재현 가능한 검증 진단입니다.")
         lines.extend(_markdown_json(deterministic))
         if rule_warnings:
             lines.append("Production validator 경고:")
             lines.extend(f"- {warning}" for warning in rule_warnings)
         else:
             lines.append("- Production validator 경고 없음")
-        if operational_failures:
-            lines.append("- 운영 실패 사유:")
+        if validation_failures:
+            lines.append("- 추가 검증 진단:")
             lines.extend(
-                f"  - {_display_operational_failure(reason)}"
-                for reason in operational_failures
+                f"  - {_display_validation_failure(reason)}"
+                for reason in validation_failures
             )
         else:
-            lines.append("- 운영 실패 사유 없음")
+            lines.append("- 추가 검증 진단 없음")
 
         judge = record.get("judge")
         lines.extend(["", "### Judge (정성 평가·advisory)", ""])
@@ -1289,10 +1260,7 @@ def _candidate_detail_markdown(report: dict[str, Any]) -> list[str]:
                     [],
                 )
             judge_display["advisory_only"] = True
-            lines.append(
-                "Judge 의견은 점수 비교용이며 운영 통과·탈락을 직접 결정하지 않습니다."
-            )
-            lines.extend(_markdown_json(judge_display))
+            lines.extend(_judge_result_markdown(judge_display))
         elif record.get("judge_error"):
             lines.append(f"Judge 실패: {record['judge_error']}")
         else:
@@ -1329,6 +1297,13 @@ def write_candidate_artifacts(report: dict[str, Any], run_dir: Path) -> Path:
 def markdown_report(report: dict[str, Any]) -> str:
     metadata = report["metadata"]
     paired = report["paired_analysis"]
+    judge_scale = metadata.get("judge_score_scale") or {}
+    judge_minimum = judge_scale.get("minimum", JUDGE_SCORE_MINIMUM)
+    judge_maximum = judge_scale.get("maximum", JUDGE_SCORE_MAXIMUM)
+    judge_overall_maximum = judge_scale.get(
+        "overall_maximum",
+        JUDGE_OVERALL_SCORE_MAXIMUM,
+    )
 
     def percent_text(value: float | None) -> str:
         return "-" if value is None else f"{value}%"
@@ -1346,6 +1321,10 @@ def markdown_report(report: dict[str, Any]) -> str:
         f"- 평가 케이스: {metadata['case_count']}개 × {metadata['repeats']}회",
         f"- Judge: {metadata['judge_model'] or '사용 안 함'}",
         f"- Judge prompt: {metadata.get('judge_prompt_version') or '기록 없음'}",
+        (
+            f"- Judge 점수 범위: {judge_minimum}~{judge_maximum}점 "
+            f"(종합 최고 {float(judge_overall_maximum):.1f}점)"
+        ),
         f"- 의사결정 가능: {'예' if paired.get('decision_eligible') else '아니요 (engineering smoke)'}",
         f"- Paired 비교 상태: {paired['status']}",
         f"- 공식 winner: {paired.get('winner_arm_id') or '없음'}",
@@ -1354,12 +1333,13 @@ def markdown_report(report: dict[str, Any]) -> str:
         "아래 표는 전체 trial 진단 요약입니다. 최종 순위는 paired 비교 조건을 충족한 경우에만 "
         "별도로 표시됩니다.",
         "",
-        "| 실험군 | 생성 성공 | 초안 validator | 교정 시도 | 교정 성공(시도 중) | 최종 validator | 최종 운영 통과 | 마커 존재(any field) | 예시 누출 | Judge 종합 | Judge advisory |",
-        "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+        "| 실험군 | 생성 성공 | 초안 validator | 교정 시도 | 교정 성공(시도 중) | "
+        "최종 validator | 마커 존재(any field) | 예시 누출 | Judge 종합(5점) | Judge advisory |",
+        "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
     ]
     for summary in report["arm_summaries"]:
         if not isinstance(summary, dict):
-            lines.append("| 요약 생성 실패 | - | - | - | - | - | - | - | - | - | - |")
+            lines.append("| 요약 생성 실패 | - | - | - | - | - | - | - | - | - |")
             continue
         judge_scores = summary.get("judge_scores") or {}
         judge_score = judge_scores.get("overall_score")
@@ -1370,7 +1350,6 @@ def markdown_report(report: dict[str, Any]) -> str:
             f"{percent_text(summary.get('repair_attempt_rate_percent'))} | "
             f"{percent_text(summary.get('repair_success_rate_percent'))} | "
             f"{percent_text(summary['rule_pass_rate_percent'])} | "
-            f"{percent_text(summary.get('final_operational_pass_rate_percent', summary.get('operational_pass_rate_percent')))} | "
             f"{percent_text(summary['marker_compliance_rate_percent'])} | "
             f"{percent_text(summary['example_leakage_rate_percent'])} | "
             f"{judge_score if judge_score is not None else '-'} | "
@@ -1382,12 +1361,12 @@ def markdown_report(report: dict[str, Any]) -> str:
         for item in paired["ranking"]:
             lines.append(
                 f"{item['rank']}. {item['arm_id']} "
-                f"(Judge {item['judge_overall_score']})"
+                f"(Judge {item['judge_overall_score']}/{float(judge_overall_maximum):.1f})"
             )
     else:
         lines.append(
             "순위를 표시하지 않습니다. fixture 검수, 전체 실험 범위, Judge 사용, "
-            "paired completion과 deterministic 운영 gate를 확인하세요."
+            "paired 생성·Judge 완료 여부를 확인하세요."
         )
 
     lines.append("")
@@ -1398,9 +1377,9 @@ def markdown_report(report: dict[str, Any]) -> str:
             "",
             "- 동일한 Qwen 2.5 7B, TrendCard, 케이스, 생성 설정을 사용하며 arm별 prompt 전략만 바뀝니다.",
             "- Judge에는 arm 이름, 생성 모델, few-shot 여부를 전달하지 않습니다.",
-            "- Judge 정성 점수는 prompt 전략 비교를 위해 모델 초안(initial_output)을 평가하며 deterministic 운영 검증을 대체하지 않습니다.",
-            "- 최종 운영 gate는 정규화·교정 후 final output을 기준으로 판정합니다.",
-            "- Judge advisory 의견은 참고 정보이며 후보를 탈락시키거나 winner를 막지 않습니다.",
+            "- Judge 정성 점수는 prompt 전략 비교를 위해 모델 초안(initial_output)을 평가합니다.",
+            "- Production validator와 deterministic failure_codes는 정규화·교정 후 final output의 진단 정보입니다.",
+            "- Production validator 결과와 Judge advisory 의견은 순위 후보를 제외하지 않습니다.",
             "- 현재 한 개 밈만 평가하므로 결과는 이 TrendCard의 smoke 결과이며 다른 밈으로 일반화할 수 없습니다.",
             "- LoRA가 비활성이면 이 보고서에는 네 개 prompt arm만 포함됩니다.",
             "",
@@ -1438,12 +1417,21 @@ def rebuild_saved_report(report: dict[str, Any]) -> dict[str, Any]:
 
     fixture_review = report.get("fixture_review") or {}
     metadata = report.get("metadata") or {}
+    metadata.setdefault(
+        "judge_score_scale",
+        {
+            "minimum": JUDGE_SCORE_MINIMUM,
+            "maximum": JUDGE_SCORE_MAXIMUM,
+            "overall_maximum": JUDGE_OVERALL_SCORE_MAXIMUM,
+        },
+    )
     judge_enabled = bool(metadata.get("judge_model"))
     for record in trials:
         if isinstance(record, dict):
-            reasons = operational_failure_reasons(record)
-            record["operational_failure_reasons"] = reasons
-            record["operational_valid"] = not reasons
+            # Drop ranking-gate fields from historical reports while preserving
+            # their underlying validator diagnostics.
+            record.pop("operational_failure_reasons", None)
+            record.pop("operational_valid", None)
             record["deterministic_validation"] = deterministic_validation_evidence(
                 record
             )
@@ -1653,6 +1641,11 @@ async def run(args: argparse.Namespace) -> int:
                 }
             ),
             "judge_prompt_version": JUDGE_PROMPT_VERSION if judge_enabled else None,
+            "judge_score_scale": {
+                "minimum": JUDGE_SCORE_MINIMUM,
+                "maximum": JUDGE_SCORE_MAXIMUM,
+                "overall_maximum": JUDGE_OVERALL_SCORE_MAXIMUM,
+            },
             "decision_eligible": decision_eligible,
             "decision_ineligibility_reasons": decision_ineligibility_reasons,
             "case_count": len(cases),
