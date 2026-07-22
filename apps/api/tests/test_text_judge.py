@@ -64,7 +64,23 @@ def test_judge_input_is_blind_and_allow_listed() -> None:
     assert "structured_cot" not in serialized
     assert loaded.config.base_model not in serialized
     assert "operational_requirements" in serialized
-    assert "channel_readiness는 최대 2점" in serialized
+    assert "deterministic validator가 판정한다" in serialized
+    assert "hard_failures에도 기록하지 않는다" in serialized
+    assert "hard_failures는 advisory" in serialized
+
+
+def test_judge_prompt_limits_llm_to_qualitative_assessment() -> None:
+    loaded, request, content = _judge_fixture()
+    judge_input = build_meme_judge_input(request, loaded.trend_card, content)
+    serialized = "\n".join(
+        message["content"] for message in build_meme_judge_messages(judge_input)
+    )
+
+    assert "정확 문자열 포함 여부" in serialized
+    assert "창의적으로 응용" in serialized
+    assert "CTA·해시태그·publish_body 조립 여부" in serialized
+    assert "운영 통과 여부를 결정하지 않는 advisory" in serialized
+    assert "required_terms 누락 또는 prohibited_terms 포함도 hard_failures" not in serialized
 
 
 def test_judge_result_is_strict_json_and_computes_overall_score() -> None:

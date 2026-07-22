@@ -8,6 +8,10 @@ from app.main import app
 from app.core.config import settings
 from app.modules.ad_copy.models import get_model_spec
 from app.modules.ad_copy.output_validator import build_fallback_copy, validate_copy_output
+from app.modules.ad_copy.output_validator import (
+    build_repair_feedback,
+    normalize_copy_output,
+)
 from app.modules.ad_copy.prompt import (
     PROMPT_VERSION,
     build_prompt,
@@ -49,7 +53,7 @@ def valid_ad_copy_json(
     resolved_publish_body = (
         publish_body
         if publish_body is not None
-        else f"{resolved_caption}\n{cta}"
+        else f"{resolved_caption}\n\n{cta}\n#신메뉴 #딸기티라미수"
     )
     return json.dumps(
         {
@@ -143,7 +147,7 @@ def valid_ad_copy_json(
 def test_build_prompt_uses_business_facts_and_safety_terms() -> None:
     prompt = build_prompt(AdCopyRequest.model_validate(sample_request()))
 
-    assert PROMPT_VERSION == "channel-split-pipeline-v11-trendcard-v2"
+    assert PROMPT_VERSION == "channel-split-pipeline-v12-production-repair"
     assert "동네봄 카페" in prompt
     assert "수제 딸기 티라미수, 런치세트" in prompt
     assert "매일 손질한 생딸기" in prompt
@@ -153,6 +157,9 @@ def test_build_prompt_uses_business_facts_and_safety_terms() -> None:
     assert "STEP 4. 비주얼 브리프" in prompt
     assert "20대" in prompt
     assert '"products_to_show"' in prompt
+    assert "모든 product_name은 입력 원문을 철자까지 그대로 유지" in prompt
+    assert "required_terms는 입력된 정확한 문자열 그대로" in prompt
+    assert "주문 가능 정보가 없으면 주문을 유도하지 마세요" in prompt
 
 
 def test_build_prompt_separates_age_groups_and_targets() -> None:
@@ -185,6 +192,7 @@ def test_trend_prompt_block_separates_generic_rules_from_card_data() -> None:
     assert "text_patterns는 완성 문장이 아니라 창작 패턴입니다" in block
     assert "여러 상품을 하나의 플레이스홀더에 기계적으로 나열하지 마세요" in block
     assert '"display_name": "니가 좋아💖"' in block
+    assert '"copy_markers": [' in block
     assert "고백 대상은 대표 메뉴 또는 상품 조합으로 바꾼다" in block
     assert "'니가 좋아' 뒤에 모든 메뉴명을 쉼표로 나열하는 단순 치환" in block
     assert "밈 반영 규칙" not in block
@@ -295,6 +303,81 @@ def test_trend_validation_accepts_instagram_copy_and_post_with_meme() -> None:
 
     assert result.valid is True
     assert result.warnings == []
+    assert result.failure_codes == []
+
+
+def test_instagram_output_is_normalized_from_source_fields() -> None:
+    request = AdCopyRequest.model_validate(sample_request())
+    content = _parse_content(
+        valid_ad_copy_json(
+            headline="딸기빛 오후엔 역시 니가 좋아, 수제 딸기 티라미수",
+            publish_body="모델이 잘못 조립한 본문",
+        )
+    )
+    content.hashtags = ["#무시할태그"]
+    content.channel_recommendation.publish_hashtags = [
+        "#신메뉴 #딸기티라미수",
+        "신메뉴",
+    ]
+
+    normalized = normalize_copy_output(content, request)
+
+    assert normalized.hashtags == ["#신메뉴", "#딸기티라미수"]
+    assert normalized.channel_recommendation.publish_hashtags == [
+        "#신메뉴",
+        "#딸기티라미수",
+    ]
+    assert normalized.channel_recommendation.publish_body == (
+        f"{normalized.channel_recommendation.caption}\n\n"
+        f"{normalized.channel_recommendation.publish_cta}\n"
+        "#신메뉴 #딸기티라미수"
+    )
+
+
+def test_validator_returns_structured_codes_for_operational_failures() -> None:
+    request = AdCopyRequest.model_validate(sample_request())
+    trend_card = load_trend_card()
+    content = _parse_content(
+        valid_ad_copy_json(
+            headline="오늘의 건강한 디저트",
+            body="수제 딸기 티라미수와 런치세트를 만나보세요.",
+            cta="立即订购",
+            caption="오늘의 건강한 디저트를 소개합니다.",
+        )
+    )
+
+    result = validate_copy_output(content, request, trend_card)
+
+    assert "required_terms_missing" in result.failure_codes
+    assert "instagram_caption_required_terms_missing" in result.failure_codes
+    assert "non_korean_customer_copy" in result.failure_codes
+    assert "unsupported_claim_detected" in result.failure_codes
+    assert "trend_marker_missing_in_primary_copy" in result.failure_codes
+    assert "trend_marker_missing_in_caption_opening" in result.failure_codes
+    feedback = build_repair_feedback(result)
+    assert "실패 코드:" in feedback
+    assert "required_terms_missing" in feedback
+    assert "건강" in feedback
+
+
+def test_instagram_caption_must_preserve_product_and_required_terms() -> None:
+    request = AdCopyRequest.model_validate(sample_request())
+    trend_card = load_trend_card()
+    content = _parse_content(
+        valid_ad_copy_json(
+            headline="니가 좋아, 수제 딸기 티라미수와 런치세트",
+            body=(
+                "수제 딸기 티라미수와 런치세트에 매일 손질한 생딸기를 "
+                "담았습니다."
+            ),
+            caption="니가 좋아, 오늘의 두 메뉴를 만나보세요.",
+        )
+    )
+
+    result = validate_copy_output(content, request, trend_card)
+
+    assert "instagram_caption_product_name_missing" in result.failure_codes
+    assert "instagram_caption_required_terms_missing" in result.failure_codes
 
 
 def test_fallback_copy_uses_selected_trend_card() -> None:
@@ -309,6 +392,24 @@ def test_fallback_copy_uses_selected_trend_card() -> None:
     assert "니가 좋아" in content.channel_recommendation.caption
     assert "니가 좋아" in content.channel_recommendation.publish_body
     assert validate_copy_output(content, request, trend_card).valid is True
+
+
+def test_fallback_preserves_latin_product_name_without_language_false_positive() -> None:
+    request_data = sample_request()
+    request_data["business_name"] = "Cafe Spring"
+    request_data["product_names"] = ["Berry Smoothie"]
+    request = AdCopyRequest.model_validate(request_data)
+    trend_card = load_trend_card()
+
+    content = normalize_copy_output(
+        build_fallback_copy(request, ["test fallback"], trend_card),
+        request,
+    )
+    result = validate_copy_output(content, request, trend_card)
+
+    assert result.valid is True
+    assert "Berry Smoothie" in " ".join(content.headlines + content.body_copies)
+    assert "non_korean_customer_copy" not in result.failure_codes
 
 
 def test_trend_validation_rejects_comma_separated_product_list() -> None:
@@ -634,11 +735,19 @@ def test_generate_retries_once_when_required_json_key_is_missing(monkeypatch) ->
     )
     captured_invalid_content: list[str | None] = []
 
-    async def fake_call_model(request, *, trend_card=None, invalid_content=None):
+    async def fake_call_model(
+        request,
+        *,
+        trend_card=None,
+        invalid_content=None,
+        repair_feedback=None,
+    ):
         del request
         assert trend_card is not None
         assert trend_card.meme_id == "gogumafarm:1bf390d89536004b"
         captured_invalid_content.append(invalid_content)
+        if invalid_content is not None:
+            assert "invalid_json_or_schema" in repair_feedback
         return next(responses)
 
     monkeypatch.setattr(
@@ -672,9 +781,18 @@ def test_generate_retries_when_instagram_post_misses_trend(monkeypatch) -> None:
         ]
     )
 
-    async def fake_call_model(request, *, trend_card=None, invalid_content=None):
+    captured_feedback: list[str | None] = []
+
+    async def fake_call_model(
+        request,
+        *,
+        trend_card=None,
+        invalid_content=None,
+        repair_feedback=None,
+    ):
         del request, invalid_content
         assert trend_card is not None
+        captured_feedback.append(repair_feedback)
         return next(responses)
 
     monkeypatch.setattr(
@@ -688,11 +806,19 @@ def test_generate_retries_when_instagram_post_misses_trend(monkeypatch) -> None:
     assert result.output_repaired is True
     assert "니가 좋아" in result.channel_recommendation.caption
     assert "니가 좋아" in result.channel_recommendation.publish_body
+    assert captured_feedback[0] is None
+    assert "trend_marker_missing_in_caption_opening" in captured_feedback[1]
 
 
 def test_generate_returns_only_revalidated_trend_fallback(monkeypatch) -> None:
-    async def fake_call_model(request, *, trend_card=None, invalid_content=None):
-        del request, invalid_content
+    async def fake_call_model(
+        request,
+        *,
+        trend_card=None,
+        invalid_content=None,
+        repair_feedback=None,
+    ):
+        del request, invalid_content, repair_feedback
         assert trend_card is not None
         return '{"invalid":"model output"}'
 
@@ -705,7 +831,7 @@ def test_generate_returns_only_revalidated_trend_fallback(monkeypatch) -> None:
     result = asyncio.run(generate_ad_copy(request))
     trend_card = load_trend_card()
 
-    assert result.attempts == 3
+    assert result.attempts == 2
     assert result.output_repaired is True
     assert ", ".join(request.product_names) not in result.headlines[0]
     assert validate_copy_output(result, request, trend_card).valid is True

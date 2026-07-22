@@ -17,7 +17,12 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_valida
 from app.core.config import settings
 from app.evaluation.metrics import TOXICITY_TERMS, UNSUPPORTED_CLAIM_TERMS
 from app.modules.ad_copy.models import get_model_spec
-from app.modules.ad_copy.output_validator import CopyValidationResult, validate_copy_output
+from app.modules.ad_copy.output_validator import (
+    CopyValidationResult,
+    build_repair_feedback,
+    normalize_copy_output,
+    validate_copy_output,
+)
 from app.modules.ad_copy.schemas import AdCopyContent, AdCopyRequest, AdModel
 from app.modules.ad_copy.service import (
     InvalidModelOutputError,
@@ -99,7 +104,8 @@ class MemeGenerationSettings(BaseModel):
 
     temperature: float = Field(ge=0, le=2)
     max_tokens: int = Field(ge=100, le=16000)
-    max_attempts: Literal[1] = 1
+    # Total attempts: one initial generation plus, optionally, one constrained repair.
+    max_attempts: Literal[1, 2] = 1
     repeats: int = Field(ge=1, le=20)
     concurrency: int = Field(ge=1, le=20)
     generation_seed: int = Field(ge=0, le=2_147_483_647)
@@ -155,6 +161,24 @@ class FewShotOutput(BaseModel):
 
     primary_copy: str = Field(min_length=1, max_length=500)
     channel_post_opening: str = Field(min_length=1, max_length=500)
+    publish_cta: str = Field(min_length=1, max_length=300)
+    publish_hashtags: list[str] = Field(min_length=1, max_length=10)
+    product_name_preserved: bool
+    language: Literal["ko", "mixed", "non_ko"]
+    failure_codes: list[
+        Literal[
+            "mechanical_template_copy",
+            "feature_enumeration",
+            "product_enumeration",
+            "required_term_missing",
+            "marker_missing",
+            "product_name_changed",
+            "non_korean_output",
+            "unsupported_claim",
+            "hashtag_format_invalid",
+            "channel_contract_incomplete",
+        ]
+    ] = Field(default_factory=list, max_length=10)
 
 
 class FewShotExample(BaseModel):
@@ -216,8 +240,21 @@ class GenerationEndpoint:
 
 @dataclass(frozen=True)
 class ArmGenerationResult:
+    # ``content`` / ``raw_content`` / ``validation`` retain their legacy names
+    # and always describe the final usable candidate (repaired when available).
     content: AdCopyContent
     raw_content: str
+    initial_content: AdCopyContent
+    raw_initial_content: str
+    initial_validation: CopyValidationResult
+    normalized_initial_content: AdCopyContent
+    normalized_initial_validation: CopyValidationResult
+    repair_content: AdCopyContent | None
+    raw_repair_content: str | None
+    repair_validation: CopyValidationResult | None
+    repair_attempted: bool
+    repair_success: bool
+    repair_error: str | None
     latency_ms: float
     validation: CopyValidationResult
     structured_output_fallback: bool
@@ -227,7 +264,11 @@ class ArmGenerationResult:
     base_revision: str | None
     adapter_revision: str | None
     request_count: int
+    initial_request_count: int
+    repair_request_count: int
     usage: dict[str, int]
+    initial_usage: dict[str, int]
+    repair_usage: dict[str, int]
     actual_model: str | None
 
 
@@ -387,6 +428,12 @@ def build_arm_messages(
 TrendCard 응용 참고 예시 (좋은 예시만)
 --------------------------------------------------
 아래 예시는 text_patterns를 상품 사실에 맞게 변형하는 방법만 보여줍니다.
+primary_copy는 화면의 첫 광고 문구, channel_post_opening은
+channel_recommendation.caption의 첫 문장에 대응합니다.
+publish_cta와 publish_hashtags까지 모두 자연스러운 한국어로 작성하고,
+상품명은 번역·축약하지 않으며 required_terms는 정확한 문자열로 포함하세요.
+product_name_preserved, language, failure_codes는 예시 품질을 설명하는 주석이며
+최종 광고 JSON에 새 필드로 추가하지 마세요.
 예시의 상호명, 상품명, 특징, 혜택을 현재 결과에 재사용하지 마세요.
 현재 사용자 입력의 사실과 TrendCard 규칙을 우선하고 최종 JSON만 출력하세요.
 
@@ -399,6 +446,12 @@ TrendCard 응용 참고 예시 (좋은 예시만)
 TrendCard 응용 대조 예시 (좋은 예시 + 피해야 할 예시)
 --------------------------------------------------
 good은 관계와 이유를 만든 결과이고 bad는 단순 치환·나열로 피해야 할 결과입니다.
+primary_copy는 화면의 첫 광고 문구, channel_post_opening은
+channel_recommendation.caption의 첫 문장에 대응합니다.
+good처럼 상품명을 원문 그대로 유지하고, marker와 required_terms를 필요한 위치에
+정확히 포함하며, publish_cta와 publish_hashtags까지 자연스러운 한국어로 작성하세요.
+bad.failure_codes는 피해야 할 위반 유형입니다. product_name_preserved, language,
+failure_codes는 예시 주석이며 최종 광고 JSON에 새 필드로 추가하지 마세요.
 예시의 상호명, 상품명, 특징, 혜택을 현재 결과에 재사용하지 마세요.
 현재 사용자 입력의 사실과 TrendCard 규칙을 우선하고 최종 JSON만 출력하세요.
 
@@ -540,11 +593,14 @@ def _generation_payload(
     generation_seed: int,
     *,
     structured: bool,
+    temperature: float | None = None,
 ) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "model": endpoint.model,
         "messages": messages,
-        "temperature": generation.temperature,
+        "temperature": (
+            generation.temperature if temperature is None else temperature
+        ),
         "seed": generation_seed,
     }
     token_key = (
@@ -597,6 +653,99 @@ def _response_metadata(response: httpx.Response) -> tuple[dict[str, int], str | 
     return usage, actual_model if isinstance(actual_model, str) else None
 
 
+def _merge_usage(*usages: dict[str, int]) -> dict[str, int]:
+    merged: dict[str, int] = {}
+    for usage in usages:
+        for key, value in usage.items():
+            merged[key] = merged.get(key, 0) + value
+    return merged
+
+
+async def _post_generation_request(
+    client: httpx.AsyncClient,
+    *,
+    url: str,
+    headers: dict[str, str],
+    request: AdCopyRequest,
+    endpoint: GenerationEndpoint,
+    messages: list[dict[str, str]],
+    generation: MemeGenerationSettings,
+    generation_seed: int,
+    structured: bool,
+    temperature: float | None = None,
+) -> tuple[httpx.Response, bool, int]:
+    """Send one logical attempt, with the existing schema fallback if needed."""
+
+    request_count = 1
+    try:
+        response = await client.post(
+            url,
+            headers=headers,
+            json=_generation_payload(
+                request,
+                endpoint,
+                messages,
+                generation,
+                generation_seed,
+                structured=structured,
+                temperature=temperature,
+            ),
+        )
+        structured_fallback = structured and _structured_output_is_unsupported(
+            response
+        )
+        if structured_fallback:
+            request_count += 1
+            response = await client.post(
+                url,
+                headers=headers,
+                json=_generation_payload(
+                    request,
+                    endpoint,
+                    messages,
+                    generation,
+                    generation_seed,
+                    structured=False,
+                    temperature=temperature,
+                ),
+            )
+        response.raise_for_status()
+    except httpx.HTTPError as error:
+        error.generation_request_count = request_count  # type: ignore[attr-defined]
+        raise
+    return response, structured_fallback, request_count
+
+
+def _build_repair_messages(
+    messages: list[dict[str, str]],
+    initial_content: AdCopyContent,
+    validation: CopyValidationResult,
+) -> list[dict[str, str]]:
+    previous_json = json.dumps(
+        initial_content.model_dump(mode="json"),
+        ensure_ascii=False,
+        indent=2,
+    )
+    feedback = build_repair_feedback(validation)
+    return [
+        *[message.copy() for message in messages],
+        {"role": "assistant", "content": previous_json},
+        {
+            "role": "user",
+            "content": f"""--------------------------------------------------
+검증 실패 교정 요청
+--------------------------------------------------
+직전 JSON의 스키마와 입력 사실은 유지하고 아래 실패 항목만 교정하세요.
+상품명과 required_terms는 원문 문자열을 유지하고, 고객 노출 필드는 자연스러운
+한국어로 작성하세요. 입력에 없는 효능·혜택·주문 조건을 새로 만들지 마세요.
+TrendCard 표현은 화면의 첫 광고 문구와 채널 게시물 첫 문장에 자연스럽게 반영하세요.
+분석이나 설명 없이 교정된 전체 JSON 객체만 출력하세요.
+
+{feedback}""",
+        },
+    ]
+
+
 async def generate_arm_copy(
     request: AdCopyRequest,
     experiment: MemeExperimentConfig,
@@ -605,7 +754,7 @@ async def generate_arm_copy(
     examples: list[FewShotExample],
     generation_seed: int,
 ) -> ArmGenerationResult:
-    """Generate exactly once; production retries/fallbacks are intentionally excluded."""
+    """Generate a raw candidate and optionally run one validator-guided repair."""
 
     endpoint = resolve_generation_endpoint(experiment, arm)
     messages = build_arm_messages(
@@ -621,67 +770,150 @@ async def generate_arm_copy(
     url = f"{endpoint.base_url.rstrip('/')}/chat/completions"
     structured = endpoint.supports_structured_output
     structured_fallback = False
-    request_count = 1
+    initial_request_count = 0
+    repair_request_count = 0
     started_at = perf_counter()
     try:
         async with httpx.AsyncClient(timeout=settings.llm_timeout_seconds) as client:
-            response = await client.post(
-                url,
-                headers=headers,
-                json=_generation_payload(
-                    request,
-                    endpoint,
-                    messages,
-                    experiment.generation,
-                    generation_seed,
-                    structured=structured,
-                ),
-            )
-            if structured and _structured_output_is_unsupported(response):
-                structured_fallback = True
-                request_count += 1
-                response = await client.post(
-                    url,
+            response, initial_fallback, initial_request_count = (
+                await _post_generation_request(
+                    client,
+                    url=url,
                     headers=headers,
-                    json=_generation_payload(
-                        request,
-                        endpoint,
-                        messages,
-                        experiment.generation,
-                        generation_seed,
-                        structured=False,
-                    ),
+                    request=request,
+                    endpoint=endpoint,
+                    messages=messages,
+                    generation=experiment.generation,
+                    generation_seed=generation_seed,
+                    structured=structured,
                 )
-            response.raise_for_status()
+            )
+            structured_fallback = initial_fallback
+
+            initial_usage, initial_actual_model = _response_metadata(response)
+            try:
+                raw_initial_content = _extract_content(response)
+                initial_content = _parse_content(raw_initial_content)
+                initial_validation = validate_copy_output(
+                    initial_content,
+                    request,
+                    trend_card,
+                )
+                normalized_initial_content = normalize_copy_output(
+                    initial_content,
+                    request,
+                )
+                normalized_initial_validation = validate_copy_output(
+                    normalized_initial_content,
+                    request,
+                    trend_card,
+                )
+            except InvalidModelOutputError as error:
+                error.request_count = initial_request_count  # type: ignore[attr-defined]
+                error.usage = initial_usage  # type: ignore[attr-defined]
+                error.actual_model = initial_actual_model  # type: ignore[attr-defined]
+                raise
+
+            content = normalized_initial_content
+            raw_content = raw_initial_content
+            validation = normalized_initial_validation
+            repair_content: AdCopyContent | None = None
+            raw_repair_content: str | None = None
+            repair_validation: CopyValidationResult | None = None
+            repair_attempted = (
+                experiment.generation.max_attempts == 2
+                and not normalized_initial_validation.valid
+            )
+            repair_success = False
+            repair_error: str | None = None
+            repair_usage: dict[str, int] = {}
+            actual_model = initial_actual_model
+
+            if repair_attempted:
+                repair_messages = _build_repair_messages(
+                    messages,
+                    normalized_initial_content,
+                    normalized_initial_validation,
+                )
+                try:
+                    repair_response, repair_fallback, repair_request_count = (
+                        await _post_generation_request(
+                            client,
+                            url=url,
+                            headers=headers,
+                            request=request,
+                            endpoint=endpoint,
+                            messages=repair_messages,
+                            generation=experiment.generation,
+                            generation_seed=generation_seed,
+                            structured=structured and not initial_fallback,
+                            temperature=0.2,
+                        )
+                    )
+                    structured_fallback = structured_fallback or repair_fallback
+                    repair_usage, repair_actual_model = _response_metadata(
+                        repair_response
+                    )
+                    actual_model = repair_actual_model or actual_model
+                    raw_repair_content = _extract_content(repair_response)
+                    repair_content = normalize_copy_output(
+                        _parse_content(raw_repair_content),
+                        request,
+                    )
+                    repair_validation = validate_copy_output(
+                        repair_content,
+                        request,
+                        trend_card,
+                    )
+                    content = repair_content
+                    raw_content = raw_repair_content
+                    validation = repair_validation
+                    repair_success = repair_validation.valid
+                except httpx.HTTPError as error:
+                    repair_request_count = int(
+                        getattr(error, "generation_request_count", 1)
+                    )
+                    repair_error = (
+                        f"repair endpoint 오류: {type(error).__name__}"
+                    )
+                except InvalidModelOutputError as error:
+                    repair_error = f"repair 응답 형식 오류: {error}"
     except httpx.HTTPStatusError as error:
         detail = error.response.text[:500]
         wrapped = MemeGenerationProviderError(
             f"{arm.id} 생성 호출이 거절되었습니다: {detail}"
         )
-        wrapped.request_count = request_count  # type: ignore[attr-defined]
+        wrapped.request_count = int(  # type: ignore[attr-defined]
+            getattr(error, "generation_request_count", initial_request_count or 1)
+        )
         wrapped.usage = {}  # type: ignore[attr-defined]
         raise wrapped from error
     except httpx.HTTPError as error:
         wrapped = MemeGenerationProviderError(
             f"{arm.id} 생성 endpoint에 연결할 수 없습니다: {type(error).__name__}"
         )
-        wrapped.request_count = request_count  # type: ignore[attr-defined]
+        wrapped.request_count = int(  # type: ignore[attr-defined]
+            getattr(error, "generation_request_count", initial_request_count or 1)
+        )
         wrapped.usage = {}  # type: ignore[attr-defined]
         raise wrapped from error
 
-    usage, actual_model = _response_metadata(response)
-    try:
-        raw_content = _extract_content(response)
-        content = _parse_content(raw_content)
-    except InvalidModelOutputError as error:
-        error.request_count = request_count  # type: ignore[attr-defined]
-        error.usage = usage  # type: ignore[attr-defined]
-        error.actual_model = actual_model  # type: ignore[attr-defined]
-        raise
-    validation = validate_copy_output(content, request, trend_card)
+    usage = _merge_usage(initial_usage, repair_usage)
+    request_count = initial_request_count + repair_request_count
     return ArmGenerationResult(
         content=content,
         raw_content=raw_content,
+        initial_content=initial_content,
+        raw_initial_content=raw_initial_content,
+        initial_validation=initial_validation,
+        normalized_initial_content=normalized_initial_content,
+        normalized_initial_validation=normalized_initial_validation,
+        repair_content=repair_content,
+        raw_repair_content=raw_repair_content,
+        repair_validation=repair_validation,
+        repair_attempted=repair_attempted,
+        repair_success=repair_success,
+        repair_error=repair_error,
         latency_ms=round((perf_counter() - started_at) * 1000, 2),
         validation=validation,
         structured_output_fallback=structured_fallback,
@@ -691,7 +923,11 @@ async def generate_arm_copy(
         base_revision=endpoint.base_revision,
         adapter_revision=endpoint.adapter_revision,
         request_count=request_count,
+        initial_request_count=initial_request_count,
+        repair_request_count=repair_request_count,
         usage=usage,
+        initial_usage=initial_usage,
+        repair_usage=repair_usage,
         actual_model=actual_model,
     )
 

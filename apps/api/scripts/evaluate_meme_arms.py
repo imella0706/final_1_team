@@ -90,6 +90,58 @@ OPERATIONAL_FAILURE_LABELS = {
 }
 
 
+def _stable_unique(values: list[str]) -> list[str]:
+    """Return non-empty strings once, preserving their diagnostic order."""
+
+    return list(dict.fromkeys(value for value in values if value))
+
+
+def deterministic_validation_evidence(record: dict[str, Any]) -> dict[str, Any]:
+    """Build the authoritative, machine-derived release decision for a trial.
+
+    Production-validator messages remain useful detail, but only stable failure
+    codes are exposed as the decision contract. This keeps an LLM Judge's
+    qualitative observations from becoming release-gate facts.
+    """
+
+    reasons = operational_failure_reasons(record)
+    production_codes = record.get("production_failure_codes")
+    codes = [
+        str(code)
+        for code in production_codes or []
+        if isinstance(code, str) and code.strip()
+    ]
+    for reason in reasons:
+        text_reason = str(reason)
+        if text_reason.startswith("production_rule: "):
+            if not production_codes:
+                codes.append("production_rule_validation_failed")
+            continue
+        codes.append(text_reason)
+    codes = _stable_unique(codes)
+    return {
+        "authoritative": True,
+        "passed": not reasons,
+        "failure_codes": codes,
+        "failure_details": [_display_operational_failure(reason) for reason in reasons],
+    }
+
+
+def _judge_advisory_findings(record: dict[str, Any]) -> list[str]:
+    """Read current or historical Judge findings as non-blocking advice."""
+
+    judge = record.get("judge")
+    if not isinstance(judge, dict):
+        return []
+    findings = judge.get("advisory_findings")
+    if findings is None:
+        # Compatibility for reports generated before the advisory-only contract.
+        findings = judge.get("hard_failures")
+    if not isinstance(findings, list):
+        return []
+    return [str(value) for value in findings if str(value).strip()]
+
+
 def _output_contract_failure_reasons(record: dict[str, Any]) -> list[str]:
     output = record.get("output")
     if not isinstance(output, dict):
@@ -404,8 +456,11 @@ def build_dry_run_report(
             }
         )
 
-    generator_calls = len(arms) * len(cases) * repeats
-    judge_calls = generator_calls if judge_enabled else 0
+    generation_trials = len(arms) * len(cases) * repeats
+    max_attempts = int(loaded.config.generation.max_attempts)
+    generator_requests_minimum = generation_trials
+    generator_requests_maximum = generation_trials * max_attempts * 2
+    judge_calls = generation_trials if judge_enabled else 0
     return {
         "mode": "dry_run",
         "external_api_called": False,
@@ -438,14 +493,21 @@ def build_dry_run_report(
             if not arm.enabled
         ],
         "planned_calls": {
-            "generation_trials": generator_calls,
-            "generator_http_requests_nominal": generator_calls,
+            "generation_trials": generation_trials,
+            "generation_attempts_maximum_per_trial": max_attempts,
+            "generator_http_requests_minimum": generator_requests_minimum,
+            "generator_http_requests_nominal": generator_requests_minimum,
+            "generator_http_requests_maximum": generator_requests_maximum,
             "judge_http_requests_maximum": judge_calls,
-            "external_http_requests_nominal": generator_calls + judge_calls,
-            "external_http_requests_worst_case": generator_calls * 2 + judge_calls,
+            "external_http_requests_nominal": (
+                generator_requests_minimum + judge_calls
+            ),
+            "external_http_requests_worst_case": (
+                generator_requests_maximum + judge_calls
+            ),
             "note": (
-                "structured response_format를 provider가 거절하면 같은 prompt를 한 번 더 "
-                "보낼 수 있어 worst_case에서는 생성 HTTP 요청을 trial당 2회로 계산합니다."
+                "첫 생성에서 검증을 통과하면 trial당 1회입니다. 검증 실패 후 교정 재시도와 "
+                "각 시도의 structured response_format fallback을 모두 고려해 maximum을 계산합니다."
             ),
         },
         "judge": _judge_preflight(loaded) if judge_enabled else {"enabled": False},
@@ -492,6 +554,18 @@ def _metric_response(
         prompt_version="meme-arm-evaluation-v1",
         trend_card_id=loaded.trend_card.meme_id,
     )
+
+
+def _validation_snapshot(validation: Any) -> dict[str, Any] | None:
+    """Serialize validator state without depending on one schema revision."""
+
+    if validation is None:
+        return None
+    return {
+        "valid": bool(getattr(validation, "valid", False)),
+        "warnings": list(getattr(validation, "warnings", []) or []),
+        "failure_codes": list(getattr(validation, "failure_codes", []) or []),
+    }
 
 
 async def evaluate_trial(
@@ -545,6 +619,14 @@ async def evaluate_trial(
                     "rule_valid": False,
                     "operational_valid": False,
                     "operational_failure_reasons": ["generation_failed"],
+                    "deterministic_validation": {
+                        "authoritative": True,
+                        "passed": False,
+                        "failure_codes": ["generation_failed"],
+                        "failure_details": [
+                            OPERATIONAL_FAILURE_LABELS["generation_failed"]
+                        ],
+                    },
                     "error_type": parse_failure_type(error),
                     "error": str(error),
                     "generation_http_request_count": getattr(
@@ -564,6 +646,20 @@ async def evaluate_trial(
             return record
 
         content_dump = generated.content.model_dump(mode="json")
+        initial_content = getattr(generated, "initial_content", None)
+        normalized_initial_content = getattr(
+            generated,
+            "normalized_initial_content",
+            None,
+        )
+        repair_content = getattr(generated, "repair_content", None)
+        initial_validation = getattr(generated, "initial_validation", None)
+        normalized_initial_validation = getattr(
+            generated,
+            "normalized_initial_validation",
+            None,
+        )
+        repair_validation = getattr(generated, "repair_validation", None)
         metrics_result = _metric_response(request, loaded, content_dump)
         leakage = find_example_leakage(request, generated.content, loaded.examples)
         unsupported = visible_hallucination_terms(request, generated.content)
@@ -578,11 +674,26 @@ async def evaluate_trial(
                 "schema_valid": True,
                 "rule_valid": generated.validation.valid,
                 "rule_warnings": generated.validation.warnings,
+                "production_failure_codes": list(
+                    getattr(generated.validation, "failure_codes", []) or []
+                ),
                 "error_type": None,
                 "error": None,
                 "generation_latency_ms": generated.latency_ms,
                 "generation_http_request_count": generated.request_count,
                 "generation_usage": generated.usage,
+                "initial_generation_http_request_count": int(
+                    getattr(generated, "initial_request_count", 0) or 0
+                ),
+                "repair_generation_http_request_count": int(
+                    getattr(generated, "repair_request_count", 0) or 0
+                ),
+                "initial_generation_usage": dict(
+                    getattr(generated, "initial_usage", {}) or {}
+                ),
+                "repair_generation_usage": dict(
+                    getattr(generated, "repair_usage", {}) or {}
+                ),
                 "generation_actual_model": generated.actual_model,
                 "structured_output_fallback": generated.structured_output_fallback,
                 "endpoint_model": generated.endpoint_model,
@@ -604,24 +715,71 @@ async def evaluate_trial(
                 "hashtag_compliance_rate": hashtag_compliance_rate(metrics_result),
                 "output": content_dump,
                 "raw_output": generated.raw_content,
+                "initial_output": (
+                    initial_content.model_dump(mode="json")
+                    if initial_content is not None
+                    else content_dump
+                ),
+                "raw_initial_output": getattr(
+                    generated,
+                    "raw_initial_content",
+                    generated.raw_content,
+                ),
+                "initial_validation": (
+                    _validation_snapshot(initial_validation)
+                    or _validation_snapshot(generated.validation)
+                ),
+                "normalized_initial_output": (
+                    normalized_initial_content.model_dump(mode="json")
+                    if normalized_initial_content is not None
+                    else content_dump
+                ),
+                "normalized_initial_validation": (
+                    _validation_snapshot(normalized_initial_validation)
+                    or _validation_snapshot(generated.validation)
+                ),
+                "repair_output": (
+                    repair_content.model_dump(mode="json")
+                    if repair_content is not None
+                    else None
+                ),
+                "raw_repair_output": getattr(
+                    generated,
+                    "raw_repair_content",
+                    None,
+                ),
+                "repair_validation": _validation_snapshot(repair_validation),
+                "repair_attempted": bool(
+                    getattr(generated, "repair_attempted", False)
+                ),
+                "repair_success": bool(getattr(generated, "repair_success", False)),
+                "repair_error": getattr(generated, "repair_error", None),
             }
         )
         record["operational_failure_reasons"] = operational_failure_reasons(record)
         record["operational_valid"] = not record["operational_failure_reasons"]
+        record["deterministic_validation"] = deterministic_validation_evidence(record)
 
         if judge_enabled:
             try:
+                judge_content = initial_content or generated.content
                 judge_call = await judge_meme_copy_with_metadata(
                     request,
                     loaded.trend_card,
-                    generated.content,
+                    judge_content,
                     base_url_override=loaded.config.judge.base_url,
                     model_override=loaded.config.judge.model,
                     timeout_seconds=loaded.config.judge.timeout_seconds,
                 )
                 judged = judge_call.result
+                judge_data = judged.model_dump(mode="json")
+                judge_data["advisory_findings"] = judge_data.pop("hard_failures", [])
+                judge_data["advisory_only"] = True
                 record["judge_success"] = True
-                record["judge"] = judged.model_dump(mode="json")
+                record["judge"] = judge_data
+                record["judge_target"] = (
+                    "initial_output" if initial_content is not None else "final_output"
+                )
                 record["judge_latency_ms"] = judge_call.latency_ms
                 record["judge_usage"] = judge_call.usage
                 record["judge_actual_model"] = judge_call.actual_model
@@ -665,6 +823,16 @@ def _sum_usage(records: list[dict[str, Any]], key: str) -> dict[str, int]:
 def summarize_arm(arm: MemeEvalArm, records: list[dict[str, Any]]) -> dict[str, Any]:
     generated = [record for record in records if record["generation_success"]]
     judged = [record for record in generated if record.get("judge_success")]
+    repair_attempted = [
+        record for record in generated if bool(record.get("repair_attempted"))
+    ]
+
+    def initial_rule_valid(record: dict[str, Any]) -> bool:
+        validation = record.get("initial_validation")
+        if isinstance(validation, dict) and isinstance(validation.get("valid"), bool):
+            return validation["valid"]
+        return bool(record.get("rule_valid"))
+
     judge_scores = {
         key: (
             round(mean(record["judge"][key] for record in judged), 3)
@@ -714,7 +882,23 @@ def summarize_arm(arm: MemeEvalArm, records: list[dict[str, Any]]) -> dict[str, 
             sum(bool(record.get("rule_valid")) for record in records),
             len(records),
         ),
+        "initial_rule_pass_rate_percent": _percent(
+            sum(initial_rule_valid(record) for record in generated),
+            len(generated),
+        ),
+        "repair_attempt_rate_percent": _percent(
+            len(repair_attempted),
+            len(generated),
+        ),
+        "repair_success_rate_percent": _percent(
+            sum(bool(record.get("repair_success")) for record in repair_attempted),
+            len(repair_attempted),
+        ),
         "operational_pass_rate_percent": _percent(
+            sum(record_operationally_valid(record) for record in records),
+            len(records),
+        ),
+        "final_operational_pass_rate_percent": _percent(
             sum(record_operationally_valid(record) for record in records),
             len(records),
         ),
@@ -749,8 +933,8 @@ def summarize_arm(arm: MemeEvalArm, records: list[dict[str, Any]]) -> dict[str, 
         ),
         "judge_usage": _sum_usage(records, "judge_usage"),
         "judge_scores": judge_scores,
-        "judge_hard_failure_rate_percent": _percent(
-            sum(bool(record["judge"]["hard_failures"]) for record in judged),
+        "judge_advisory_finding_rate_percent": _percent(
+            sum(bool(_judge_advisory_findings(record)) for record in judged),
             len(judged),
         ),
         "by_case_type": by_case_type,
@@ -797,10 +981,10 @@ def build_paired_analysis(
         operationally_valid = [
             record for record in paired if record_operationally_valid(record)
         ]
+        # Only deterministic validation can block an arm from ranking. The LLM
+        # Judge supplies qualitative scores and non-authoritative advice.
         ranking_eligible = bool(paired) and all(
-            record_operationally_valid(record)
-            and not bool((record.get("judge") or {}).get("hard_failures"))
-            for record in paired
+            record_operationally_valid(record) for record in paired
         )
         arm_scores.append(
             {
@@ -819,8 +1003,8 @@ def build_paired_analysis(
                     len(operationally_valid),
                     len(paired),
                 ),
-                "judge_hard_failure_rate_percent": _percent(
-                    sum(bool(record["judge"]["hard_failures"]) for record in judged),
+                "judge_advisory_finding_rate_percent": _percent(
+                    sum(bool(_judge_advisory_findings(record)) for record in judged),
                     len(judged),
                 ),
                 "ranking_eligible": ranking_eligible,
@@ -896,7 +1080,7 @@ def build_paired_analysis(
         "note": (
             "순위는 모든 arm의 생성과 judge가 같은 case/repeat에서 완료되고 "
             "fixture 사람 검수와 전체 실험 범위가 충족되며, 해당 arm이 모든 deterministic "
-            "운영 규칙과 Judge hard-failure gate를 통과한 경우에만 표시합니다. "
+            "운영 규칙을 통과한 경우에만 표시합니다. Judge 정성 의견은 순위를 탈락시키지 않습니다. "
             "동점은 같은 rank입니다."
         ),
     }
@@ -1020,8 +1204,24 @@ def _candidate_detail_markdown(report: dict[str, Any]) -> list[str]:
                     "- 실제 응답 모델: `"
                     f"{record.get('generation_actual_model') or '기록 없음'}`"
                 ),
+                (
+                    "- 초안 validator: `"
+                    f"{'통과' if (record.get('initial_validation') or {}).get('valid', record.get('rule_valid')) else '실패'}`"
+                ),
+                (
+                    "- 교정: `"
+                    + (
+                        "성공"
+                        if record.get("repair_success")
+                        else "실패"
+                        if record.get("repair_attempted")
+                        else "미시도"
+                    )
+                    + "`"
+                ),
                 f"- Production validator: `{'통과' if record.get('rule_valid') else '실패'}`",
                 f"- 운영 gate: `{'통과' if operational else '실패'}`",
+                f"- Judge 대상: `{record.get('judge_target') or '기록 없음'}`",
                 "",
             ]
         )
@@ -1029,7 +1229,22 @@ def _candidate_detail_markdown(report: dict[str, Any]) -> list[str]:
             output = record["output"]
             lines.extend(["### 고객 노출 문구", ""])
             lines.extend(_markdown_json(_customer_visible_output(output)))
-            lines.extend(["", "### 전체 생성 output JSON", ""])
+            initial_output = record.get("initial_output")
+            if isinstance(initial_output, dict):
+                lines.extend(["", "### 모델 초안 output JSON", ""])
+                lines.extend(_markdown_json(initial_output))
+            normalized_initial = record.get("normalized_initial_output")
+            if (
+                isinstance(normalized_initial, dict)
+                and normalized_initial != initial_output
+            ):
+                lines.extend(["", "### 정규화된 초안 output JSON", ""])
+                lines.extend(_markdown_json(normalized_initial))
+            repair_output = record.get("repair_output")
+            if isinstance(repair_output, dict):
+                lines.extend(["", "### 교정 output JSON", ""])
+                lines.extend(_markdown_json(repair_output))
+            lines.extend(["", "### 최종 output JSON", ""])
             lines.extend(_markdown_json(output))
         else:
             lines.extend(
@@ -1042,7 +1257,14 @@ def _candidate_detail_markdown(report: dict[str, Any]) -> list[str]:
 
         rule_warnings = record.get("rule_warnings") or []
         operational_failures = operational_failure_reasons(record)
+        deterministic = record.get("deterministic_validation")
+        if not isinstance(deterministic, dict):
+            deterministic = deterministic_validation_evidence(record)
         lines.extend(["", "### 검증 결과", ""])
+        lines.append(
+            "- 최종 운영 판정: deterministic validator의 failure_codes가 authoritative입니다."
+        )
+        lines.extend(_markdown_json(deterministic))
         if rule_warnings:
             lines.append("Production validator 경고:")
             lines.extend(f"- {warning}" for warning in rule_warnings)
@@ -1058,9 +1280,19 @@ def _candidate_detail_markdown(report: dict[str, Any]) -> list[str]:
             lines.append("- 운영 실패 사유 없음")
 
         judge = record.get("judge")
-        lines.extend(["", "### Judge", ""])
+        lines.extend(["", "### Judge (정성 평가·advisory)", ""])
         if isinstance(judge, dict):
-            lines.extend(_markdown_json(judge))
+            judge_display = dict(judge)
+            if "advisory_findings" not in judge_display:
+                judge_display["advisory_findings"] = judge_display.pop(
+                    "hard_failures",
+                    [],
+                )
+            judge_display["advisory_only"] = True
+            lines.append(
+                "Judge 의견은 점수 비교용이며 운영 통과·탈락을 직접 결정하지 않습니다."
+            )
+            lines.extend(_markdown_json(judge_display))
         elif record.get("judge_error"):
             lines.append(f"Judge 실패: {record['judge_error']}")
         else:
@@ -1122,24 +1354,27 @@ def markdown_report(report: dict[str, Any]) -> str:
         "아래 표는 전체 trial 진단 요약입니다. 최종 순위는 paired 비교 조건을 충족한 경우에만 "
         "별도로 표시됩니다.",
         "",
-        "| 실험군 | 생성 성공 | Production validator | 운영 통과 | 마커 존재(any field) | 예시 누출 | Judge 종합 | Judge hard fail |",
-        "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+        "| 실험군 | 생성 성공 | 초안 validator | 교정 시도 | 교정 성공(시도 중) | 최종 validator | 최종 운영 통과 | 마커 존재(any field) | 예시 누출 | Judge 종합 | Judge advisory |",
+        "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
     ]
     for summary in report["arm_summaries"]:
         if not isinstance(summary, dict):
-            lines.append("| 요약 생성 실패 | - | - | - | - | - | - | - |")
+            lines.append("| 요약 생성 실패 | - | - | - | - | - | - | - | - | - | - |")
             continue
         judge_scores = summary.get("judge_scores") or {}
         judge_score = judge_scores.get("overall_score")
         lines.append(
             f"| {summary['label']} | "
             f"{percent_text(summary['generation_success_rate_percent'])} | "
+            f"{percent_text(summary.get('initial_rule_pass_rate_percent'))} | "
+            f"{percent_text(summary.get('repair_attempt_rate_percent'))} | "
+            f"{percent_text(summary.get('repair_success_rate_percent'))} | "
             f"{percent_text(summary['rule_pass_rate_percent'])} | "
-            f"{percent_text(summary.get('operational_pass_rate_percent'))} | "
+            f"{percent_text(summary.get('final_operational_pass_rate_percent', summary.get('operational_pass_rate_percent')))} | "
             f"{percent_text(summary['marker_compliance_rate_percent'])} | "
             f"{percent_text(summary['example_leakage_rate_percent'])} | "
             f"{judge_score if judge_score is not None else '-'} | "
-            f"{percent_text(summary['judge_hard_failure_rate_percent'])} |"
+            f"{percent_text(summary.get('judge_advisory_finding_rate_percent', summary.get('judge_hard_failure_rate_percent')))} |"
         )
 
     lines.extend(["", "## Paired 순위", ""])
@@ -1152,7 +1387,7 @@ def markdown_report(report: dict[str, Any]) -> str:
     else:
         lines.append(
             "순위를 표시하지 않습니다. fixture 검수, 전체 실험 범위, Judge 사용, "
-            "paired completion, deterministic 운영 gate와 Judge hard failure를 확인하세요."
+            "paired completion과 deterministic 운영 gate를 확인하세요."
         )
 
     lines.append("")
@@ -1163,7 +1398,9 @@ def markdown_report(report: dict[str, Any]) -> str:
             "",
             "- 동일한 Qwen 2.5 7B, TrendCard, 케이스, 생성 설정을 사용하며 arm별 prompt 전략만 바뀝니다.",
             "- Judge에는 arm 이름, 생성 모델, few-shot 여부를 전달하지 않습니다.",
-            "- Judge 정성 점수는 deterministic 운영 검증을 대체하지 않으며, 운영 gate를 통과한 arm만 순위 후보가 됩니다.",
+            "- Judge 정성 점수는 prompt 전략 비교를 위해 모델 초안(initial_output)을 평가하며 deterministic 운영 검증을 대체하지 않습니다.",
+            "- 최종 운영 gate는 정규화·교정 후 final output을 기준으로 판정합니다.",
+            "- Judge advisory 의견은 참고 정보이며 후보를 탈락시키거나 winner를 막지 않습니다.",
             "- 현재 한 개 밈만 평가하므로 결과는 이 TrendCard의 smoke 결과이며 다른 밈으로 일반화할 수 없습니다.",
             "- LoRA가 비활성이면 이 보고서에는 네 개 prompt arm만 포함됩니다.",
             "",
@@ -1207,6 +1444,14 @@ def rebuild_saved_report(report: dict[str, Any]) -> dict[str, Any]:
             reasons = operational_failure_reasons(record)
             record["operational_failure_reasons"] = reasons
             record["operational_valid"] = not reasons
+            record["deterministic_validation"] = deterministic_validation_evidence(
+                record
+            )
+            judge = record.get("judge")
+            if isinstance(judge, dict):
+                if "advisory_findings" not in judge:
+                    judge["advisory_findings"] = judge.pop("hard_failures", [])
+                judge["advisory_only"] = True
     metadata["generation_actual_models"] = sorted(
         {
             model
@@ -1305,7 +1550,10 @@ async def run(args: argparse.Namespace) -> int:
 
     generation_trials = len(arms) * len(cases) * repeats
     judge_requests = generation_trials if judge_enabled else 0
-    worst_case_requests = generation_trials * 2 + judge_requests
+    worst_case_requests = (
+        generation_trials * int(loaded.config.generation.max_attempts) * 2
+        + judge_requests
+    )
     enforce_execution_safety(
         loaded,
         cases,

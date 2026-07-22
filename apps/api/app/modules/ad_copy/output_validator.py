@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import re
 
 from app.modules.ad_copy.schemas import (
@@ -20,6 +20,104 @@ from app.modules.ad_copy.trend_context import TrendCard
 class CopyValidationResult:
     valid: bool
     warnings: list[str]
+    # Machine-readable release-gate reasons. ``warnings`` remains the
+    # user-facing/legacy contract; evaluation code should use these codes.
+    failure_codes: list[str] = field(default_factory=list)
+
+
+def _add_failure(
+    warnings: list[str],
+    failure_codes: list[str],
+    code: str,
+    warning: str,
+) -> None:
+    if warning not in warnings:
+        warnings.append(warning)
+    if code not in failure_codes:
+        failure_codes.append(code)
+
+
+def _normalize_hashtags(values: list[str]) -> list[str]:
+    """Return one canonical hashtag per array item, preserving model wording."""
+
+    normalized: list[str] = []
+    for value in values:
+        for token in re.split(r"[,\s]+", value.strip()):
+            cleaned = "".join(
+                character
+                for character in token.lstrip("#")
+                if character.isalnum() or character == "_"
+            )
+            if not cleaned:
+                continue
+            hashtag = f"#{cleaned}"
+            if hashtag not in normalized:
+                normalized.append(hashtag)
+    return normalized[:10]
+
+
+def _compose_instagram_publish_body(
+    caption: str,
+    publish_cta: str,
+    publish_hashtags: list[str],
+) -> str:
+    caption_part = caption.strip()
+    footer = "\n".join(
+        part
+        for part in (publish_cta.strip(), " ".join(publish_hashtags))
+        if part
+    )
+    return "\n\n".join(part for part in (caption_part, footer) if part)
+
+
+def normalize_copy_output(
+    content: AdCopyContent,
+    request: AdCopyRequest,
+) -> AdCopyContent:
+    """Normalize derived channel fields without inventing advertising facts.
+
+    Instagram ``publish_body`` is a view of the three source fields, not a
+    fourth piece of model-authored copy. Rebuilding it here prevents drift such
+    as a missing CTA or a translated/mutated hashtag.
+    """
+
+    if request.channel.value != "instagram":
+        return content
+
+    recommendation = content.channel_recommendation
+    caption = recommendation.caption.strip()
+    publish_cta = recommendation.publish_cta.strip()
+    source_hashtags = recommendation.publish_hashtags or content.hashtags
+    publish_hashtags = _normalize_hashtags(source_hashtags)
+    publish_body = _compose_instagram_publish_body(
+        caption,
+        publish_cta,
+        publish_hashtags,
+    )
+    normalized_recommendation = recommendation.model_copy(
+        update={
+            "caption": caption,
+            "publish_cta": publish_cta,
+            "publish_hashtags": publish_hashtags,
+            "publish_body": publish_body,
+        }
+    )
+    return content.model_copy(
+        update={
+            "hashtags": publish_hashtags,
+            "channel_recommendation": normalized_recommendation,
+        }
+    )
+
+
+def build_repair_feedback(result: CopyValidationResult) -> str:
+    """Render deterministic validation failures for one constrained retry."""
+
+    if result.valid:
+        return ""
+    codes = ", ".join(result.failure_codes or ["production_validation_failed"])
+    warning_rows = "\n".join(f"- {warning}" for warning in result.warnings)
+    return f"실패 코드: {codes}\n수정 사유:\n{warning_rows}"
 
 
 def _contains_any(text: str, terms: list[str]) -> list[str]:
@@ -123,46 +221,268 @@ def _has_mechanical_product_enumeration(
     return False
 
 
+def _customer_visible_fields(content: AdCopyContent) -> list[tuple[str, str]]:
+    recommendation = content.channel_recommendation
+    fields: list[tuple[str, str]] = []
+    for name, values in (
+        ("headlines", content.headlines),
+        ("body_copies", content.body_copies),
+        ("ctas", content.ctas),
+        ("hashtags", content.hashtags),
+    ):
+        fields.extend(
+            (f"{name}[{index}]", value)
+            for index, value in enumerate(values)
+            if value.strip()
+        )
+    for name in (
+        "overlay_headline",
+        "caption",
+        "publish_cta",
+        "publish_title",
+        "publish_body",
+        "blog_title",
+    ):
+        value = getattr(recommendation, name)
+        if value.strip():
+            fields.append((f"channel_recommendation.{name}", value))
+    fields.extend(
+        (f"channel_recommendation.publish_hashtags[{index}]", value)
+        for index, value in enumerate(recommendation.publish_hashtags)
+        if value.strip()
+    )
+    for section_index, section in enumerate(recommendation.blog_sections):
+        for name in ("title", "body"):
+            value = section.get(name)
+            if isinstance(value, str) and value.strip():
+                fields.append(
+                    (
+                        f"channel_recommendation.blog_sections[{section_index}].{name}",
+                        value,
+                    )
+                )
+    return fields
+
+
+_FOREIGN_SCRIPT_RE = re.compile(r"[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff]")
+_HANGUL_RE = re.compile(r"[가-힣]")
+_LATIN_RE = re.compile(r"[A-Za-z]{2,}")
+_HASHTAG_RE = re.compile(r"^#[0-9A-Za-z가-힣_]+$")
+
+
+def _non_korean_customer_fields(
+    fields: list[tuple[str, str]],
+    request: AdCopyRequest,
+) -> list[str]:
+    allowed_latin_literals = {
+        "".join(character for character in value.casefold() if character.isalnum())
+        for value in (
+            request.business_name,
+            *request.product_names,
+            *request.required_terms,
+        )
+        if value.strip()
+    }
+    invalid: list[str] = []
+    for name, text in fields:
+        # Chinese/Japanese script is rejected even when a Korean fragment is
+        # also present. Latin-only copy is rejected; short product/brand
+        # fragments embedded in otherwise Korean copy remain allowed.
+        normalized_text = "".join(
+            character for character in text.casefold() if character.isalnum()
+        )
+        latin_only_without_input_match = (
+            _LATIN_RE.search(text)
+            and not _HANGUL_RE.search(text)
+            and normalized_text not in allowed_latin_literals
+        )
+        if _FOREIGN_SCRIPT_RE.search(text) or latin_only_without_input_match:
+            invalid.append(name)
+    return invalid
+
+
+_CONDITIONAL_CLAIMS = (
+    "예약",
+    "주문",
+    "배송",
+    "배달",
+    "할인",
+    "무료",
+    "공짜",
+    "증정",
+    "한정",
+    "이벤트",
+    "1위",
+    "최고",
+    "유일",
+    "베스트",
+    "수밖에",
+    "유기농",
+    "국내산",
+    "건강",
+    "저칼로리",
+    "다이어트",
+    "면역",
+    "혈당",
+    "무설탕",
+    "비건",
+    "영양",
+    "효능",
+    "치료",
+    "완치",
+    "보장",
+    "인증",
+    "수상",
+    "수제",
+    "직접 만든",
+    "당일",
+    "신선",
+)
+
+
+def _unsupported_claims(
+    customer_text: str,
+    request: AdCopyRequest,
+) -> list[str]:
+    evidence = " ".join(
+        part
+        for part in (
+            request.business_name,
+            *request.product_names,
+            *request.features,
+            request.promotion or "",
+            *request.required_terms,
+            request.product_price or "",
+            request.additional_request or "",
+            request.operating_info or "",
+        )
+        if part
+    )
+    allowed_by_context: set[str] = set()
+    if request.situation.value in {"delivery", "takeout"} or (
+        request.channel.value == "delivery_app"
+    ):
+        allowed_by_context.update({"주문", "배송", "배달"})
+    if request.situation.value == "discount":
+        allowed_by_context.add("할인")
+    if request.situation.value == "event":
+        allowed_by_context.add("이벤트")
+    return [
+        term
+        for term in _CONDITIONAL_CLAIMS
+        if term in customer_text and term not in evidence and term not in allowed_by_context
+    ]
+
+
 def validate_copy_output(
     content: AdCopyContent,
     request: AdCopyRequest,
     trend_card: TrendCard | None = None,
 ) -> CopyValidationResult:
     warnings: list[str] = []
-    channel_text = str(content.channel_recommendation.model_dump())
-    all_primary_copy_text = " ".join(content.headlines + content.body_copies + content.ctas)
+    failure_codes: list[str] = []
     visible_primary_copy_text = " ".join(content.headlines[:1] + content.body_copies[:1])
-    copy_text = f"{all_primary_copy_text} {' '.join(content.hashtags)} {channel_text}"
+    visible_fields = _customer_visible_fields(content)
+    customer_text = " ".join(value for _, value in visible_fields)
     is_blog = request.channel.value == "naver_blog"
     visual_text = "" if is_blog else str(content.visual_brief.model_dump())
 
     missing_products = [
-        product for product in request.product_names if product not in copy_text
+        product for product in request.product_names if product not in customer_text
     ]
     if missing_products:
-        warnings.append(f"광고 문구에 누락된 상품명: {', '.join(missing_products)}")
+        _add_failure(
+            warnings,
+            failure_codes,
+            "product_name_missing_in_customer_copy",
+            f"광고 문구에 누락된 상품명: {', '.join(missing_products)}",
+        )
 
-    prohibited_in_copy = _contains_any(copy_text, request.prohibited_terms)
+    missing_required_terms = [
+        term for term in request.required_terms if term and term not in customer_text
+    ]
+    if missing_required_terms:
+        _add_failure(
+            warnings,
+            failure_codes,
+            "required_terms_missing",
+            "고객 노출 문구에 누락된 필수 표현: "
+            + ", ".join(missing_required_terms),
+        )
+
+    prohibited_in_copy = _contains_any(customer_text, request.prohibited_terms)
     prohibited_in_visual = [] if is_blog else _contains_any(visual_text, request.prohibited_terms)
     if prohibited_in_copy or prohibited_in_visual:
-        warnings.append(
+        _add_failure(
+            warnings,
+            failure_codes,
+            "prohibited_term_used",
             "금지 표현 포함: "
-            + ", ".join(sorted(set(prohibited_in_copy + prohibited_in_visual)))
+            + ", ".join(sorted(set(prohibited_in_copy + prohibited_in_visual))),
+        )
+
+    non_korean_fields = _non_korean_customer_fields(visible_fields, request)
+    if non_korean_fields:
+        _add_failure(
+            warnings,
+            failure_codes,
+            "non_korean_customer_copy",
+            "자연스러운 한국어가 아닌 고객 노출 필드: "
+            + ", ".join(non_korean_fields),
+        )
+
+    unsupported_claims = _unsupported_claims(customer_text, request)
+    if unsupported_claims:
+        _add_failure(
+            warnings,
+            failure_codes,
+            "unsupported_claim_detected",
+            "입력으로 뒷받침되지 않는 표현 감지: "
+            + ", ".join(unsupported_claims),
+        )
+
+    hashtag_values = [
+        *content.hashtags,
+        *content.channel_recommendation.publish_hashtags,
+    ]
+    invalid_hashtags = [
+        hashtag for hashtag in hashtag_values if not _HASHTAG_RE.fullmatch(hashtag)
+    ]
+    if invalid_hashtags:
+        _add_failure(
+            warnings,
+            failure_codes,
+            "hashtag_format_noncompliant",
+            "해시태그 형식 오류: " + ", ".join(dict.fromkeys(invalid_hashtags)),
         )
 
     if trend_card:
         if not _contains_trend_reference(visible_primary_copy_text, trend_card):
-            warnings.append(
+            _add_failure(
+                warnings,
+                failure_codes,
+                "trend_marker_missing_in_primary_copy",
                 "선택한 TrendCard가 화면에 표시되는 첫 광고 문구에 반영되지 않았습니다: "
-                f"{trend_card.meme_id}"
+                f"{trend_card.meme_id}",
             )
-        warnings.extend(
-            _trend_post_warnings(content, request.channel.value, trend_card)
-        )
+        for warning in _trend_post_warnings(
+            content, request.channel.value, trend_card
+        ):
+            code = (
+                "trend_marker_missing_in_caption_opening"
+                if "caption의 첫 문장" in warning
+                else "instagram_caption_missing_from_publish_body"
+                if "Instagram caption 원문" in warning
+                else "trend_marker_missing_in_channel_post"
+            )
+            _add_failure(warnings, failure_codes, code, warning)
         if _has_mechanical_product_enumeration(content, request, trend_card):
-            warnings.append(
+            _add_failure(
+                warnings,
+                failure_codes,
+                "trend_mechanical_product_enumeration",
                 "TrendCard 응용 표현에 여러 상품명을 쉼표로 단순 나열했습니다: "
-                f"{trend_card.meme_id}"
+                f"{trend_card.meme_id}",
             )
 
     if not is_blog:
@@ -171,11 +491,82 @@ def validate_copy_output(
             product for product in request.product_names if product not in visual_products
         ]
         if missing_visual_products:
-            warnings.append(
-                f"visual_brief.products_to_show에 누락된 상품명: {', '.join(missing_visual_products)}"
+            _add_failure(
+                warnings,
+                failure_codes,
+                "product_name_not_preserved_in_visual_brief",
+                "visual_brief.products_to_show에 누락된 상품명: "
+                + ", ".join(missing_visual_products),
             )
 
-    return CopyValidationResult(valid=not warnings, warnings=warnings)
+    if request.channel.value == "instagram":
+        recommendation = content.channel_recommendation
+        missing_caption_products = [
+            product
+            for product in request.product_names
+            if product not in recommendation.caption
+        ]
+        if missing_caption_products:
+            _add_failure(
+                warnings,
+                failure_codes,
+                "instagram_caption_product_name_missing",
+                "Instagram caption에 누락된 상품명: "
+                + ", ".join(missing_caption_products),
+            )
+        missing_caption_required_terms = [
+            term
+            for term in request.required_terms
+            if term and term not in recommendation.caption
+        ]
+        if missing_caption_required_terms:
+            _add_failure(
+                warnings,
+                failure_codes,
+                "instagram_caption_required_terms_missing",
+                "Instagram caption에 누락된 필수 표현: "
+                + ", ".join(missing_caption_required_terms),
+            )
+        if not recommendation.caption.strip():
+            _add_failure(
+                warnings,
+                failure_codes,
+                "instagram_caption_missing",
+                "Instagram caption이 비어 있습니다.",
+            )
+        if not recommendation.publish_cta.strip():
+            _add_failure(
+                warnings,
+                failure_codes,
+                "instagram_publish_cta_missing",
+                "Instagram publish_cta가 비어 있습니다.",
+            )
+        if not recommendation.publish_hashtags:
+            _add_failure(
+                warnings,
+                failure_codes,
+                "instagram_publish_hashtags_missing",
+                "Instagram publish_hashtags가 비어 있습니다.",
+            )
+        expected_body = _compose_instagram_publish_body(
+            recommendation.caption,
+            recommendation.publish_cta,
+            recommendation.publish_hashtags,
+        )
+        if recommendation.publish_body != expected_body:
+            _add_failure(
+                warnings,
+                failure_codes,
+                "instagram_publish_body_not_normalized",
+                "Instagram publish_body가 caption + publish_cta + "
+                "publish_hashtags의 정규 조합과 일치하지 않습니다.",
+            )
+
+    return CopyValidationResult(
+        valid=not warnings,
+        warnings=warnings,
+        failure_codes=failure_codes,
+    )
 
 
 def remove_prohibited_terms(text: str, prohibited_terms: list[str]) -> str:
@@ -254,6 +645,7 @@ def _build_instagram_package(
     trend_card: TrendCard | None = None,
 ) -> tuple[str, str, str, list[str]]:
     product = request.product_names[0] if request.product_names else products
+    product_phrase = products or product
     sales_features = _sales_features(request.features)
     price = request.product_price or _feature_value(request.features, "제품가격")
     region = request.region or _feature_value(request.features, "지역")
@@ -267,17 +659,35 @@ def _build_instagram_package(
     overlay_headline = remove_prohibited_terms(
         trend_headline or "오늘은 달콤하게, 특별하게", prohibited_terms
     )
-    opening = f"{request.business_name}의 {product}를 소개합니다."
+    opening = f"{request.business_name}의 {product_phrase}를 소개합니다."
     if sales_features:
-        opening = f"{sales_features[0]}으로 기억될 {request.business_name}의 {product}를 소개합니다."
+        opening = (
+            f"{sales_features[0]}으로 기억될 {request.business_name}의 "
+            f"{product_phrase}를 소개합니다."
+        )
+
+    relationship_subject = (
+        "이 메뉴 조합이"
+        if len(request.product_names) > 1
+        else f"{product}이(가)"
+    )
 
     lines = [
         opening,
         "",
-        f"{product}이(가) 필요한 순간에 자연스럽게 어울리는 메뉴입니다.",
+        f"{relationship_subject} 필요한 순간에 자연스럽게 어울립니다.",
     ]
     if trend_headline:
         lines.insert(0, trend_headline)
+    missing_required_terms = [
+        term
+        for term in request.required_terms
+        if term and term not in "\n".join(lines)
+    ]
+    if missing_required_terms:
+        lines.append(
+            f"{', '.join(missing_required_terms)}의 매력도 함께 만나보세요."
+        )
     if price:
         lines.extend(["", f"{price}에 즐기는 달콤한 선택."])
     if region:
@@ -476,6 +886,11 @@ def build_fallback_copy(
         f"{request.business_name}에서 {products}을(를) 만나보세요. {feature_sentence}",
         request.prohibited_terms,
     )
+    missing_required_terms = [
+        term for term in request.required_terms if term and term not in body
+    ]
+    if missing_required_terms:
+        body = f"{body} {', '.join(missing_required_terms)}"
     cta = remove_prohibited_terms(
         f"{request.business_name}에서 확인해보세요.", request.prohibited_terms
     )
@@ -483,7 +898,14 @@ def build_fallback_copy(
         f"#{remove_prohibited_terms(product, request.prohibited_terms).replace(' ', '')}"
         for product in request.product_names[:3]
     ]
-    hashtags.append(f"#{request.business_type.value}")
+    business_type_hashtag = {
+        "cafe": "카페",
+        "bakery": "베이커리",
+        "dessert": "디저트",
+        "restaurant": "음식점",
+        "pub": "주점",
+    }.get(request.business_type.value, "동네가게")
+    hashtags.append(f"#{business_type_hashtag}")
     product_items = [
         MandatoryProduct(product_name=product, role="primary" if index == 0 else "secondary")
         for index, product in enumerate(request.product_names)

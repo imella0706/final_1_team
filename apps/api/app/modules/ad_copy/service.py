@@ -7,7 +7,13 @@ from pydantic import ValidationError
 
 from app.core.config import settings
 from app.modules.ad_copy.models import get_model_spec
-from app.modules.ad_copy.output_validator import build_fallback_copy, validate_copy_output
+from app.modules.ad_copy.output_validator import (
+    CopyValidationResult,
+    build_fallback_copy,
+    build_repair_feedback,
+    normalize_copy_output,
+    validate_copy_output,
+)
 from app.modules.ad_copy.prompt import PROMPT_VERSION, build_prompt
 from app.modules.ad_copy.schemas import AdCopyContent, AdCopyRequest, AdCopyResponse
 from app.modules.ad_copy.trend_context import TrendCard, load_trend_card
@@ -50,12 +56,14 @@ def _request_payload(
     trend_card: TrendCard | None = None,
     supports_system_role: bool = True,
     invalid_content: str | None = None,
+    repair_feedback: str | None = None,
 ) -> dict[str, Any]:
     messages = build_prompt_messages(
         request,
         trend_card=trend_card,
         supports_system_role=supports_system_role,
         invalid_content=invalid_content,
+        repair_feedback=repair_feedback,
     )
 
     payload: dict[str, Any] = {
@@ -88,6 +96,7 @@ def build_prompt_messages(
     trend_card: TrendCard | None = None,
     supports_system_role: bool = True,
     invalid_content: str | None = None,
+    repair_feedback: str | None = None,
 ) -> list[dict[str, str]]:
     system_prompt = (
         "당신은 한국 소상공인을 위한 광고 카피라이터입니다. "
@@ -97,8 +106,10 @@ def build_prompt_messages(
     if invalid_content:
         user_prompt = (
             f"{user_prompt}\n\n"
-            "이전 응답은 JSON 스키마 또는 내부 검증에 실패했습니다. "
-            "아래 이전 응답을 참고해 같은 요구사항을 만족하는 올바른 JSON 객체만 다시 출력하세요.\n"
+            "이전 응답은 JSON 스키마 또는 운영 검증에 실패했습니다. "
+            "상품 사실을 새로 만들지 말고 실패한 항목만 교정한 전체 JSON 객체를 "
+            "다시 출력하세요. JSON 이외의 설명은 출력하지 마세요.\n"
+            f"{repair_feedback or '실패 코드: invalid_json_or_schema'}\n"
             f"이전 응답:\n{invalid_content}"
         )
 
@@ -165,6 +176,7 @@ async def _call_model(
     *,
     trend_card: TrendCard | None = None,
     invalid_content: str | None = None,
+    repair_feedback: str | None = None,
 ) -> str:
     try:
         config = get_text_model_config(request.model.value)
@@ -204,6 +216,7 @@ async def _call_model(
                     trend_card=trend_card,
                     supports_system_role=model_spec.supports_system_role,
                     invalid_content=invalid_content,
+                    repair_feedback=repair_feedback,
                 ),
             )
 
@@ -222,6 +235,7 @@ async def _call_model(
                         trend_card=trend_card,
                         supports_system_role=model_spec.supports_system_role,
                         invalid_content=invalid_content,
+                        repair_feedback=repair_feedback,
                     ),
                 )
 
@@ -277,6 +291,7 @@ async def generate_ad_copy(request: AdCopyRequest) -> AdCopyResponse:
     content: AdCopyContent | None = None
     last_error: Exception | None = None
     invalid_content: str | None = None
+    repair_feedback: str | None = None
     attempts = 0
     output_repaired = False
     llm_prompt = {
@@ -290,7 +305,9 @@ async def generate_ad_copy(request: AdCopyRequest) -> AdCopyResponse:
         ),
     }
 
-    for attempt in range(3):
+    # One initial generation plus at most one validator-guided repair. More
+    # retries hide prompt quality, increase latency, and can still drift facts.
+    for attempt in range(2):
         attempts = attempt + 1
         raw_content: str | None = None
         try:
@@ -298,26 +315,42 @@ async def generate_ad_copy(request: AdCopyRequest) -> AdCopyResponse:
                 request,
                 trend_card=trend_card,
                 invalid_content=invalid_content,
+                repair_feedback=repair_feedback,
             )
-            candidate = _parse_content(raw_content)
+            parsed_candidate = _parse_content(raw_content)
+            candidate = normalize_copy_output(parsed_candidate, request)
             validation = validate_copy_output(candidate, request, trend_card)
             if validation.valid:
                 content = candidate
-                output_repaired = attempt > 0
+                output_repaired = (
+                    attempt > 0
+                    or candidate.model_dump() != parsed_candidate.model_dump()
+                )
                 break
             warnings = validation.warnings
             last_error = InvalidModelOutputError("; ".join(validation.warnings))
             invalid_content = raw_content
+            repair_feedback = build_repair_feedback(validation)
             output_repaired = True
         except InvalidModelOutputError as error:
             last_error = error
             warnings = [str(error)]
             if raw_content:
                 invalid_content = raw_content
+            repair_feedback = build_repair_feedback(
+                CopyValidationResult(
+                    valid=False,
+                    warnings=[str(error)],
+                    failure_codes=["invalid_json_or_schema"],
+                )
+            )
             output_repaired = True
 
-        if attempt == 2:
-            fallback = build_fallback_copy(request, warnings, trend_card)
+        if attempt == 1:
+            fallback = normalize_copy_output(
+                build_fallback_copy(request, warnings, trend_card),
+                request,
+            )
             fallback_validation = validate_copy_output(fallback, request, trend_card)
             if not fallback_validation.valid:
                 last_error = InvalidModelOutputError(

@@ -1,11 +1,15 @@
 import asyncio
 import json
+import re
 from pathlib import Path
+from types import SimpleNamespace
 
 import httpx
 import pytest
 
 from app.evaluation import meme_arm_runner
+from scripts import evaluate_meme_arms as evaluation_script
+from app.evaluation.meme_schemas import MemeJudgeResult
 from app.evaluation.meme_arm_runner import (
     GenerationEndpoint,
     MemeExperimentDataError,
@@ -21,7 +25,10 @@ from app.evaluation.meme_arm_runner import (
 )
 from scripts.evaluate_meme_arms import (
     assess_decision_eligibility,
+    build_dry_run_report,
     build_paired_analysis,
+    deterministic_validation_evidence,
+    evaluate_trial,
     enforce_execution_safety,
     markdown_report,
     operational_failure_reasons,
@@ -98,6 +105,73 @@ def test_arm_prompts_change_only_the_declared_strategy_block() -> None:
     )
     assert "내부 작성 절차" in prompts["structured_cot"]
     assert "흑임자 크림라떼" not in prompts["structured_cot"]
+
+
+def test_few_shot_examples_teach_complete_korean_publish_contract() -> None:
+    loaded = load_meme_experiment(EXPERIMENT_PATH)
+
+    for example in loaded.examples:
+        good = example.good_output
+        assert good.product_name_preserved
+        assert good.language == "ko"
+        assert good.failure_codes == []
+        assert good.publish_cta
+        assert good.publish_hashtags
+        assert all(tag.startswith("#") and tag.count("#") == 1 for tag in good.publish_hashtags)
+        assert any(
+            product_name in good.primary_copy
+            or product_name in good.channel_post_opening
+            for product_name in example.input["product_names"]
+        )
+        assert all(
+            required_term in (
+                f"{good.primary_copy} {good.channel_post_opening} "
+                f"{good.publish_cta} {' '.join(good.publish_hashtags)}"
+            )
+            for required_term in example.input["required_terms"]
+        )
+        assert example.bad_output.failure_codes
+
+    current_case_facts = {
+        "청포도 요거트 스무디",
+        "청포도 과육",
+        "요거트 베이스",
+        "모퉁이온도",
+    }
+    serialized_examples = json.dumps(
+        [example.model_dump(mode="json") for example in loaded.examples],
+        ensure_ascii=False,
+    )
+    assert all(fact not in serialized_examples for fact in current_case_facts)
+    assert (
+        re.search(
+            r"[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff]",
+            serialized_examples,
+        )
+        is None
+    )
+
+
+def test_few_shot_prompt_explains_annotation_fields_are_not_output_fields() -> None:
+    loaded = load_meme_experiment(EXPERIMENT_PATH)
+    case = loaded.cases[0]
+    request = AdCopyRequest.model_validate(
+        {**case.request, "model": loaded.config.base_model}
+    )
+    arm = next(
+        arm for arm in loaded.config.arms if arm.strategy == "few_shot_good_bad"
+    )
+
+    prompt = _prompt_text(
+        build_arm_messages(request, loaded.trend_card, arm, loaded.examples)
+    )
+
+    assert "channel_recommendation.caption의 첫 문장" in prompt
+    assert "상품명을 원문 그대로 유지" in prompt
+    assert "required_terms" in prompt
+    assert "자연스러운 한국어" in prompt
+    assert "bad.failure_codes" in prompt
+    assert "최종 광고 JSON에 새 필드로 추가하지 마세요" in prompt
 
 
 def test_example_leakage_detector_uses_facts_absent_from_current_request() -> None:
@@ -290,6 +364,59 @@ def test_paired_analysis_ranks_only_operationally_eligible_arms() -> None:
     assert analysis["winner_arm_id"] == arms[1].id
 
 
+def test_paired_analysis_does_not_treat_judge_advice_as_release_gate() -> None:
+    loaded = load_meme_experiment(EXPERIMENT_PATH)
+    arms = [arm for arm in loaded.config.arms if arm.enabled][:2]
+    records = [
+        _paired_record(arms[0].id, judge_score=5.0, operational_valid=True),
+        _paired_record(arms[1].id, judge_score=4.0, operational_valid=True),
+    ]
+    # Historical Judge output may contain an incorrect exact-match finding.
+    records[0]["judge"]["hard_failures"] = ["필수어가 누락되었다고 추정"]
+
+    analysis = build_paired_analysis(
+        arms,
+        records,
+        judge_enabled=True,
+        fixtures_reviewed=True,
+        decision_eligible=True,
+    )
+
+    assert analysis["status"] == "complete"
+    assert [item["arm_id"] for item in analysis["ranking"]] == [
+        arms[0].id,
+        arms[1].id,
+    ]
+    assert analysis["winner_arm_id"] == arms[0].id
+    assert (
+        analysis["arm_scores_on_paired_blocks"][0][
+            "judge_advisory_finding_rate_percent"
+        ]
+        == 100.0
+    )
+
+
+def test_deterministic_validation_codes_are_authoritative() -> None:
+    record = {
+        "generation_success": True,
+        "rule_valid": False,
+        "rule_warnings": ["caption 첫 문장에 마커가 없습니다."],
+        "production_failure_codes": ["trend_marker_missing_in_caption"],
+        "required_term_compliance_rate": 1.0,
+        "hashtag_compliance_rate": 1.0,
+        "example_leakage_terms": [],
+        "hallucination_terms": [],
+        "toxicity_terms": [],
+    }
+
+    evidence = deterministic_validation_evidence(record)
+
+    assert evidence["authoritative"] is True
+    assert evidence["passed"] is False
+    assert evidence["failure_codes"] == ["trend_marker_missing_in_caption"]
+    assert evidence["failure_details"] == ["caption 첫 문장에 마커가 없습니다."]
+
+
 def test_historical_record_operational_validity_is_derived_conservatively() -> None:
     valid = {
         "generation_success": True,
@@ -450,8 +577,222 @@ def test_generation_call_sends_seed_and_records_usage(monkeypatch) -> None:
 
     assert captured["payload"]["seed"] == 12345
     assert result.request_count == 1
+    assert result.initial_request_count == 1
+    assert result.repair_request_count == 0
+    assert not result.repair_attempted
+    assert result.raw_initial_content == result.raw_content
+    assert result.normalized_initial_validation.valid
     assert result.usage["total_tokens"] == 280
     assert result.actual_model == "qwen-test-revision"
+
+
+def test_evaluate_trial_judges_initial_output_and_records_repair_stages(
+    monkeypatch,
+) -> None:
+    loaded = load_meme_experiment(EXPERIMENT_PATH)
+    case = loaded.cases[0]
+    arm = next(arm for arm in loaded.config.arms if arm.id == "trendcard")
+    request = AdCopyRequest.model_validate(
+        {**case.request, "model": loaded.config.base_model}
+    )
+    final_content = build_fallback_copy(request, [], loaded.trend_card)
+    initial_content = final_content.model_copy(deep=True)
+    initial_content.headlines[0] = "모델이 처음 만든 초안"
+    validation = SimpleNamespace(valid=True, warnings=[], failure_codes=[])
+    generated = SimpleNamespace(
+        content=final_content,
+        raw_content="final-json",
+        initial_content=initial_content,
+        raw_initial_content="initial-json",
+        initial_validation=SimpleNamespace(
+            valid=False,
+            warnings=["초안 실패"],
+            failure_codes=["trend_marker_missing_in_primary_copy"],
+        ),
+        normalized_initial_content=initial_content,
+        normalized_initial_validation=SimpleNamespace(
+            valid=False,
+            warnings=["초안 실패"],
+            failure_codes=["trend_marker_missing_in_primary_copy"],
+        ),
+        repair_content=final_content,
+        raw_repair_content="repair-json",
+        repair_validation=validation,
+        repair_attempted=True,
+        repair_success=True,
+        repair_error=None,
+        validation=validation,
+        latency_ms=10.0,
+        request_count=2,
+        initial_request_count=1,
+        repair_request_count=1,
+        usage={"total_tokens": 30},
+        initial_usage={"total_tokens": 20},
+        repair_usage={"total_tokens": 10},
+        actual_model="qwen-test",
+        structured_output_fallback=False,
+        endpoint_model="qwen-test",
+        endpoint_source="base",
+        base_revision=None,
+        adapter_revision=None,
+    )
+    judged_headlines = []
+
+    async def fake_generate(*args, **kwargs):
+        return generated
+
+    async def fake_judge(request, trend_card, content, **kwargs):
+        judged_headlines.extend(content.headlines)
+        return SimpleNamespace(
+            result=MemeJudgeResult(
+                naturalness=4,
+                pattern_fidelity=4,
+                product_relevance=4,
+                factuality=4,
+                channel_readiness=4,
+                hard_failures=["참고 의견"],
+                reason="정성 평가",
+            ),
+            latency_ms=5.0,
+            usage={"total_tokens": 10},
+            actual_model="judge-test",
+        )
+
+    monkeypatch.setattr(evaluation_script, "generate_arm_copy", fake_generate)
+    monkeypatch.setattr(
+        evaluation_script,
+        "judge_meme_copy_with_metadata",
+        fake_judge,
+    )
+
+    record = asyncio.run(
+        evaluate_trial(
+            loaded,
+            case,
+            arm,
+            repeat=1,
+            judge_enabled=True,
+            semaphore=asyncio.Semaphore(1),
+        )
+    )
+
+    assert judged_headlines[0] == "모델이 처음 만든 초안"
+    assert record["judge_target"] == "initial_output"
+    assert record["initial_output"]["headlines"][0] == "모델이 처음 만든 초안"
+    assert record["repair_output"] == final_content.model_dump(mode="json")
+    assert record["output"] == final_content.model_dump(mode="json")
+    assert record["repair_attempted"] is True
+    assert record["repair_success"] is True
+    assert record["judge"]["advisory_findings"] == ["참고 의견"]
+    assert "hard_failures" not in record["judge"]
+
+
+def test_generation_repairs_normalized_validation_failure_once(monkeypatch) -> None:
+    loaded = load_meme_experiment(EXPERIMENT_PATH)
+    case = loaded.cases[0]
+    arm = next(arm for arm in loaded.config.arms if arm.strategy == "trendcard")
+    request = AdCopyRequest.model_validate(
+        {**case.request, "model": loaded.config.base_model}
+    )
+    valid_content = build_fallback_copy(request, [], loaded.trend_card)
+    initial_recommendation = valid_content.channel_recommendation.model_copy(
+        update={
+            "caption": "청포도 요거트 스무디를 산뜻하게 즐겨보세요.",
+            "publish_body": "모델이 임의로 조립한 게시물",
+        }
+    )
+    invalid_initial = valid_content.model_copy(
+        update={
+            "headlines": ["산뜻한 청포도 요거트 스무디"],
+            "channel_recommendation": initial_recommendation,
+        }
+    )
+    response_bodies = [
+        json.dumps(content.model_dump(mode="json"), ensure_ascii=False)
+        for content in (invalid_initial, valid_content)
+    ]
+    payloads: list[dict] = []
+
+    class FakeClient:
+        def __init__(self, timeout):
+            self.timeout = timeout
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, traceback):
+            return False
+
+        async def post(self, url, *, headers, json):
+            payloads.append(json)
+            return httpx.Response(
+                200,
+                json={
+                    "model": "qwen-test-revision",
+                    "usage": {
+                        "prompt_tokens": 100,
+                        "completion_tokens": 50,
+                        "total_tokens": 150,
+                    },
+                    "choices": [
+                        {"message": {"content": response_bodies[len(payloads) - 1]}}
+                    ],
+                },
+                request=httpx.Request("POST", url),
+            )
+
+    endpoint = GenerationEndpoint(
+        base_url="https://qwen.example/v1",
+        model="Qwen/Qwen2.5-7B-Instruct",
+        api_key="test-key",
+        provider=TextRuntimeProvider.HUGGING_FACE_ROUTER,
+        supports_system_role=True,
+        supports_structured_output=True,
+        source="base",
+    )
+    experiment = loaded.config.model_copy(
+        update={
+            "generation": loaded.config.generation.model_copy(
+                update={"max_attempts": 2}
+            )
+        }
+    )
+    monkeypatch.setattr(
+        meme_arm_runner,
+        "resolve_generation_endpoint",
+        lambda selected_experiment, selected_arm: endpoint,
+    )
+    monkeypatch.setattr(meme_arm_runner.httpx, "AsyncClient", FakeClient)
+
+    result = asyncio.run(
+        meme_arm_runner.generate_arm_copy(
+            request,
+            experiment,
+            loaded.trend_card,
+            arm,
+            loaded.examples,
+            12345,
+        )
+    )
+
+    assert len(payloads) == 2
+    assert payloads[0]["temperature"] == experiment.generation.temperature
+    assert payloads[1]["temperature"] == 0.2
+    repair_prompt = payloads[1]["messages"][-1]["content"]
+    assert "trend_marker_missing_in_primary_copy" in repair_prompt
+    assert "trend_marker_missing_in_caption_opening" in repair_prompt
+    assert result.initial_content == invalid_initial
+    assert not result.initial_validation.valid
+    assert not result.normalized_initial_validation.valid
+    assert result.repair_attempted
+    assert result.repair_success
+    assert result.repair_error is None
+    assert result.repair_content is not None
+    assert result.validation.valid
+    assert result.request_count == 2
+    assert result.initial_request_count == 1
+    assert result.repair_request_count == 1
+    assert result.usage["total_tokens"] == 300
 
 
 def test_unreviewed_fixtures_are_limited_to_explicit_one_case_smoke() -> None:
@@ -485,6 +826,30 @@ def test_unreviewed_fixtures_are_limited_to_explicit_one_case_smoke() -> None:
             allow_large_run=True,
             allow_unreviewed_fixtures=True,
         )
+
+
+def test_dry_run_request_ceiling_accounts_for_repair_and_schema_fallback() -> None:
+    loaded = load_meme_experiment(EXPERIMENT_PATH)
+    arms = [arm for arm in loaded.config.arms if arm.enabled][:2]
+
+    report = build_dry_run_report(
+        loaded,
+        arms,
+        loaded.cases[:1],
+        repeats=1,
+        judge_enabled=True,
+    )
+
+    planned = report["planned_calls"]
+    trials = len(arms)
+    max_attempts = loaded.config.generation.max_attempts
+    assert planned["generator_http_requests_minimum"] == trials
+    assert planned["generator_http_requests_maximum"] == (
+        trials * max_attempts * 2
+    )
+    assert planned["external_http_requests_worst_case"] == (
+        trials * max_attempts * 2 + trials
+    )
 
 
 def _summary_record(*, generation_success: bool, judge_success: bool | None):
@@ -569,6 +934,28 @@ def test_arm_summary_and_markdown_handle_missing_judge_results(
     assert "## Paired 순위" in rendered
 
 
+def test_arm_summary_separates_initial_repair_and_final_rates() -> None:
+    loaded = load_meme_experiment(EXPERIMENT_PATH)
+    arm = next(arm for arm in loaded.config.arms if arm.id == "trendcard")
+    repaired = _summary_record(generation_success=True, judge_success=True)
+    repaired.update(
+        {
+            "initial_validation": {"valid": False},
+            "repair_attempted": True,
+            "repair_success": True,
+            "rule_valid": True,
+            "hashtag_compliance_rate": 1.0,
+        }
+    )
+
+    summary = summarize_arm(arm, [repaired])
+
+    assert summary["initial_rule_pass_rate_percent"] == 0.0
+    assert summary["repair_attempt_rate_percent"] == 100.0
+    assert summary["repair_success_rate_percent"] == 100.0
+    assert summary["rule_pass_rate_percent"] == 100.0
+
+
 def test_saved_report_rebuild_replaces_null_summaries_without_calls() -> None:
     loaded = load_meme_experiment(EXPERIMENT_PATH)
     report = {
@@ -644,7 +1031,7 @@ def test_markdown_contains_each_candidate_output_and_artifact_link(tmp_path) -> 
 
     assert "## 후보별 생성 출력" in rendered
     assert "니가 좋아, 청포도 스무디" in rendered
-    assert "전체 생성 output JSON" in rendered
+    assert "최종 output JSON" in rendered
     assert "candidate_outputs/candidate-test.json" in rendered
     artifact = json.loads(
         (candidate_dir / "candidate-test.json").read_text(encoding="utf-8")

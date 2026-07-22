@@ -27,7 +27,7 @@ from app.modules.model_runtime.llm.registry import (
 
 
 JUDGE_MODEL_KEY = "openai/gpt-4.1-mini"
-JUDGE_PROMPT_VERSION = "meme-judge-v2-operational-gates"
+JUDGE_PROMPT_VERSION = "meme-judge-v3-qualitative-advisory"
 
 
 class MemeJudgeNotConfiguredError(RuntimeError):
@@ -179,21 +179,24 @@ def build_meme_judge_input(
 def build_meme_judge_messages(judge_input: MemeJudgeInput) -> list[dict[str, str]]:
     """Create blinded judge messages from the allow-listed input only."""
 
-    rubric = """평가 기준:
-- naturalness: 밈을 모르는 고객도 광고 문구로 자연스럽게 읽을 수 있는가
-- pattern_fidelity: text_patterns의 구조와 의도를 살리되 기계적으로 복사하지 않았는가
-- product_relevance: 실제 상품, 특징, 혜택과 밈 응용 표현이 설득력 있게 연결되는가
-- factuality: 요청에 없는 사실을 만들지 않고 required_terms와 prohibited_terms를 지켰는가
-- channel_readiness: 지정 채널에 바로 게시할 수 있는 완성도와 형식을 갖췄는가
+    rubric = """역할 경계:
+- 정확 문자열 포함 여부(required_terms, prohibited_terms, copy_markers, 상품명), 한국어 여부,
+  CTA·해시태그·publish_body 조립 여부는 별도의 deterministic validator가 판정한다.
+- 위 항목을 독자적으로 누락/위반이라고 단정하지 말고, hard_failures에도 기록하지 않는다.
+- operational_requirements는 배경 정보일 뿐 이 응답에서 다시 판정할 항목이 아니다.
 
-각 점수는 1부터 5까지의 정수입니다. hard_failures에는 허위 사실, prohibited_usage 위반,
-금지 표현 사용, 고객에게 게시할 핵심 문구 누락처럼 즉시 사용을 막는 문제만 짧게 기록하세요.
-operational_requirements는 취향이 아니라 실제 게시 파이프라인의 필수 조건입니다. 하나라도
-위반하면 해당 위반을 hard_failures에 기록하고 channel_readiness는 최대 2점으로 평가하세요.
-모든 operational_requirements를 충족한 경우에만 channel_readiness 5점을 줄 수 있습니다.
-required_terms 누락 또는 prohibited_terms 포함도 hard_failures에 기록하고 factuality는 최대
-2점으로 평가하세요.
-단순한 문체 선호나 경미한 어색함은 hard_failures가 아니라 점수와 reason에 반영하세요.
+정성 평가 기준:
+- naturalness: 밈을 모르는 고객도 광고 문구로 자연스럽게 읽을 수 있는가
+- pattern_fidelity: text_patterns의 리듬과 의도를 창의적으로 응용했으며 기계적인 복사처럼 보이지 않는가
+- product_relevance: 실제 상품, 특징, 혜택과 밈 응용 표현이 설득력 있게 연결되는가
+- factuality: 문맥상 요청으로 뒷받침되지 않는 효능·가격·판매 방식 등의 주장을 만들지 않았는가
+- channel_readiness: 정확 문자열 검사와 조립 검사를 제외하고, 지정 채널에 어울리는 문체와 흐름을 갖췄는가
+
+각 점수는 1부터 5까지의 정수입니다. hard_failures 필드는 하위 호환을 위해 남아 있지만
+운영 통과 여부를 결정하지 않는 advisory 정성 의견입니다. 명백하게 오해를 유발하는 주장,
+유해 표현, prohibited_usage의 의미적 위반처럼 문자열 검사만으로 판단하기 어려운 중대한
+정성 위험만 짧게 기록하세요. 확신할 수 없으면 빈 배열을 출력하세요.
+단순한 문체 선호나 경미한 어색함은 점수와 reason에만 반영하세요.
 reason은 핵심 판단 근거를 한국어 한 문단으로 작성하세요.
 
 다음 키만 가진 JSON 객체를 출력하세요:
@@ -206,6 +209,7 @@ reason은 핵심 판단 근거를 한국어 한 문단으로 작성하세요.
   "hard_failures": [],
   "reason": "한국어 판단 근거"
 }
+hard_failures는 advisory이며 deterministic validator 결과를 대체하지 않습니다.
 overall_score는 서버가 위 다섯 점수의 평균으로 계산하므로 출력하지 마세요."""
     evidence = json.dumps(judge_input.model_dump(mode="json"), ensure_ascii=False, indent=2)
     return [
