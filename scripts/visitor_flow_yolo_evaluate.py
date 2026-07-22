@@ -51,6 +51,22 @@ def parse_args() -> argparse.Namespace:
         type=float,
         help="Minimum IoU for a prediction/ground-truth match",
     )
+    parser.add_argument(
+        "--prediction-confidence-floor",
+        default=None,
+        type=float,
+        help=(
+            "Minimum confidence used when collecting prediction candidates. "
+            "Defaults to the lowest --conf-thresholds value."
+        ),
+    )
+    parser.add_argument(
+        "--ap-iou-thresholds",
+        nargs="+",
+        type=float,
+        default=[],
+        help="Optional IoU thresholds for AP/mAP calculation.",
+    )
     parser.add_argument("--output-dir", required=True, type=Path)
     parser.add_argument(
         "--save-previews",
@@ -75,12 +91,26 @@ def validate_args(args: argparse.Namespace) -> list[float]:
         raise ValueError("--sample-every-sec must be greater than 0")
     if not 0.0 < args.iou_threshold <= 1.0:
         raise ValueError("--iou-threshold must be in (0.0, 1.0]")
+    if args.prediction_confidence_floor is not None and not (
+        0.0 <= args.prediction_confidence_floor <= 1.0
+    ):
+        raise ValueError("--prediction-confidence-floor must be between 0.0 and 1.0")
+    if any(not 0.0 < threshold <= 1.0 for threshold in args.ap_iou_thresholds):
+        raise ValueError("all --ap-iou-thresholds values must be in (0.0, 1.0]")
     if not args.conf_thresholds:
         raise ValueError("--conf-thresholds requires at least one value")
 
     thresholds = sorted(set(args.conf_thresholds))
     if any(not 0.0 <= threshold <= 1.0 for threshold in thresholds):
         raise ValueError("all --conf-thresholds values must be between 0.0 and 1.0")
+    if (
+        args.prediction_confidence_floor is not None
+        and args.prediction_confidence_floor > min(thresholds)
+    ):
+        raise ValueError(
+            "--prediction-confidence-floor must be less than or equal to the lowest "
+            "--conf-thresholds value"
+        )
     return thresholds
 
 
@@ -322,8 +352,18 @@ def match_boxes(
     return matches, unmatched_gt_indices, unmatched_prediction_indices
 
 
-def safe_divide(numerator: int, denominator: int) -> float:
+def safe_divide(numerator: float, denominator: float) -> float:
     return numerator / denominator if denominator else 0.0
+
+
+def median(values: list[float]) -> float:
+    if not values:
+        return 0.0
+    sorted_values = sorted(values)
+    mid = len(sorted_values) // 2
+    if len(sorted_values) % 2:
+        return sorted_values[mid]
+    return (sorted_values[mid - 1] + sorted_values[mid]) / 2.0
 
 
 def evaluate_threshold(
@@ -336,6 +376,7 @@ def evaluate_threshold(
     total_tp = 0
     total_fp = 0
     total_fn = 0
+    matched_ious = []
     frame_rows = []
     detail_rows = []
 
@@ -358,6 +399,7 @@ def evaluate_threshold(
         total_tp += tp
         total_fp += fp
         total_fn += fn
+        matched_ious.extend(float(match["iou"]) for match in matches)
         frame_rows.append(
             {
                 "confidence_threshold": threshold,
@@ -409,6 +451,7 @@ def evaluate_threshold(
     precision = safe_divide(total_tp, total_tp + total_fp)
     recall = safe_divide(total_tp, total_tp + total_fn)
     f1 = safe_divide(2 * total_tp, 2 * total_tp + total_fp + total_fn)
+    matched_iou_sum = sum(matched_ious)
     metrics = {
         "confidence_threshold": threshold,
         "iou_threshold": iou_threshold,
@@ -418,11 +461,183 @@ def evaluate_threshold(
         "tp": total_tp,
         "fp": total_fp,
         "fn": total_fn,
+        "matched_iou_sum": round(matched_iou_sum, 6),
+        "mean_matched_iou": round(safe_divide(matched_iou_sum, total_tp), 6),
+        "median_matched_iou": round(median(matched_ious), 6),
         "precision": round(precision, 6),
         "recall": round(recall, 6),
         "f1": round(f1, 6),
     }
     return metrics, frame_rows, detail_rows
+
+
+def ap_image_records(
+    video_id: str,
+    frame_indices: list[int],
+    labels: dict[int, list[dict[str, Any]]],
+    prediction_candidates: dict[int, list[dict[str, Any]]],
+) -> list[dict[str, Any]]:
+    records = []
+    for frame_index in frame_indices:
+        records.append(
+            {
+                "image_id": f"{video_id}:{frame_index}",
+                "ground_truths": [
+                    {"bbox": ground_truth["bbox"]}
+                    for ground_truth in labels.get(frame_index, [])
+                ],
+                "predictions": [
+                    {
+                        "bbox": prediction["bbox"],
+                        "confidence": float(prediction["confidence"]),
+                    }
+                    for prediction in prediction_candidates.get(frame_index, [])
+                ],
+            }
+        )
+    return records
+
+
+def average_precision_101(
+    precision_values: list[float],
+    recall_values: list[float],
+) -> float:
+    # [Design Intent] COCO-style 101-point interpolation으로 AP를 계산한다.
+    # person 단일 클래스라 class averaging은 이후 mAP 단계에서만 발생한다.
+    if not precision_values or not recall_values:
+        return 0.0
+
+    ap = 0.0
+    for recall_threshold in (index / 100 for index in range(101)):
+        max_precision = max(
+            (
+                precision
+                for precision, recall in zip(precision_values, recall_values)
+                if recall >= recall_threshold
+            ),
+            default=0.0,
+        )
+        ap += max_precision
+    return ap / 101
+
+
+def average_precision_for_iou(
+    image_records: list[dict[str, Any]],
+    iou_threshold: float,
+) -> dict[str, Any]:
+    total_ground_truths = sum(len(record["ground_truths"]) for record in image_records)
+    predictions = []
+    for record in image_records:
+        for prediction_index, prediction in enumerate(record["predictions"]):
+            predictions.append(
+                {
+                    "image_id": record["image_id"],
+                    "prediction_index": prediction_index,
+                    "bbox": prediction["bbox"],
+                    "confidence": float(prediction["confidence"]),
+                }
+            )
+    predictions.sort(
+        key=lambda prediction: (
+            prediction["confidence"],
+            prediction["image_id"],
+            -prediction["prediction_index"],
+        ),
+        reverse=True,
+    )
+
+    ground_truths_by_image = {
+        record["image_id"]: record["ground_truths"] for record in image_records
+    }
+    matched_gt_by_image: dict[str, set[int]] = {
+        record["image_id"]: set() for record in image_records
+    }
+
+    tp_values = []
+    fp_values = []
+    for prediction in predictions:
+        ground_truths = ground_truths_by_image[prediction["image_id"]]
+        matched_indices = matched_gt_by_image[prediction["image_id"]]
+        best_iou = 0.0
+        best_gt_index = None
+        for gt_index, ground_truth in enumerate(ground_truths):
+            if gt_index in matched_indices:
+                continue
+            iou = bbox_iou(ground_truth["bbox"], prediction["bbox"])
+            if iou > best_iou:
+                best_iou = iou
+                best_gt_index = gt_index
+
+        if best_gt_index is not None and best_iou >= iou_threshold:
+            matched_indices.add(best_gt_index)
+            tp_values.append(1)
+            fp_values.append(0)
+        else:
+            tp_values.append(0)
+            fp_values.append(1)
+
+    cumulative_tp = 0
+    cumulative_fp = 0
+    precision_values = []
+    recall_values = []
+    for tp, fp in zip(tp_values, fp_values):
+        cumulative_tp += tp
+        cumulative_fp += fp
+        precision_values.append(
+            safe_divide(cumulative_tp, cumulative_tp + cumulative_fp)
+        )
+        recall_values.append(safe_divide(cumulative_tp, total_ground_truths))
+
+    return {
+        "iou_threshold": round(iou_threshold, 2),
+        "ground_truth_boxes": total_ground_truths,
+        "prediction_boxes": len(predictions),
+        "tp_at_full_recall_scan": cumulative_tp,
+        "fp_at_full_recall_scan": cumulative_fp,
+        "ap": round(average_precision_101(precision_values, recall_values), 6),
+    }
+
+
+def compute_ap_metrics(
+    image_records: list[dict[str, Any]],
+    iou_thresholds: list[float],
+) -> dict[str, Any]:
+    thresholds = sorted(set(round(threshold, 2) for threshold in iou_thresholds))
+    ap_rows = [
+        average_precision_for_iou(
+            image_records=image_records,
+            iou_threshold=threshold,
+        )
+        for threshold in thresholds
+    ]
+    ap_by_iou = {f"{row['iou_threshold']:.2f}": row["ap"] for row in ap_rows}
+    ap50 = ap_by_iou.get("0.50", 0.0)
+    ap75 = ap_by_iou.get("0.75", 0.0)
+    map50_95 = safe_divide(
+        sum(row["ap"] for row in ap_rows),
+        len(ap_rows),
+    )
+    ground_truth_boxes = ap_rows[0]["ground_truth_boxes"] if ap_rows else 0
+    prediction_boxes = ap_rows[0]["prediction_boxes"] if ap_rows else 0
+    return {
+        "class_name": "person",
+        "ap_interpolation": "COCO-style 101-point interpolation",
+        "iou_thresholds": thresholds,
+        "ground_truth_boxes": ground_truth_boxes,
+        "prediction_boxes": prediction_boxes,
+        "ap50_person": round(ap50, 6),
+        "ap75_person": round(ap75, 6),
+        "map50": round(ap50, 6),
+        "map75": round(ap75, 6),
+        "map50_95": round(map50_95, 6),
+        "ap_by_iou": ap_by_iou,
+        "ap_rows": ap_rows,
+        "limitations": [
+            "Current evaluation is person-only, so mAP equals AP(person).",
+            "AP uses sampled frames, not all video frames.",
+            "AP quality depends on the prediction confidence floor used during candidate collection.",
+        ],
+    }
 
 
 def detail_row(
@@ -621,7 +836,11 @@ def main() -> None:
 
     sample_step_frames = max(1, round(metadata["fps"] * args.sample_every_sec))
     frame_indices = list(range(0, metadata["frame_count"], sample_step_frames))
-    confidence_floor = min(thresholds)
+    confidence_floor = (
+        args.prediction_confidence_floor
+        if args.prediction_confidence_floor is not None
+        else min(thresholds)
+    )
     args.output_dir.mkdir(parents=True, exist_ok=True)
 
     print(f"video={args.video}")
@@ -633,7 +852,8 @@ def main() -> None:
     )
     print(
         f"sample_every_sec={args.sample_every_sec}, sampled_frames={len(frame_indices)}, "
-        f"conf_thresholds={thresholds}, iou_threshold={args.iou_threshold}"
+        f"conf_thresholds={thresholds}, candidate_floor={confidence_floor}, "
+        f"iou_threshold={args.iou_threshold}, ap_iou_thresholds={args.ap_iou_thresholds}"
     )
 
     prediction_candidates, timing = collect_predictions(
@@ -684,6 +904,19 @@ def main() -> None:
         frame_indices=frame_indices,
         prediction_candidates=prediction_candidates,
     )
+    ap_metrics = None
+    if args.ap_iou_thresholds:
+        ap_records = ap_image_records(
+            video_id=args.video.stem,
+            frame_indices=frame_indices,
+            labels=labels,
+            prediction_candidates=prediction_candidates,
+        )
+        ap_metrics = compute_ap_metrics(
+            image_records=ap_records,
+            iou_thresholds=args.ap_iou_thresholds,
+        )
+        write_csv(args.output_dir / "ap_metrics.csv", ap_metrics["ap_rows"])
 
     summary = {
         "scope": "L1-3_yolo_vs_aihub_label_evaluation",
@@ -695,7 +928,9 @@ def main() -> None:
         "sample_every_sec": args.sample_every_sec,
         "sampled_frames": len(frame_indices),
         "confidence_thresholds": thresholds,
+        "prediction_confidence_floor": confidence_floor,
         "iou_threshold": args.iou_threshold,
+        "ap_iou_thresholds": args.ap_iou_thresholds,
         "selection_rule": "max_f1_then_recall_then_precision_then_lower_threshold",
         "selected_threshold": selected["confidence_threshold"],
         "selected_metrics": selected,
@@ -713,6 +948,8 @@ def main() -> None:
             "A reference-label FP can be a visible person missing from the label or a valid detection below the IoU match threshold.",
         ],
     }
+    if ap_metrics is not None:
+        summary["ap_metrics"] = ap_metrics
     (args.output_dir / "evaluation_summary.json").write_text(
         json.dumps(summary, ensure_ascii=False, indent=2),
         encoding="utf-8",

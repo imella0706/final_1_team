@@ -91,7 +91,7 @@
   },
   "reproducibility": {
     "generation_script_available": true,
-    "generation_script_path": "scripts/visitor_flow_label_smoke_test.py",
+    "generation_script_path": "scripts/archive/visitor_flow/L0/visitor_flow_label_smoke_test.py",
     "aihub_downloader": {
       "tool_name": "aihubshell",
       "download_url": "https://api.aihub.or.kr/api/aihubshell.do",

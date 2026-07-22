@@ -47,8 +47,41 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--validation-date", default="2021-08-03")
     parser.add_argument("--expected-calibration-clips", default=8, type=int)
     parser.add_argument("--expected-validation-clips", default=7, type=int)
+    parser.add_argument(
+        "--calibration-clip-stems",
+        nargs="+",
+        default=None,
+        help="Optional exact calibration clip stems to evaluate, in desired order.",
+    )
+    parser.add_argument(
+        "--validation-clip-stems",
+        nargs="+",
+        default=None,
+        help="Optional exact validation clip stems to evaluate, in desired order.",
+    )
     parser.add_argument("--sample-every-sec", default=10.0, type=float)
     parser.add_argument("--iou-threshold", default=0.50, type=float)
+    parser.add_argument(
+        "--prediction-confidence-floor",
+        default=None,
+        type=float,
+        help=(
+            "Minimum confidence used when collecting prediction candidates. "
+            "Defaults to the lowest --conf-thresholds value."
+        ),
+    )
+    parser.add_argument(
+        "--ap-iou-thresholds",
+        nargs="+",
+        type=float,
+        default=[],
+        help="Optional IoU thresholds for AP/mAP calculation.",
+    )
+    parser.add_argument(
+        "--summary-stem",
+        default="model_config_compare",
+        help="Output stem for the top-level CSV/JSON summary files.",
+    )
     parser.add_argument(
         "--conf-thresholds",
         nargs="+",
@@ -65,7 +98,7 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def validate_args(args: argparse.Namespace) -> list[float]:
+def validate_args(args: argparse.Namespace) -> tuple[list[float], list[float]]:
     for sample_dir, name in (
         (args.calibration_dir, "calibration-dir"),
         (args.validation_dir, "validation-dir"),
@@ -92,11 +125,28 @@ def validate_args(args: argparse.Namespace) -> list[float]:
         raise ValueError("--sample-every-sec must be greater than 0")
     if not 0.0 < args.iou_threshold <= 1.0:
         raise ValueError("--iou-threshold must be in (0.0, 1.0]")
+    if args.prediction_confidence_floor is not None and not (
+        0.0 <= args.prediction_confidence_floor <= 1.0
+    ):
+        raise ValueError("--prediction-confidence-floor must be between 0.0 and 1.0")
+    if any(not 0.0 < threshold <= 1.0 for threshold in args.ap_iou_thresholds):
+        raise ValueError("all --ap-iou-thresholds values must be in (0.0, 1.0]")
+    if not args.summary_stem:
+        raise ValueError("--summary-stem must not be empty")
 
     thresholds = sorted(set(args.conf_thresholds))
     if not thresholds or any(not 0.0 <= value <= 1.0 for value in thresholds):
         raise ValueError("all confidence thresholds must be between 0.0 and 1.0")
-    return thresholds
+    if (
+        args.prediction_confidence_floor is not None
+        and args.prediction_confidence_floor > min(thresholds)
+    ):
+        raise ValueError(
+            "--prediction-confidence-floor must be less than or equal to the lowest "
+            "--conf-thresholds value"
+        )
+    ap_iou_thresholds = sorted(set(round(value, 2) for value in args.ap_iou_thresholds))
+    return thresholds, ap_iou_thresholds
 
 
 def matched_pairs_for_date(
@@ -104,6 +154,7 @@ def matched_pairs_for_date(
     date: str,
     camera_id: str,
     expected_count: int,
+    clip_stems: list[str] | None = None,
 ) -> list[tuple[Path, Path]]:
     videos = {
         path.stem: path
@@ -123,7 +174,23 @@ def matched_pairs_for_date(
             f"missing_labels={missing_labels}, missing_videos={missing_videos}"
         )
 
-    stems = sorted(videos.keys() & labels.keys())
+    available_stems = sorted(videos.keys() & labels.keys())
+    if clip_stems:
+        requested_stems = [Path(stem).stem for stem in clip_stems]
+        duplicate_stems = sorted(
+            {stem for stem in requested_stems if requested_stems.count(stem) > 1}
+        )
+        if duplicate_stems:
+            raise ValueError(f"duplicate requested clip stems: {duplicate_stems}")
+        missing_requested = sorted(set(requested_stems) - set(available_stems))
+        if missing_requested:
+            raise ValueError(
+                f"requested clips not found for {date} {camera_id}: {missing_requested}"
+            )
+        stems = requested_stems
+    else:
+        stems = available_stems
+
     if len(stems) != expected_count:
         raise ValueError(
             f"expected {expected_count} matched clips for {date} {camera_id}, "
@@ -170,6 +237,7 @@ def aggregate_micro(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 "tp": 0,
                 "fp": 0,
                 "fn": 0,
+                "matched_iou_sum": 0.0,
             },
         )
         bucket["clip_count"] += 1
@@ -179,6 +247,7 @@ def aggregate_micro(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
         bucket["tp"] += int(row["tp"])
         bucket["fp"] += int(row["fp"])
         bucket["fn"] += int(row["fn"])
+        bucket["matched_iou_sum"] += float(row.get("matched_iou_sum", 0.0))
 
     aggregated = []
     for threshold in sorted(by_threshold):
@@ -189,9 +258,14 @@ def aggregate_micro(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
         precision = evaluator.safe_divide(tp, tp + fp)
         recall = evaluator.safe_divide(tp, tp + fn)
         f1 = evaluator.safe_divide(2 * tp, 2 * tp + fp + fn)
+        matched_iou_sum = float(row["matched_iou_sum"])
         aggregated.append(
             {
                 **row,
+                "matched_iou_sum": round(matched_iou_sum, 6),
+                "mean_matched_iou": round(
+                    evaluator.safe_divide(matched_iou_sum, tp), 6
+                ),
                 "precision": round(precision, 6),
                 "recall": round(recall, 6),
                 "f1": round(f1, 6),
@@ -225,6 +299,14 @@ def aggregate_clip_mean(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
                     sum(float(row["f1"]) for row in threshold_rows) / clip_count,
                     6,
                 ),
+                "mean_matched_iou": round(
+                    sum(
+                        float(row.get("mean_matched_iou", 0.0))
+                        for row in threshold_rows
+                    )
+                    / clip_count,
+                    6,
+                ),
             }
         )
     return aggregated
@@ -242,6 +324,7 @@ def run_clip(
     thresholds: list[float],
     inference_confidence_floor: float,
     iou_threshold: float,
+    ap_iou_thresholds: list[float],
     data_role: str,
     frozen_threshold: float | None,
     output_dir: Path,
@@ -300,6 +383,20 @@ def run_clip(
         frame_indices=frame_indices,
         prediction_candidates=prediction_candidates,
     )
+    ap_records = []
+    ap_metrics = None
+    if ap_iou_thresholds:
+        ap_records = evaluator.ap_image_records(
+            video_id=video.stem,
+            frame_indices=frame_indices,
+            labels=labels,
+            prediction_candidates=prediction_candidates,
+        )
+        ap_metrics = evaluator.compute_ap_metrics(
+            image_records=ap_records,
+            iou_thresholds=ap_iou_thresholds,
+        )
+        evaluator.write_csv(output_dir / "ap_metrics.csv", ap_metrics["ap_rows"])
 
     summary = {
         "scope": "L2-3_config_date_clip_evaluation",
@@ -316,6 +413,7 @@ def run_clip(
         "inference_confidence_floor": inference_confidence_floor,
         "frozen_calibration_threshold": frozen_threshold,
         "iou_threshold": iou_threshold,
+        "ap_iou_thresholds": ap_iou_thresholds,
         "threshold_policy": (
             "calibration_candidate_scan"
             if frozen_threshold is None
@@ -327,8 +425,14 @@ def run_clip(
             "evaluation_wall_time_sec": round(time.perf_counter() - clip_started, 6),
         },
     }
+    if ap_metrics is not None:
+        summary["ap_metrics"] = ap_metrics
+        summary["_ap_image_records"] = ap_records
+    persisted_summary = {
+        key: value for key, value in summary.items() if not key.startswith("_")
+    }
     (output_dir / "evaluation_summary.json").write_text(
-        json.dumps(summary, ensure_ascii=False, indent=2),
+        json.dumps(persisted_summary, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
     return summary
@@ -375,12 +479,14 @@ def run_date(
     thresholds: list[float],
     inference_confidence_floor: float,
     iou_threshold: float,
+    ap_iou_thresholds: list[float],
     frozen_threshold: float | None,
     output_dir: Path,
 ) -> dict[str, Any]:
     date_started = time.perf_counter()
     clip_summaries = []
     clip_rows = []
+    ap_image_records = []
     for clip_index, (video, label) in enumerate(pairs, start=1):
         print(
             f"[L2-3] config={config_id} role={data_role} "
@@ -399,6 +505,7 @@ def run_date(
             thresholds=thresholds,
             inference_confidence_floor=inference_confidence_floor,
             iou_threshold=iou_threshold,
+            ap_iou_thresholds=ap_iou_thresholds,
             data_role=data_role,
             frozen_threshold=frozen_threshold,
             output_dir=output_dir / "clips" / video.stem,
@@ -406,12 +513,20 @@ def run_date(
         clip_summaries.append(summary)
         for row in summary["threshold_metrics"]:
             clip_rows.append({"video_id": video.stem, **row})
+        ap_image_records.extend(summary.get("_ap_image_records", []))
 
     micro_rows = aggregate_micro(clip_rows)
     mean_rows = aggregate_clip_mean(clip_rows)
     write_csv(output_dir / "clip_threshold_metrics.csv", clip_rows)
     write_csv(output_dir / "aggregate_micro_threshold_metrics.csv", micro_rows)
     write_csv(output_dir / "aggregate_clip_mean_threshold_metrics.csv", mean_rows)
+    ap_metrics = None
+    if ap_iou_thresholds:
+        ap_metrics = evaluator.compute_ap_metrics(
+            image_records=ap_image_records,
+            iou_thresholds=ap_iou_thresholds,
+        )
+        write_csv(output_dir / "ap_metrics.csv", ap_metrics["ap_rows"])
     operating_metrics = selected_threshold(micro_rows)
     if (
         frozen_threshold is not None
@@ -436,6 +551,7 @@ def run_date(
         "inference_confidence_floor": inference_confidence_floor,
         "frozen_calibration_threshold": frozen_threshold,
         "iou_threshold": iou_threshold,
+        "ap_iou_thresholds": ap_iou_thresholds,
         "threshold_policy": (
             "max_micro_f1_then_recall_then_precision_then_lower_threshold"
             if frozen_threshold is None
@@ -448,6 +564,8 @@ def run_date(
             "date_run_wall_time_sec": round(time.perf_counter() - date_started, 6),
         },
     }
+    if ap_metrics is not None:
+        summary["ap_metrics"] = ap_metrics
     (output_dir / "date_evaluation_summary.json").write_text(
         json.dumps(summary, ensure_ascii=False, indent=2),
         encoding="utf-8",
@@ -466,7 +584,7 @@ def config_compare_row(
 ) -> dict[str, Any]:
     calibration_metrics = calibration["operating_metrics"]
     validation_metrics = validation["operating_metrics"]
-    return {
+    row = {
         "config_id": config_id,
         "model": model_path.name,
         "imgsz": imgsz,
@@ -500,28 +618,57 @@ def config_compare_row(
             "prediction_pipeline_fps"
         ],
     }
+    if "ap_metrics" in calibration:
+        calibration_ap = calibration["ap_metrics"]
+        row.update(
+            {
+                "calibration_ap50_person": calibration_ap["ap50_person"],
+                "calibration_ap75_person": calibration_ap["ap75_person"],
+                "calibration_map50": calibration_ap["map50"],
+                "calibration_map75": calibration_ap["map75"],
+                "calibration_map50_95": calibration_ap["map50_95"],
+            }
+        )
+    if "ap_metrics" in validation:
+        validation_ap = validation["ap_metrics"]
+        row.update(
+            {
+                "validation_ap50_person": validation_ap["ap50_person"],
+                "validation_ap75_person": validation_ap["ap75_person"],
+                "validation_map50": validation_ap["map50"],
+                "validation_map75": validation_ap["map75"],
+                "validation_map50_95": validation_ap["map50_95"],
+            }
+        )
+    return row
 
 
 def main() -> None:
     args = parse_args()
-    thresholds = validate_args(args)
+    thresholds, ap_iou_thresholds = validate_args(args)
     calibration_pairs = matched_pairs_for_date(
         sample_dir=args.calibration_dir,
         date=args.calibration_date,
         camera_id=args.camera_id,
         expected_count=args.expected_calibration_clips,
+        clip_stems=args.calibration_clip_stems,
     )
     validation_pairs = matched_pairs_for_date(
         sample_dir=args.validation_dir,
         date=args.validation_date,
         camera_id=args.camera_id,
         expected_count=args.expected_validation_clips,
+        clip_stems=args.validation_clip_stems,
     )
     args.output_dir.mkdir(parents=True, exist_ok=True)
 
     compare_rows = []
     config_summaries = []
-    inference_confidence_floor = min(thresholds)
+    inference_confidence_floor = (
+        args.prediction_confidence_floor
+        if args.prediction_confidence_floor is not None
+        else min(thresholds)
+    )
     for config_id in args.configs:
         config = CONFIGS[config_id]
         model_path = getattr(args, config["model_arg"])
@@ -545,6 +692,7 @@ def main() -> None:
             thresholds=thresholds,
             inference_confidence_floor=inference_confidence_floor,
             iou_threshold=args.iou_threshold,
+            ap_iou_thresholds=ap_iou_thresholds,
             frozen_threshold=None,
             output_dir=config_output_dir / f"calibration_{args.calibration_date}",
         )
@@ -562,6 +710,7 @@ def main() -> None:
             thresholds=[frozen_threshold],
             inference_confidence_floor=inference_confidence_floor,
             iou_threshold=args.iou_threshold,
+            ap_iou_thresholds=ap_iou_thresholds,
             frozen_threshold=frozen_threshold,
             output_dir=config_output_dir / f"validation_{args.validation_date}",
         )
@@ -602,7 +751,7 @@ def main() -> None:
         {"validation_rank": rank_by_config[row["config_id"]], **row}
         for row in compare_rows
     ]
-    write_csv(args.output_dir / "model_config_compare.csv", final_rows)
+    write_csv(args.output_dir / f"{args.summary_stem}.csv", final_rows)
 
     selected = ranked_rows[0]
     compare_summary = {
@@ -610,9 +759,12 @@ def main() -> None:
         "calibration_date": args.calibration_date,
         "validation_date": args.validation_date,
         "camera_id": args.camera_id,
+        "calibration_clip_ids": [video.stem for video, _ in calibration_pairs],
+        "validation_clip_ids": [video.stem for video, _ in validation_pairs],
         "device": args.device,
         "sample_every_sec": args.sample_every_sec,
         "iou_threshold": args.iou_threshold,
+        "ap_iou_thresholds": ap_iou_thresholds,
         "calibration_threshold_candidates": thresholds,
         "inference_confidence_floor": inference_confidence_floor,
         "threshold_policy": (
@@ -629,11 +781,12 @@ def main() -> None:
         "limitations": [
             "This is sampled-frame bbox detection evaluation, not unique visitor counting.",
             "The comparison covers one fixed camera and two adjacent dates only.",
+            "AP/mAP uses sampled frames and person-only labels; current mAP equals AP(person).",
             "Timing is hardware- and software-environment-specific.",
             "Aug 3 selects the final model configuration, so another date is still needed for an unbiased final holdout estimate.",
         ],
     }
-    (args.output_dir / "model_config_compare.json").write_text(
+    (args.output_dir / f"{args.summary_stem}.json").write_text(
         json.dumps(compare_summary, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )

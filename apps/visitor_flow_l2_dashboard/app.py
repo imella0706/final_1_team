@@ -11,17 +11,18 @@ import pandas as pd
 import streamlit as st
 
 
-# [Design Intent] L2-2는 YOLO를 다시 실행하지 않는다. L2-1에서 생성한
-# event/summary artifact만 읽어서 시간대별 관측량과 화면 grid 관측 분포를 검증한다.
+# [Design Intent] 대시보드는 YOLO를 다시 실행하지 않는다. L2 집계 artifact만
+# 읽어서 frame-normalized 시간대 비교와 화면 grid 관측 분포를 검증한다.
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_RESULTS_DIR = (
-    REPO_ROOT / "outputs" / "visitor_flow_mvp" / "c0241_20210802_l2_1"
+    REPO_ROOT / "outputs" / "visitor_flow_mvp" / "c0241_20210802_20210803_l2_4"
 )
 
 REQUIRED_FILES = {
     "analysis": "analysis.json",
     "dashboard_summary": "dashboard_summary.csv",
     "events": "events.parquet",
+    "frames": "frames.parquet",
     "summary": "summary.parquet",
 }
 
@@ -49,7 +50,7 @@ def resolve_results_dir(path_text: str) -> Path:
 
 
 def validate_results_dir(results_dir: Path) -> list[Path]:
-    """Return required L2-1 artifacts that are missing."""
+    """Return required L2 artifacts that are missing."""
     return [
         results_dir / filename
         for filename in REQUIRED_FILES.values()
@@ -59,15 +60,16 @@ def validate_results_dir(results_dir: Path) -> list[Path]:
 
 def load_l2_artifacts(
     results_dir: Path,
-) -> tuple[dict[str, Any], pd.DataFrame, pd.DataFrame, pd.DataFrame]:
-    """Load L2-1 analysis metadata and aggregation tables."""
+) -> tuple[dict[str, Any], pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """Load L2 analysis metadata and aggregation tables."""
     analysis = json.loads(
         (results_dir / REQUIRED_FILES["analysis"]).read_text(encoding="utf-8")
     )
     dashboard_summary = pd.read_csv(results_dir / REQUIRED_FILES["dashboard_summary"])
     summary = pd.read_parquet(results_dir / REQUIRED_FILES["summary"])
+    frames = pd.read_parquet(results_dir / REQUIRED_FILES["frames"])
     events = pd.read_parquet(results_dir / REQUIRED_FILES["events"])
-    return analysis, dashboard_summary, summary, events
+    return analysis, dashboard_summary, summary, frames, events
 
 
 def resolve_repo_path(path_text: str) -> Path:
@@ -79,8 +81,22 @@ def resolve_repo_path(path_text: str) -> Path:
 
 
 def source_video_paths(analysis: dict[str, Any]) -> list[Path]:
-    sample_dir = resolve_repo_path(str(analysis.get("sample_dir", "")))
-    return sorted((sample_dir / "videos").glob("*.mp4"))
+    source_videos = [
+        resolve_repo_path(str(path))
+        for path in analysis.get("source_videos", [])
+        if str(path)
+    ]
+    if source_videos:
+        return sorted(path for path in source_videos if path.is_file())
+
+    sample_dirs = analysis.get("sample_dirs") or []
+    if not sample_dirs and analysis.get("sample_dir"):
+        sample_dirs = [analysis["sample_dir"]]
+    videos: list[Path] = []
+    for sample_dir_text in sample_dirs:
+        sample_dir = resolve_repo_path(str(sample_dir_text))
+        videos.extend((sample_dir / "videos").rglob("*.mp4"))
+    return sorted(videos)
 
 
 def preview_video_by_source_stem(results_dir: Path) -> dict[str, Path]:
@@ -130,13 +146,15 @@ def render_video_validation(
 
     source_videos = source_video_paths(analysis)
     if not source_videos:
-        st.warning("analysis.json의 sample_dir 아래에서 원본 mp4를 찾지 못했습니다.")
+        st.warning("analysis.json에서 원본 mp4 경로를 찾지 못했습니다.")
         return
 
     previews = preview_video_by_source_stem(results_dir)
     preview_source_stems = set(previews)
     selectable_videos = [
-        video_path for video_path in source_videos if video_path.stem in preview_source_stems
+        video_path
+        for video_path in source_videos
+        if video_path.stem in preview_source_stems
     ]
     if not selectable_videos:
         selectable_videos = source_videos
@@ -211,11 +229,15 @@ def render_scope_notice() -> None:
 def render_metric_cards(analysis: dict[str, Any]) -> None:
     first, second, third, fourth = st.columns(4)
     peak_bucket = str(analysis.get("peak_time_bucket", ""))
+    peak_date_id = str(analysis.get("peak_date_id", ""))
     top_zone_id = str(analysis.get("top_zone_id", "-"))
-    first.metric("가장 붐빈 시간대", peak_bucket[11:16] if len(peak_bucket) >= 16 else "-")
+    peak_time_label = peak_bucket[11:16] if len(peak_bucket) >= 16 else "-"
+    if peak_date_id:
+        peak_time_label = f"{peak_date_id} {peak_time_label}"
+    first.metric("상대 피크 시간대", peak_time_label)
     second.metric(
-        "그 시간대 보행 관측",
-        f"{int(analysis.get('peak_time_bucket_observations', 0))}건",
+        "프레임당 평균 관측",
+        f"{float(analysis.get('peak_mean_persons_per_sampled_frame', 0.0)):.3f}",
     )
     third.metric("화면 기준 최다 관측 구역", format_zone_for_owner(top_zone_id))
     fourth.metric("분석한 CCTV 영상", f"{int(analysis['clip_count'])}개")
@@ -240,6 +262,18 @@ def render_metric_cards(analysis: dict[str, Any]) -> None:
                     "의미": "sampled frame에서 사람 bbox가 잡힌 총 횟수",
                 },
                 {
+                    "항목": "peak p95",
+                    "값": (
+                        f"{float(analysis.get('peak_p95_persons_per_sampled_frame', 0.0)):.3f}"
+                    ),
+                    "의미": "피크 시간대 sampled frame별 관측 count의 95 percentile",
+                },
+                {
+                    "항목": "peak max",
+                    "값": f"{int(analysis.get('peak_max_persons_per_sampled_frame', 0))}",
+                    "의미": "피크 시간대 단일 sampled frame에서 가장 많이 잡힌 관측량",
+                },
+                {
                     "항목": "confidence",
                     "값": f"{float(analysis['confidence_threshold']):.2f}",
                     "의미": "YOLO가 사람이라고 판단한 결과를 남기는 최소 신뢰도 기준",
@@ -260,10 +294,18 @@ def render_metric_cards(analysis: dict[str, Any]) -> None:
 
 
 def render_time_trend(dashboard_summary: pd.DataFrame) -> None:
-    st.subheader("1. 시간대별 보행 관측량")
+    st.subheader("1. 시간대별 프레임 정규화 보행 관측")
     chart = dashboard_summary.copy()
     chart["time_label"] = pd.to_datetime(chart["time_bucket"]).dt.strftime("%H:%M")
-    chart = chart.set_index("time_label")[["total_person_detection_observations"]]
+    if "date_id" in chart.columns:
+        chart = chart.pivot_table(
+            index="time_label",
+            columns="date_id",
+            values="mean_persons_per_sampled_frame",
+            aggfunc="first",
+        ).sort_index()
+    else:
+        chart = chart.set_index("time_label")[["mean_persons_per_sampled_frame"]]
     st.bar_chart(chart, height=320)
 
     display = dashboard_summary.copy()
@@ -277,16 +319,37 @@ def render_time_trend(dashboard_summary: pd.DataFrame) -> None:
     st.dataframe(
         display[
             [
+                "date_id",
                 "time_bucket",
+                "sampled_frame_count",
                 "total_person_detection_observations",
+                "mean_persons_per_sampled_frame",
+                "p95_persons_per_sampled_frame",
+                "max_persons_per_sampled_frame",
+                "relative_crowding_score",
                 "marketing_signal_label",
             ]
         ],
         hide_index=True,
         width="stretch",
         column_config={
+            "date_id": "날짜",
             "time_bucket": "시간대",
-            "total_person_detection_observations": "보행 관측량",
+            "sampled_frame_count": "sampled frame",
+            "total_person_detection_observations": "관측 합계",
+            "mean_persons_per_sampled_frame": st.column_config.NumberColumn(
+                "프레임당 평균",
+                format="%.3f",
+            ),
+            "p95_persons_per_sampled_frame": st.column_config.NumberColumn(
+                "p95",
+                format="%.3f",
+            ),
+            "max_persons_per_sampled_frame": "max",
+            "relative_crowding_score": st.column_config.NumberColumn(
+                "상대 붐빔",
+                format="%.3f",
+            ),
             "marketing_signal_label": "시간대 해석 후보",
         },
     )
@@ -294,17 +357,26 @@ def render_time_trend(dashboard_summary: pd.DataFrame) -> None:
         st.dataframe(
             display[
                 [
+                    "date_id",
                     "time_bucket",
                     "top_zone_label",
                     "top_zone_observations",
+                    "top_zone_mean_persons_per_sampled_frame",
                 ]
             ],
             hide_index=True,
             width="stretch",
             column_config={
+                "date_id": "날짜",
                 "time_bucket": "시간대",
                 "top_zone_label": "화면 기준 최다 관측 구역",
                 "top_zone_observations": "구역 관측량",
+                "top_zone_mean_persons_per_sampled_frame": (
+                    st.column_config.NumberColumn(
+                        "구역 프레임당 평균",
+                        format="%.3f",
+                    )
+                ),
             },
         )
 
@@ -315,17 +387,21 @@ def grid_labels(rows: int, cols: int) -> list[str]:
 
 def build_heatmap_table(
     summary: pd.DataFrame,
-    selected_time_bucket: str,
+    selected_bucket_key: str,
     grid_rows: int,
     grid_cols: int,
 ) -> pd.DataFrame:
-    if selected_time_bucket == ALL_TIME_BUCKET:
+    if selected_bucket_key == ALL_TIME_BUCKET:
         selected = (
             summary.groupby("zone_id", as_index=False)["person_detection_observations"]
             .sum()
         )
     else:
-        selected = summary.loc[summary["time_bucket"] == selected_time_bucket]
+        selected_date_id, selected_time_bucket = selected_bucket_key.split("|", 1)
+        selected = summary.loc[
+            (summary["date_id"].astype(str) == selected_date_id)
+            & (summary["time_bucket"].astype(str) == selected_time_bucket)
+        ]
     counts = {
         zone_id: 0
         for zone_id in grid_labels(rows=grid_rows, cols=grid_cols)
@@ -363,24 +439,29 @@ def render_grid_heatmap(
         "이 표를 입간판 설치 위치나 실제 면적당 밀집도로 해석하면 안 됩니다."
     )
 
-    time_bucket_options = sorted(
-        str(value) for value in dashboard_summary["time_bucket"].unique()
-    )
-    time_options = [ALL_TIME_BUCKET] + time_bucket_options
-    selected_time = st.selectbox(
-        "확인할 시간대",
-        options=time_options,
+    bucket_rows = dashboard_summary[["date_id", "time_bucket"]].drop_duplicates()
+    bucket_rows = bucket_rows.sort_values(["date_id", "time_bucket"])
+    bucket_labels = {
+        f"{row.date_id}|{row.time_bucket}": (
+            f"{row.date_id} "
+            f"{pd.to_datetime(row.time_bucket).strftime('%H:%M')}"
+        )
+        for row in bucket_rows.itertuples(index=False)
+    }
+    bucket_options = [ALL_TIME_BUCKET] + list(bucket_labels)
+    selected_bucket_key = st.selectbox(
+        "확인할 날짜/시간대",
+        options=bucket_options,
         index=0,
         format_func=lambda value: (
-            "전체 시간대"
+            "전체 날짜/시간대"
             if value == ALL_TIME_BUCKET
-            else pd.to_datetime(value).strftime("%H:%M")
+            else bucket_labels.get(value, value)
         ),
     )
     st.caption(
-        "시간대 목록은 임의로 고른 시간이 아니라 AIHub C0241 폴더에 실제로 있는 "
-        "8개 영상의 시작 시각을 1시간 단위로 묶은 결과입니다. "
-        "예를 들어 17시는 17:09와 17:51 두 clip이 합쳐진 값입니다."
+        "시간대 목록은 입력 clip의 시작 시각을 1시간 단위로 묶은 결과입니다. "
+        "같은 날짜의 여러 clip이 같은 hour bucket에 있으면 합산됩니다."
     )
 
     grid = analysis.get("grid", {})
@@ -388,7 +469,7 @@ def render_grid_heatmap(
     grid_rows = int(grid.get("rows", 4))
     heatmap = build_heatmap_table(
         summary=summary,
-        selected_time_bucket=selected_time,
+        selected_bucket_key=selected_bucket_key,
         grid_rows=grid_rows,
         grid_cols=grid_cols,
     )
@@ -413,12 +494,18 @@ def render_grid_heatmap(
             hotspot_rank=("hotspot_rank", "min"),
             marketing_signal=("marketing_signal", "first"),
         )
-        if selected_time == ALL_TIME_BUCKET
-        else summary.loc[summary["time_bucket"] == selected_time]
+        if selected_bucket_key == ALL_TIME_BUCKET
+        else summary.loc[
+            (summary["date_id"].astype(str) == selected_bucket_key.split("|", 1)[0])
+            & (
+                summary["time_bucket"].astype(str)
+                == selected_bucket_key.split("|", 1)[1]
+            )
+        ]
         .sort_values("person_detection_observations", ascending=False)
         .reset_index(drop=True)
     )
-    if selected_time == ALL_TIME_BUCKET:
+    if selected_bucket_key == ALL_TIME_BUCKET:
         max_observations = zone_rows["person_detection_observations"].max()
         if max_observations > 0:
             zone_rows["density_score"] = (
@@ -461,26 +548,28 @@ def render_grid_heatmap(
 def render_marketing_interpretation(dashboard_summary: pd.DataFrame) -> None:
     st.subheader("4. 마케팅 해석 후보")
     peak = dashboard_summary.sort_values(
-        "total_person_detection_observations",
+        "mean_persons_per_sampled_frame",
         ascending=False,
     ).iloc[0]
     peak_time = pd.to_datetime(peak["time_bucket"]).strftime("%H:%M")
     st.info(
-        f"이 데이터에서는 {peak_time}에 보행 관측량이 가장 높았습니다. "
-        f"해당 시간대에 CCTV 화면에서 사람이 보인 관측은 총 {int(peak['total_person_detection_observations'])}건입니다. "
-        "이 값은 시간대별 붐빔 정도를 비교하기 위한 지표이며, 실제 방문객 수가 아닙니다."
+        f"이 데이터에서는 {peak['date_id']} {peak_time}의 프레임당 평균 관측이 가장 높았습니다. "
+        f"평균은 {float(peak['mean_persons_per_sampled_frame']):.3f}명/frame이고, "
+        f"관측 합계는 {int(peak['total_person_detection_observations'])}건입니다. "
+        "주지표는 sampled frame 수 차이를 보정한 값이며, 실제 방문객 수가 아닙니다."
     )
     st.markdown(
         "- 오전 시간대 관측량이 높으면 아침 판촉 후보로 볼 수 있습니다.\n"
         "- 점심/오후 시간대 관측량은 매장 전면 노출이 커질 수 있는 시간대 후보로 볼 수 있습니다.\n"
         "- 늦은 저녁 관측량은 테이크아웃, 배달 픽업 후보 시간대로 볼 수 있습니다.\n"
-        "- 입간판 위치 같은 공간 기반 추천은 L2-3 수동 ROI 검증 이후에만 다룹니다.\n"
+        "- 입간판 위치 같은 공간 기반 추천은 Post-MVP ROI 검증 이후에만 다룹니다.\n"
         "- 현재 마케팅 후보는 규칙 기반 가설이며 매출 상승 검증 결과가 아닙니다."
     )
 
 
 def render_raw_tables(
     analysis: dict[str, Any],
+    frames: pd.DataFrame,
     events: pd.DataFrame,
     summary: pd.DataFrame,
     results_dir: Path,
@@ -490,9 +579,11 @@ def render_raw_tables(
         st.json(analysis)
     with st.expander("summary.parquet sample", expanded=False):
         st.dataframe(summary.head(50), hide_index=True, width="stretch")
+    with st.expander("frames.parquet sample", expanded=False):
+        st.dataframe(frames.head(50), hide_index=True, width="stretch")
     with st.expander("events.parquet sample", expanded=False):
         st.dataframe(events.head(50), hide_index=True, width="stretch")
-    st.caption(f"현재 읽는 L2-1 결과 폴더: {results_dir}")
+    st.caption(f"현재 읽는 L2 결과 폴더: {results_dir}")
 
 
 def main() -> None:
@@ -501,13 +592,13 @@ def main() -> None:
         layout="wide",
     )
     st.title("CCTV 매장 앞 보행 관측 대시보드")
-    st.caption("C0241 · 2021-08-02 · L2-1 artifact 기반 L2-2 POC")
+    st.caption("C0241 · 2021-08-02/2021-08-03 · L2-4 frame-normalized artifact")
     render_scope_notice()
 
     with st.sidebar:
         st.header("데이터 경로")
         results_path_text = st.text_input(
-            "L2-1 결과 폴더",
+            "L2 결과 폴더",
             value=str(DEFAULT_RESULTS_DIR.relative_to(REPO_ROOT)),
         )
         st.caption("절대 경로 또는 저장소 루트 기준 상대 경로를 사용할 수 있습니다.")
@@ -515,14 +606,16 @@ def main() -> None:
     results_dir = resolve_results_dir(results_path_text)
     missing_files = validate_results_dir(results_dir)
     if missing_files:
-        st.error("필수 L2-1 산출물을 찾지 못했습니다.")
+        st.error("필수 L2 산출물을 찾지 못했습니다.")
         st.code("\n".join(str(path) for path in missing_files))
         st.stop()
 
     try:
-        analysis, dashboard_summary, summary, events = load_l2_artifacts(results_dir)
+        analysis, dashboard_summary, summary, frames, events = load_l2_artifacts(
+            results_dir
+        )
     except (json.JSONDecodeError, OSError, KeyError, pd.errors.ParserError) as error:
-        st.error(f"L2-1 산출물을 읽지 못했습니다: {error}")
+        st.error(f"L2 산출물을 읽지 못했습니다: {error}")
         st.stop()
 
     render_metric_cards(analysis)
@@ -535,7 +628,7 @@ def main() -> None:
     st.divider()
     render_marketing_interpretation(dashboard_summary)
     st.divider()
-    render_raw_tables(analysis, events, summary, results_dir)
+    render_raw_tables(analysis, frames, events, summary, results_dir)
 
 
 if __name__ == "__main__":
