@@ -8,6 +8,11 @@ from app.modules.ad_copy.service import (
     ModelProviderError,
     generate_ad_copy,
 )
+from app.modules.ad_copy.trend_context import (
+    TrendCardDataError,
+    TrendCardNotFoundError,
+    TrendCardNotUsableError,
+)
 
 router = APIRouter(prefix="/ad-copies", tags=["ad-copies"])
 
@@ -21,6 +26,16 @@ async def models() -> list[ModelOption]:
 async def generate(request: AdCopyRequest) -> AdCopyResponse:
     try:
         return await generate_ad_copy(request)
+    except (TrendCardNotFoundError, TrendCardNotUsableError) as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(error),
+        ) from error
+    except TrendCardDataError as error:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=str(error),
+        ) from error
     except ModelNotConfiguredError as error:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,

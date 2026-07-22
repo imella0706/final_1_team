@@ -1,0 +1,101 @@
+[
+  {
+    "example_id": "meme_like_example_single_black_sesame_latte",
+    "input": {
+      "business_name": "구름잔",
+      "business_type": "cafe",
+      "situation": "new_menu",
+      "channel": "instagram",
+      "tone": "playful",
+      "age_groups": ["twenties"],
+      "target_audiences": ["office_workers"],
+      "product_names": ["흑임자 크림라떼"],
+      "features": ["고소한 흑임자 크림을 올린 라떼", "아이스로 제공"],
+      "promotion": null
+    },
+    "good_output": {
+      "primary_copy": "고소한 흑임자 크림도, 시원한 아이스 한 잔도. 그래서 니가 좋아, 흑임자 크림라떼.",
+      "channel_post_opening": "고소하고 시원해서 니가 좋아, 흑임자 크림라떼."
+    },
+    "bad_output": {
+      "primary_copy": "니가 좋아, 흑임자 크림라떼, 아이스, 흑임자 크림.",
+      "channel_post_opening": "니가 좋아, 흑임자 크림라떼, 흑임자 크림, 아이스."
+    },
+    "rationale": [
+      "good은 입력된 제공 방식과 크림 특징을 좋아하는 이유로 연결한다.",
+      "good은 대표 상품 하나에 고백 구조를 집중한다.",
+      "bad는 상품과 특징을 쉼표로 나열해 문장과 관계를 만들지 못한다."
+    ],
+    "demonstrates": [
+      "single_product_focus",
+      "feature_grounding",
+      "natural_pattern_adaptation"
+    ]
+  },
+  {
+    "example_id": "meme_like_example_multi_green_onion_bagel_tea",
+    "input": {
+      "business_name": "소담굽기",
+      "business_type": "bakery",
+      "situation": "new_menu",
+      "channel": "instagram",
+      "tone": "friendly",
+      "age_groups": ["twenties", "thirties"],
+      "target_audiences": ["students"],
+      "product_names": ["대파 치즈 베이글", "레몬 홍차"],
+      "features": ["대파와 치즈를 넣은 베이글", "레몬 홍차와 세트로 구성"],
+      "promotion": null
+    },
+    "good_output": {
+      "primary_copy": "니가 좋아, 대파 치즈 베이글. 그리고 네 곁을 맞춘 레몬 홍차까지, 함께라서 더 좋은 세트.",
+      "channel_post_opening": "니가 좋아, 대파 치즈 베이글. 레몬 홍차와 함께여서 더 좋은 세트."
+    },
+    "bad_output": {
+      "primary_copy": "니가 좋아, 대파 치즈 베이글, 레몬 홍차.",
+      "channel_post_opening": "니가 좋아, 대파 치즈 베이글, 레몬 홍차, 세트."
+    },
+    "rationale": [
+      "good은 두 상품을 단순 나열하지 않고 서로 곁을 맞추는 세트 관계로 표현한다.",
+      "good은 입력에 있는 재료와 세트 정보만 사용한다.",
+      "bad는 두 상품명을 밈 뒤에 그대로 이어 붙여 조합의 이유가 보이지 않는다."
+    ],
+    "demonstrates": [
+      "multi_product_relationship",
+      "factual_grounding",
+      "avoid_comma_listing"
+    ]
+  },
+  {
+    "example_id": "meme_like_example_promotion_perilla_mushroom_noodles",
+    "input": {
+      "business_name": "밤결식탁",
+      "business_type": "restaurant",
+      "situation": "event",
+      "channel": "instagram",
+      "tone": "warm",
+      "age_groups": ["thirties"],
+      "target_audiences": ["solo"],
+      "product_names": ["들깨 버섯 칼국수"],
+      "features": ["들깨와 버섯을 넣은 칼국수", "1인분 주문 가능"],
+      "promotion": "평일 점심 주문 시 만두 2개 제공"
+    },
+    "good_output": {
+      "primary_copy": "들깨와 버섯을 담은 한 그릇, 평일 점심에도 결국 니가 좋아, 들깨 버섯 칼국수.",
+      "channel_post_opening": "평일 점심에도 결국 니가 좋아, 들깨 버섯 칼국수. 한 그릇 주문하면 만두 2개도 함께 드려요."
+    },
+    "bad_output": {
+      "primary_copy": "니가 좋아, 들깨 버섯 칼국수, 만두 2개, 평일 점심.",
+      "channel_post_opening": "니가 좋아, 들깨 버섯 칼국수, 1인분, 만두 2개."
+    },
+    "rationale": [
+      "good은 밈 표현을 상품 훅에 쓰고 프로모션은 다음 문장에 분리한다.",
+      "good은 입력에 있는 재료, 주문 단위, 제공 조건만 사용한다.",
+      "bad는 상품과 혜택, 시간 조건을 한 줄에 나열해 핵심 관계를 흐린다."
+    ],
+    "demonstrates": [
+      "promotion_integration",
+      "hook_then_benefit",
+      "factual_grounding"
+    ]
+  }
+]

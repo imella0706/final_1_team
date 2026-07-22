@@ -1,0 +1,9 @@
+{
+  "schema_version": "1.0",
+  "source_kind": "assistant_authored_scaffold",
+  "review_status": "seed_needs_review",
+  "rights_review_status": "seed_needs_review",
+  "reviewed_by": null,
+  "reviewed_at": null,
+  "notes": "현재 8개 평가 사례와 3개 few-shot 예시는 실험 구조 확인용 초안이다. 의사결정용 전체 평가 전에 카피 품질, 사실성, 권리, split 격리를 사람이 검수한다."
+}

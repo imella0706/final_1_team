@@ -106,6 +106,7 @@ class Settings(BaseSettings):
     reference_source: str = "wikimedia"
     reference_max_results: int = 3
     product_visual_db_path: str = "product_visual_profiles.sqlite3"
+    trend_card_path: Path | None = None
     pexels_api_key: SecretStr | None = None
     unsplash_access_key: SecretStr | None = None
 

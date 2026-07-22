@@ -1,0 +1,64 @@
+{
+  "experiment_id": "single-trendcard-five-arm-v1",
+  "description": "현재 수동 TrendCard 한 장에서 prompt 전략과 LoRA adapter를 비교하는 smoke 평가",
+  "base_model": "Qwen/Qwen2.5-7B-Instruct",
+  "trend_card_path": "../../../gather_data/trendcard.json",
+  "dataset_path": "meme_ad_copy_cases.json",
+  "few_shot_path": "few_shot_examples.json",
+  "fixture_review_path": "meme_fixture_review.json",
+  "arms": [
+    {
+      "id": "trendcard",
+      "label": "TrendCard only",
+      "strategy": "trendcard",
+      "enabled": true
+    },
+    {
+      "id": "few_shot_good",
+      "label": "TrendCard + good-only few-shot",
+      "strategy": "few_shot_good",
+      "enabled": true
+    },
+    {
+      "id": "few_shot_good_bad",
+      "label": "TrendCard + good/bad few-shot",
+      "strategy": "few_shot_good_bad",
+      "enabled": true
+    },
+    {
+      "id": "structured_cot",
+      "label": "TrendCard + structured internal planning",
+      "strategy": "structured_cot",
+      "enabled": true
+    },
+    {
+      "id": "lora",
+      "label": "TrendCard + LoRA",
+      "strategy": "lora",
+      "enabled": false,
+      "disabled_reason": "LoRA adapter와 GPU serving endpoint가 아직 준비되지 않았습니다.",
+      "base_url": null,
+      "model": null,
+      "api_key_env": null,
+      "base_revision": null,
+      "adapter_revision": null
+    }
+  ],
+  "generation": {
+    "temperature": 0.75,
+    "max_tokens": 2000,
+    "max_attempts": 1,
+    "repeats": 3,
+    "concurrency": 1,
+    "generation_seed": 20260721,
+    "shuffle_seed": 20260721
+  },
+  "judge": {
+    "enabled": true,
+    "model": "gpt-4.1-mini-2025-04-14",
+    "base_url": "https://api.openai.com/v1",
+    "api_key_env": "BRANDMATE_OPENAI_API_KEY",
+    "temperature": 0,
+    "timeout_seconds": 60
+  }
+}

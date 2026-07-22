@@ -10,6 +10,7 @@ from app.modules.ad_copy.models import get_model_spec
 from app.modules.ad_copy.output_validator import build_fallback_copy, validate_copy_output
 from app.modules.ad_copy.prompt import PROMPT_VERSION, build_prompt
 from app.modules.ad_copy.schemas import AdCopyContent, AdCopyRequest, AdCopyResponse
+from app.modules.ad_copy.trend_context import TrendCard, load_trend_card
 from app.modules.model_runtime.llm.registry import (
     get_text_model_config,
     infer_provider,
@@ -46,11 +47,13 @@ def _request_payload(
     provider: TextRuntimeProvider,
     provider_model_name: str,
     structured: bool,
+    trend_card: TrendCard | None = None,
     supports_system_role: bool = True,
     invalid_content: str | None = None,
 ) -> dict[str, Any]:
     messages = build_prompt_messages(
         request,
+        trend_card=trend_card,
         supports_system_role=supports_system_role,
         invalid_content=invalid_content,
     )
@@ -82,6 +85,7 @@ def _request_payload(
 def build_prompt_messages(
     request: AdCopyRequest,
     *,
+    trend_card: TrendCard | None = None,
     supports_system_role: bool = True,
     invalid_content: str | None = None,
 ) -> list[dict[str, str]]:
@@ -89,7 +93,7 @@ def build_prompt_messages(
         "당신은 한국 소상공인을 위한 광고 카피라이터입니다. "
         "입력에 없는 사실을 만들지 말고, 요청한 JSON 객체만 출력하세요."
     )
-    user_prompt = build_prompt(request)
+    user_prompt = build_prompt(request, trend_card)
     if invalid_content:
         user_prompt = (
             f"{user_prompt}\n\n"
@@ -159,6 +163,7 @@ def _parse_content(content: str) -> AdCopyContent:
 async def _call_model(
     request: AdCopyRequest,
     *,
+    trend_card: TrendCard | None = None,
     invalid_content: str | None = None,
 ) -> str:
     try:
@@ -196,6 +201,7 @@ async def _call_model(
                     provider=provider,
                     provider_model_name=provider_model_name,
                     structured=model_spec.supports_structured_output,
+                    trend_card=trend_card,
                     supports_system_role=model_spec.supports_system_role,
                     invalid_content=invalid_content,
                 ),
@@ -213,6 +219,7 @@ async def _call_model(
                         provider=provider,
                         provider_model_name=provider_model_name,
                         structured=False,
+                        trend_card=trend_card,
                         supports_system_role=model_spec.supports_system_role,
                         invalid_content=invalid_content,
                     ),
@@ -254,6 +261,18 @@ def _add_prohibited_term_warnings(
 async def generate_ad_copy(request: AdCopyRequest) -> AdCopyResponse:
     started_at = perf_counter()
     model_spec = get_model_spec(request.model)
+    use_active_trend_card = (
+        request.trend_card_id is not None or request.channel.value == "instagram"
+    )
+    trend_card = (
+        load_trend_card(
+            request.trend_card_id,
+            require_channel=request.channel.value,
+            prohibited_terms=request.prohibited_terms,
+        )
+        if use_active_trend_card
+        else None
+    )
     warnings: list[str] = []
     content: AdCopyContent | None = None
     last_error: Exception | None = None
@@ -263,8 +282,10 @@ async def generate_ad_copy(request: AdCopyRequest) -> AdCopyResponse:
     llm_prompt = {
         "prompt_version": PROMPT_VERSION,
         "model": request.model.value,
+        "trend_card_id": trend_card.meme_id if trend_card else None,
         "messages": build_prompt_messages(
             request,
+            trend_card=trend_card,
             supports_system_role=model_spec.supports_system_role,
         ),
     }
@@ -273,9 +294,13 @@ async def generate_ad_copy(request: AdCopyRequest) -> AdCopyResponse:
         attempts = attempt + 1
         raw_content: str | None = None
         try:
-            raw_content = await _call_model(request, invalid_content=invalid_content)
+            raw_content = await _call_model(
+                request,
+                trend_card=trend_card,
+                invalid_content=invalid_content,
+            )
             candidate = _parse_content(raw_content)
-            validation = validate_copy_output(candidate, request)
+            validation = validate_copy_output(candidate, request, trend_card)
             if validation.valid:
                 content = candidate
                 output_repaired = attempt > 0
@@ -292,7 +317,17 @@ async def generate_ad_copy(request: AdCopyRequest) -> AdCopyResponse:
             output_repaired = True
 
         if attempt == 2:
-            content = build_fallback_copy(request, warnings)
+            fallback = build_fallback_copy(request, warnings, trend_card)
+            fallback_validation = validate_copy_output(fallback, request, trend_card)
+            if not fallback_validation.valid:
+                last_error = InvalidModelOutputError(
+                    "fallback validation failed: "
+                    + "; ".join(fallback_validation.warnings)
+                )
+                warnings = fallback_validation.warnings
+                content = None
+            else:
+                content = fallback
             output_repaired = True
 
     if content is None:
@@ -307,6 +342,7 @@ async def generate_ad_copy(request: AdCopyRequest) -> AdCopyResponse:
         routed_model=model_spec.routed_model,
         provider=model_spec.provider,
         prompt_version=PROMPT_VERSION,
+        trend_card_id=trend_card.meme_id if trend_card else None,
         llm_prompt=llm_prompt,
         latency_ms=latency_ms,
         attempts=attempts,

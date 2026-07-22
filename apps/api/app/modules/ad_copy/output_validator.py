@@ -13,6 +13,7 @@ from app.modules.ad_copy.schemas import (
     ValidationCheck,
     VisualBrief,
 )
+from app.modules.ad_copy.trend_context import TrendCard
 
 
 @dataclass(frozen=True)
@@ -25,12 +26,113 @@ def _contains_any(text: str, terms: list[str]) -> list[str]:
     return [term for term in terms if term and term in text]
 
 
-def validate_copy_output(content: AdCopyContent, request: AdCopyRequest) -> CopyValidationResult:
+def _trend_markers(card: TrendCard) -> list[str]:
+    return sorted(
+        {marker.strip().casefold() for marker in card.copy_markers if marker.strip()},
+        key=len,
+        reverse=True,
+    )
+
+
+def _contains_trend_reference(text: str, card: TrendCard) -> bool:
+    normalized = text.casefold()
+    return any(marker in normalized for marker in _trend_markers(card))
+
+
+def _first_sentence(text: str) -> str:
+    for part in re.split(r"(?:\r?\n)+|(?<=[.!?。！？])\s+", text.strip()):
+        if part.strip():
+            return part.strip()
+    return ""
+
+
+def _opening_paragraphs(text: str, limit: int = 3) -> str:
+    paragraphs = [
+        part.strip()
+        for part in re.split(r"(?:\r?\n){2,}", text.strip())
+        if part.strip()
+    ]
+    return "\n".join(paragraphs[:limit])
+
+
+def _trend_post_warnings(
+    content: AdCopyContent,
+    channel: str,
+    card: TrendCard,
+) -> list[str]:
+    recommendation = content.channel_recommendation
+    warnings: list[str] = []
+    if channel == "instagram":
+        if not _contains_trend_reference(_first_sentence(recommendation.caption), card):
+            warnings.append(
+                "선택한 TrendCard가 channel_recommendation.caption의 첫 문장에 "
+                f"반영되지 않았습니다: {card.meme_id}"
+            )
+        caption = recommendation.caption.strip()
+        if not caption or caption not in recommendation.publish_body:
+            warnings.append(
+                "channel_recommendation.publish_body에 Instagram caption 원문이 "
+                f"포함되지 않았습니다: {card.meme_id}"
+            )
+        return warnings
+    if channel == "naver_blog":
+        if not _contains_trend_reference(
+            _opening_paragraphs(recommendation.publish_body), card
+        ):
+            warnings.append(
+                "선택한 TrendCard가 channel_recommendation.publish_body의 도입부에 "
+                f"반영되지 않았습니다: {card.meme_id}"
+            )
+        return warnings
+
+    title_or_opening = (
+        f"{recommendation.publish_title} "
+        f"{_first_sentence(recommendation.publish_body)}"
+    )
+    if not _contains_trend_reference(title_or_opening, card):
+        warnings.append(
+            "선택한 TrendCard가 channel_recommendation.publish_title 또는 "
+            f"publish_body의 첫 문장에 반영되지 않았습니다: {card.meme_id}"
+        )
+    return warnings
+
+
+def _has_mechanical_product_enumeration(
+    content: AdCopyContent,
+    request: AdCopyRequest,
+    card: TrendCard,
+) -> bool:
+    recommendation = content.channel_recommendation
+    customer_texts = [
+        *content.headlines,
+        *content.body_copies,
+        recommendation.overlay_headline,
+        recommendation.caption,
+        recommendation.publish_title,
+        recommendation.publish_body,
+    ]
+    for text in customer_texts:
+        for sentence in re.split(r"(?:\r?\n)+|(?<=[.!?。！？])\s+", text):
+            if not _contains_trend_reference(sentence, card):
+                continue
+            mentioned_products = [
+                product for product in request.product_names if product in sentence
+            ]
+            if len(mentioned_products) >= 2 and sentence.count(",") >= 2:
+                return True
+    return False
+
+
+def validate_copy_output(
+    content: AdCopyContent,
+    request: AdCopyRequest,
+    trend_card: TrendCard | None = None,
+) -> CopyValidationResult:
     warnings: list[str] = []
     channel_text = str(content.channel_recommendation.model_dump())
-    copy_text = " ".join(
-        content.headlines + content.body_copies + content.ctas + content.hashtags
-    ) + " " + channel_text
+    all_primary_copy_text = " ".join(content.headlines + content.body_copies + content.ctas)
+    visible_primary_copy_text = " ".join(content.headlines[:1] + content.body_copies[:1])
+    copy_text = f"{all_primary_copy_text} {' '.join(content.hashtags)} {channel_text}"
     is_blog = request.channel.value == "naver_blog"
     visual_text = "" if is_blog else str(content.visual_brief.model_dump())
 
@@ -47,6 +149,21 @@ def validate_copy_output(content: AdCopyContent, request: AdCopyRequest) -> Copy
             "금지 표현 포함: "
             + ", ".join(sorted(set(prohibited_in_copy + prohibited_in_visual)))
         )
+
+    if trend_card:
+        if not _contains_trend_reference(visible_primary_copy_text, trend_card):
+            warnings.append(
+                "선택한 TrendCard가 화면에 표시되는 첫 광고 문구에 반영되지 않았습니다: "
+                f"{trend_card.meme_id}"
+            )
+        warnings.extend(
+            _trend_post_warnings(content, request.channel.value, trend_card)
+        )
+        if _has_mechanical_product_enumeration(content, request, trend_card):
+            warnings.append(
+                "TrendCard 응용 표현에 여러 상품명을 쉼표로 단순 나열했습니다: "
+                f"{trend_card.meme_id}"
+            )
 
     if not is_blog:
         visual_products = {item.product_name for item in content.visual_brief.products_to_show}
@@ -100,10 +217,41 @@ def _clean_hashtag(value: str) -> str:
     return f"#{cleaned}" if cleaned else ""
 
 
+def _render_trend_pattern(
+    card: TrendCard | None,
+    request: AdCopyRequest,
+) -> str:
+    if card is None:
+        return ""
+    primary_product = (
+        request.product_names[0] if request.product_names else request.business_name
+    )
+    situation = {
+        "new_menu": "새 메뉴가 생각나는 순간",
+        "discount": "알뜰하게 즐기고 싶은 순간",
+        "event": "특별한 소식이 생각나는 순간",
+        "delivery": "집에서 메뉴가 생각나는 순간",
+        "takeout": "가볍게 챙겨 가고 싶은 순간",
+        "visit": "카페에 들르고 싶은 순간",
+    }.get(request.situation.value, "메뉴가 생각나는 순간")
+    pattern = card.text_patterns[0] if card.text_patterns else card.display_name
+    replacements = {
+        "{메뉴}": primary_product,
+        "{상품}": primary_product,
+        "{상황}": situation,
+        "{방문을 유도할 대상}": request.business_name,
+    }
+    rendered = pattern
+    for placeholder, value in replacements.items():
+        rendered = rendered.replace(placeholder, value)
+    return re.sub(r"\{[^{}]+\}", primary_product, rendered).strip()
+
+
 def _build_instagram_package(
     request: AdCopyRequest,
     products: str,
     prohibited_terms: list[str],
+    trend_card: TrendCard | None = None,
 ) -> tuple[str, str, str, list[str]]:
     product = request.product_names[0] if request.product_names else products
     sales_features = _sales_features(request.features)
@@ -115,8 +263,9 @@ def _build_instagram_package(
         if item.strip()
     ]
 
+    trend_headline = _render_trend_pattern(trend_card, request)
     overlay_headline = remove_prohibited_terms(
-        f"오늘은 달콤하게, 특별하게", prohibited_terms
+        trend_headline or "오늘은 달콤하게, 특별하게", prohibited_terms
     )
     opening = f"{request.business_name}의 {product}를 소개합니다."
     if sales_features:
@@ -127,6 +276,8 @@ def _build_instagram_package(
         "",
         f"{product}이(가) 필요한 순간에 자연스럽게 어울리는 메뉴입니다.",
     ]
+    if trend_headline:
+        lines.insert(0, trend_headline)
     if price:
         lines.extend(["", f"{price}에 즐기는 달콤한 선택."])
     if region:
@@ -151,6 +302,7 @@ def _build_blog_package(
     body: str,
     cta: str,
     hashtags: list[str],
+    trend_card: TrendCard | None = None,
 ) -> dict[str, object]:
     photo_notes = request.blog_photo_notes or []
     photo_order = [_photo_label(note, index + 1) for index, note in enumerate(photo_notes)]
@@ -167,6 +319,8 @@ def _build_blog_package(
     title_suffix, opening, visit_guidance = _blog_situation_copy(
         situation, request.business_name, product_text
     )
+    trend_opening = _render_trend_pattern(trend_card, request)
+    intro = "\n".join(part for part in [trend_opening, opening] if part)
     title = f"{region_label + ' ' if region_label else ''}카페 {request.business_name}, {title_suffix}"
     menu_photo_marker = f"[{photo_order[0]} - {product_text}]" if photo_order else ""
     space_photo_marker = (
@@ -186,7 +340,7 @@ def _build_blog_package(
         {
             "title": "인사말",
             "photo": photo_order[0] if photo_order else "",
-            "body": opening,
+            "body": intro,
         },
         {
             "title": f"{product_text}를 소개합니다",
@@ -219,9 +373,11 @@ def _build_blog_package(
         store_info.append(f"운영 안내 : {request.operating_info}")
 
     publish_body = "\n\n".join(
-        [
+        part
+        for part in [
             title,
             f"안녕하세요.\n{request.business_name}입니다.",
+            trend_opening,
             opening,
             menu_photo_marker,
             sections[1]["title"],
@@ -233,6 +389,7 @@ def _build_blog_package(
             "\n".join(store_info),
             " ".join(hashtags),
         ]
+        if part
     )
     return {
         "blog_title": title,
@@ -302,12 +459,18 @@ def _blog_situation_copy(
     return copies.get(situation, copies["visit"])
 
 
-def build_fallback_copy(request: AdCopyRequest, warnings: list[str]) -> AdCopyContent:
-    products = ", ".join(request.product_names)
+def build_fallback_copy(
+    request: AdCopyRequest,
+    warnings: list[str],
+    trend_card: TrendCard | None = None,
+) -> AdCopyContent:
+    products = _join_korean_products(request.product_names)
     sales_features = _sales_features(request.features)
     feature_sentence = " ".join(sales_features)
+    trend_headline = _render_trend_pattern(trend_card, request)
     headline = remove_prohibited_terms(
-        f"{request.business_name}의 새로운 소식", request.prohibited_terms
+        trend_headline or f"{request.business_name}의 새로운 소식",
+        request.prohibited_terms,
     )
     body = remove_prohibited_terms(
         f"{request.business_name}에서 {products}을(를) 만나보세요. {feature_sentence}",
@@ -349,8 +512,16 @@ def build_fallback_copy(request: AdCopyRequest, warnings: list[str]) -> AdCopyCo
         request,
         products,
         request.prohibited_terms,
+        trend_card,
     )
-    blog_package = _build_blog_package(request, products, body, cta, hashtags)
+    blog_package = _build_blog_package(
+        request,
+        products,
+        body,
+        cta,
+        hashtags,
+        trend_card,
+    )
     channel_recommendations = {
         "instagram": ChannelRecommendation(
             format_name="인스타그램 피드",
