@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import time
+from collections import deque
 from pathlib import Path
 from typing import Any
 
@@ -33,6 +34,15 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--device", default="cpu", help="Inference device: cpu, cuda, 0")
     parser.add_argument("--imgsz", default=960, type=int)
     parser.add_argument("--conf", default=0.50, type=float)
+    parser.add_argument(
+        "--mask-conf",
+        default=0.35,
+        type=float,
+        help=(
+            "Lower person confidence threshold used only for privacy masking. "
+            "Display bbox overlay still uses --conf."
+        ),
+    )
     parser.add_argument("--start-sec", default=60.0, type=float)
     parser.add_argument("--max-seconds", default=60.0, type=float)
     parser.add_argument(
@@ -40,6 +50,18 @@ def parse_args() -> argparse.Namespace:
         default=0.40,
         type=float,
         help="Fraction of each person bbox, measured from the top, to mosaic.",
+    )
+    parser.add_argument(
+        "--mask-padding-ratio",
+        default=0.03,
+        type=float,
+        help="Expand each mask bbox by this fraction before applying mosaic.",
+    )
+    parser.add_argument(
+        "--temporal-mask-frames",
+        default=1,
+        type=int,
+        help="Keep recent mask boxes for this many frames to reduce detector flicker.",
     )
     parser.add_argument(
         "--mosaic-block-size",
@@ -84,6 +106,10 @@ def validate_args(
     validate_output_dir(output_dir)
     if not 0.0 <= args.conf <= 1.0:
         raise ValueError("--conf must be between 0.0 and 1.0")
+    if not 0.0 <= args.mask_conf <= 1.0:
+        raise ValueError("--mask-conf must be between 0.0 and 1.0")
+    if args.mask_conf > args.conf:
+        raise ValueError("--mask-conf must be less than or equal to --conf")
     if args.imgsz <= 0:
         raise ValueError("--imgsz must be greater than 0")
     if args.start_sec < 0:
@@ -92,6 +118,10 @@ def validate_args(
         raise ValueError("--max-seconds must be greater than 0")
     if not 0.0 < args.mask_top_ratio <= 1.0:
         raise ValueError("--mask-top-ratio must be greater than 0.0 and at most 1.0")
+    if not 0.0 <= args.mask_padding_ratio <= 1.0:
+        raise ValueError("--mask-padding-ratio must be between 0.0 and 1.0")
+    if args.temporal_mask_frames < 0:
+        raise ValueError("--temporal-mask-frames must be 0 or greater")
     if args.mosaic_block_size < 2:
         raise ValueError("--mosaic-block-size must be at least 2")
 
@@ -181,12 +211,22 @@ def mask_person_bbox_tops(
     boxes: list[tuple[float, float, float, float]],
     top_ratio: float,
     block_size: int,
+    padding_ratio: float = 0.0,
 ) -> list[tuple[int, int, int, int]]:
     """Mosaic the upper portion of each clipped person bbox in place."""
     height, width = frame.shape[:2]
     masked_regions: list[tuple[int, int, int, int]] = []
     for box in boxes:
-        clipped = clip_box(box, width=width, height=height)
+        x1, y1, x2, y2 = box
+        box_width = abs(x2 - x1)
+        box_height = abs(y2 - y1)
+        pad_x = box_width * padding_ratio
+        pad_y = box_height * padding_ratio
+        clipped = clip_box(
+            (x1 - pad_x, y1 - pad_y, x2 + pad_x, y2 + pad_y),
+            width=width,
+            height=height,
+        )
         if clipped is None:
             continue
         left, top, right, bottom = clipped
@@ -197,6 +237,28 @@ def mask_person_bbox_tops(
         )
         masked_regions.append((left, top, right, mask_bottom))
     return masked_regions
+
+
+def filter_detections_by_conf(
+    detections: list[tuple[float, float, float, float, float]],
+    min_confidence: float,
+) -> list[tuple[float, float, float, float, float]]:
+    return [
+        detection
+        for detection in detections
+        if float(detection[4]) >= min_confidence
+    ]
+
+
+def current_and_recent_boxes(
+    current_boxes: list[tuple[float, float, float, float]],
+    previous_boxes: deque[list[tuple[float, float, float, float]]],
+) -> list[tuple[float, float, float, float]]:
+    boxes: list[tuple[float, float, float, float]] = []
+    for old_boxes in previous_boxes:
+        boxes.extend(old_boxes)
+    boxes.extend(current_boxes)
+    return boxes
 
 
 def extract_detections(result: Any) -> list[tuple[float, float, float, float, float]]:
@@ -300,14 +362,18 @@ def draw_footer(
 
 def create_video_writer(output_path: Path, fps: float, width: int, height: int) -> Any:
     output_path.parent.mkdir(parents=True, exist_ok=True)
+    suffix = output_path.suffix.lower()
+    if suffix != ".webm":
+        raise ValueError("privacy video output must end with .webm")
+    fourcc = cv2.VideoWriter_fourcc(*"VP80")
     writer = cv2.VideoWriter(
         str(output_path),
-        cv2.VideoWriter_fourcc(*"mp4v"),
+        fourcc,
         fps,
         (width, height),
     )
     if not writer.isOpened():
-        raise RuntimeError(f"failed to open MP4 writer: {output_path}")
+        raise RuntimeError(f"failed to open WebM writer: {output_path}")
     return writer
 
 
@@ -353,7 +419,7 @@ def main() -> None:
     cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame_index)
 
     roi_polygon = roi_polygon_pixels(roi_config, width=width, height=height)
-    video_output = output_dir / "media" / "roi_preview_masked.mp4"
+    video_output = output_dir / "media" / "roi_preview_masked.webm"
     image_output = output_dir / "images" / "roi_overlay_preview_masked.jpg"
     summary_output = output_dir / "qa" / "masking_qa_summary.json"
     writer = create_video_writer(video_output, fps=fps, width=width, height=height)
@@ -361,9 +427,14 @@ def main() -> None:
 
     print(f"video={video_path}")
     print(f"frames_to_render={render_frame_count}, fps={fps:.2f}, size={width}x{height}")
-    print(f"conf={args.conf:.2f}, device={args.device}, imgsz={args.imgsz}")
+    print(
+        f"display_conf={args.conf:.2f}, mask_conf={args.mask_conf:.2f}, "
+        f"device={args.device}, imgsz={args.imgsz}"
+    )
     print(
         f"mask_top_ratio={args.mask_top_ratio:.2f}, "
+        f"mask_padding_ratio={args.mask_padding_ratio:.2f}, "
+        f"temporal_mask_frames={args.temporal_mask_frames}, "
         f"mosaic_block_size={args.mosaic_block_size}"
     )
     print(f"output_dir={output_dir}")
@@ -372,10 +443,14 @@ def main() -> None:
     processed_frames = 0
     detection_observations = 0
     roi_detection_observations = 0
+    mask_candidate_observations = 0
     masked_region_observations = 0
     representative_frame: np.ndarray | None = None
     representative_score = (-1, -1)
     representative_source_frame_index = start_frame_index
+    recent_mask_boxes: deque[list[tuple[float, float, float, float]]] = deque(
+        maxlen=args.temporal_mask_frames
+    )
     try:
         while processed_frames < render_frame_count:
             ok, frame = cap.read()
@@ -385,18 +460,23 @@ def main() -> None:
             result = model.predict(
                 frame,
                 classes=[0],
-                conf=args.conf,
+                conf=args.mask_conf,
                 device=args.device,
                 imgsz=args.imgsz,
                 verbose=False,
             )[0]
-            detections = extract_detections(result)
+            mask_detections = extract_detections(result)
+            display_detections = filter_detections_by_conf(mask_detections, args.conf)
+            current_mask_boxes = [detection[:4] for detection in mask_detections]
+            mask_boxes = current_and_recent_boxes(current_mask_boxes, recent_mask_boxes)
             masked_regions = mask_person_bbox_tops(
                 frame,
-                boxes=[detection[:4] for detection in detections],
+                boxes=mask_boxes,
                 top_ratio=args.mask_top_ratio,
                 block_size=args.mosaic_block_size,
+                padding_ratio=args.mask_padding_ratio,
             )
+            recent_mask_boxes.append(current_mask_boxes)
             draw_roi(
                 frame,
                 polygon=roi_polygon,
@@ -404,7 +484,7 @@ def main() -> None:
             )
             roi_count = draw_detections(
                 frame,
-                detections=detections,
+                detections=display_detections,
                 roi_polygon=roi_polygon,
             )
             source_frame_index = start_frame_index + processed_frames
@@ -413,24 +493,26 @@ def main() -> None:
                 frame,
                 source_frame_index=source_frame_index,
                 timestamp_sec=timestamp_sec,
-                detection_count=len(detections),
+                detection_count=len(display_detections),
                 roi_count=roi_count,
             )
             writer.write(frame)
 
-            score = (roi_count, len(detections))
+            score = (roi_count, len(display_detections))
             if score > representative_score:
                 representative_score = score
                 representative_frame = frame.copy()
                 representative_source_frame_index = source_frame_index
 
             processed_frames += 1
-            detection_observations += len(detections)
+            detection_observations += len(display_detections)
             roi_detection_observations += roi_count
+            mask_candidate_observations += len(mask_detections)
             masked_region_observations += len(masked_regions)
             if processed_frames % max(1, round(fps * 10)) == 0:
                 print(
                     f"processed_frames={processed_frames}/{render_frame_count}, "
+                    f"mask_candidates={mask_candidate_observations}, "
                     f"masked_regions={masked_region_observations}"
                 )
     finally:
@@ -463,11 +545,14 @@ def main() -> None:
             "model": str(model_path),
             "device": args.device,
             "imgsz": args.imgsz,
-            "confidence_threshold": args.conf,
+            "display_confidence_threshold": args.conf,
+            "mask_confidence_threshold": args.mask_conf,
             "start_sec": args.start_sec,
             "max_seconds": args.max_seconds,
             "mask_method": "person_bbox_upper_mosaic",
             "mask_top_ratio": args.mask_top_ratio,
+            "mask_padding_ratio": args.mask_padding_ratio,
+            "temporal_mask_frames": args.temporal_mask_frames,
             "mosaic_block_size": args.mosaic_block_size,
         },
         "results": {
@@ -477,6 +562,7 @@ def main() -> None:
             "processed_frames": processed_frames,
             "detection_observations": detection_observations,
             "roi_detection_observations": roi_detection_observations,
+            "mask_candidate_observations": mask_candidate_observations,
             "masked_region_observations": masked_region_observations,
             "representative_source_frame_index": representative_source_frame_index,
             "representative_timestamp_sec": representative_source_frame_index / fps,
@@ -486,6 +572,7 @@ def main() -> None:
         },
         "artifacts": {
             "masked_video": str(video_output),
+            "masked_video_webm": str(video_output),
             "masked_representative_image": str(image_output),
             "qa_summary": str(summary_output),
         },
@@ -497,7 +584,8 @@ def main() -> None:
         },
         "limitations": [
             "This is person-bbox upper-region mosaicing, not face detection or face recognition.",
-            "A person missed by YOLO is not masked by this stage.",
+            "Temporal carry-over reduces detector flicker but can leave short mosaic trails.",
+            "A person missed by YOLO for longer than the temporal carry-over window is not masked by this stage.",
             "The AIHub MVP source already includes dataset-provided de-identification; "
             "this stage adds a second heuristic privacy filter.",
             "The media contains frame-level detections, not unique visitors or line-crossing events.",
@@ -513,7 +601,7 @@ def main() -> None:
     print(f"masked_region_observations={masked_region_observations}")
     print(f"processing_elapsed_sec={elapsed_sec:.3f}")
     print(f"processing_fps={processing_fps:.3f}")
-    print(f"masked_video={video_output}")
+    print(f"masked_video_webm={video_output}")
     print(f"masked_image={image_output}")
     print(f"qa_summary={summary_output}")
 

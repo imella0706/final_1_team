@@ -6,6 +6,8 @@ import numpy as np
 import pytest
 
 from scripts.visitor_flow_l3_privacy_media import (
+    current_and_recent_boxes,
+    filter_detections_by_conf,
     mask_person_bbox_tops,
     validate_output_dir,
 )
@@ -45,6 +47,50 @@ def test_mask_person_bbox_tops_clips_box_to_frame() -> None:
     )
 
     assert regions == [(0, 0, 8, 4)]
+
+
+def test_mask_person_bbox_tops_can_expand_bbox_region() -> None:
+    frame = gradient_frame(height=20, width=20)
+
+    regions = mask_person_bbox_tops(
+        frame,
+        boxes=[(5.0, 5.0, 15.0, 15.0)],
+        top_ratio=0.5,
+        block_size=4,
+        padding_ratio=0.2,
+    )
+
+    assert regions == [(3, 3, 17, 10)]
+
+
+def test_filter_detections_by_conf_keeps_display_threshold_separate() -> None:
+    detections = [
+        (0.0, 0.0, 10.0, 10.0, 0.24),
+        (0.0, 0.0, 10.0, 10.0, 0.50),
+        (0.0, 0.0, 10.0, 10.0, 0.81),
+    ]
+
+    filtered = filter_detections_by_conf(detections, 0.50)
+
+    assert [detection[4] for detection in filtered] == [0.50, 0.81]
+
+
+def test_current_and_recent_boxes_reuses_previous_masks() -> None:
+    previous_boxes = [
+        [(1.0, 1.0, 5.0, 5.0)],
+        [(6.0, 6.0, 9.0, 9.0)],
+    ]
+
+    boxes = current_and_recent_boxes(
+        current_boxes=[(10.0, 10.0, 12.0, 12.0)],
+        previous_boxes=previous_boxes,
+    )
+
+    assert boxes == [
+        (1.0, 1.0, 5.0, 5.0),
+        (6.0, 6.0, 9.0, 9.0),
+        (10.0, 10.0, 12.0, 12.0),
+    ]
 
 
 def test_validate_output_dir_rejects_processed_dataset_path() -> None:

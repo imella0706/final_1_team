@@ -1,8 +1,8 @@
-# Visitor Flow L2/L3-1 Dashboard
+# Visitor Flow L2/L3 Dashboard
 
-C0241 Aug 2 8 clips와 Aug 3 7 clips의 L2-4 집계 및 L3-1 수동 ROI 산출물을 읽어 시간대별 frame-normalized 보행 관측량, 매장 전면 ROI 관측, 화면 기준 `6x4` 관측 분포를 보여주는 Streamlit POC입니다. YOLO bbox 검증 영상도 재생할 수 있습니다.
+C0241 Aug 2 8 clips와 Aug 3 7 clips의 L2-4 집계, L3-1 수동 ROI 산출물, L3-2 개인정보 보호 미디어를 읽어 시간대별 frame-normalized 보행 관측량, 매장 전면 ROI 관측, 화면 기준 `6x4` 관측 분포를 보여주는 Streamlit POC입니다. 운영자 화면에서도 기본 시각자료는 마스킹 처리된 L3-2 JPG/WebM을 표시합니다.
 
-이 화면은 YOLO를 다시 실행하지 않습니다. 입력은 L2-3a GPU prediction을 재사용해 만든 L2-4 artifact, 이를 CPU 후처리한 L3-1 ROI artifact, 오프라인 preview입니다.
+이 화면은 YOLO를 다시 실행하지 않습니다. 입력은 L2-3a GPU prediction을 재사용해 만든 L2-4 artifact, 이를 CPU 후처리한 L3-1 ROI artifact, L3-2 privacy media, 오프라인 preview입니다.
 
 ```text
 outputs/visitor_flow_mvp/c0241_20210802_20210803_l2_4/
@@ -25,6 +25,14 @@ outputs/visitor_flow_mvp/c0241_20210802_20210803_l3_1_roi/
 │  └─ roi_overlay_preview.jpg
 └─ preview_videos/
    └─ *_yolo_conf_0p50_roi_*.webm
+
+outputs/visitor_flow_mvp/c0241_20210802_20210803_l3_2_privacy_media/
+├─ images/
+│  └─ roi_overlay_preview_masked.jpg
+├─ media/
+│  └─ roi_preview_masked.webm
+└─ qa/
+   └─ masking_qa_summary.json
 ```
 
 ## L2-4 artifact 생성
@@ -114,7 +122,32 @@ ROI 좌표를 직접 다시 잡을 때는 기준 프레임 이미지에서 꼭�
   --output outputs/visitor_flow_mvp/c0241_20210802_20210803_l3_1_roi/preview_videos/2021-08-02_12-51-00_mon_sunny_out_ju-ja_C0241_yolo_conf_0p50_roi_start_60s.webm
 ```
 
-ROI 영상은 탐지·ROI 설정을 검수하는 내부 운영 artifact입니다. 고객 PDF에는 원본/가공 영상을 넣지 않습니다. 다만 대표 ROI 정지 overlay는 얼굴 마스킹 후 `분석화면 예시` 또는 `조사 위치/관심 구역 설명` 용도로 1장 포함할 수 있습니다.
+이 ROI WebM은 탐지·ROI 설정을 검수하기 위한 비마스킹 내부 debug artifact입니다. 대시보드 기본 화면에는 직접 재생하지 않고, 필요한 경우 접힌 내부 경로로만 확인합니다.
+
+## L3-2 개인정보 보호 미디어 생성
+
+운영자 화면과 고객 PDF 모두 기본 시각자료는 L3-2 마스킹 산출물을 사용합니다. AIHub 원본에 데이터셋 제공 단계의 비식별화가 있더라도, 우리 파이프라인 산출물 기준으로 한 번 더 person bbox 상단부 mosaic를 적용합니다.
+
+```bash
+# [Design Intent] 운영자 화면과 고객 PDF에서 사용할 privacy-safe ROI 대표 이미지/영상을 outputs 후보 산출물로 만든다.
+/home/imella0707/miniconda3/envs/ssakda/bin/python scripts/visitor_flow_l3_privacy_media.py \
+  --video data/curated/aihub_cctv_visitor_flow/v1/c0241_20210802/videos/2021-08-02_12-51-00_mon_sunny_out_ju-ja_C0241.mp4 \
+  --model /home/imella0707/yolo11s.pt \
+  --roi-config configs/visitor_flow/c0241_roi_config.json \
+  --output-dir outputs/visitor_flow_mvp/c0241_20210802_20210803_l3_2_privacy_media \
+  --device 0 \
+  --imgsz 960 \
+  --conf 0.50 \
+  --mask-conf 0.35 \
+  --start-sec 60 \
+  --max-seconds 60 \
+  --mask-top-ratio 0.40 \
+  --mask-padding-ratio 0.03 \
+  --temporal-mask-frames 1 \
+  --mosaic-block-size 12
+```
+
+`roi_preview_masked.webm`과 `roi_overlay_preview_masked.jpg`는 운영자 대시보드 기본 표시와 L3-3 고객 PDF 입력으로 사용합니다. L3-2는 용량과 재생 계약을 단순하게 유지하기 위해 WebM만 생성합니다. 비마스킹 `roi_overlay_preview.jpg`와 `*_roi_*.webm`은 내부 디버깅 경로로만 관리합니다.
 
 ## 실행
 
@@ -139,10 +172,10 @@ Visitor-flow dashboard: http://127.0.0.1:8503
 ### 대시보드 단독 실행 - 개발/디버깅용
 
 ```bash
-# [Design Intent] L2/L3-1 대시보드 실행에 필요한 Streamlit/Pandas/PyArrow 의존성을 설치한다.
+# [Design Intent] L2/L3 대시보드 실행에 필요한 Streamlit/Pandas/PyArrow 의존성을 설치한다.
 /home/imella0707/miniconda3/envs/ssakda/bin/python -m pip install -r apps/visitor_flow_l2_dashboard/requirements.txt
 
-# [Design Intent] L2-4와 L3-1 artifact를 읽어 전체 화면/ROI 프레임 정규화 지표와 화면 grid 관측 분포를 표시한다.
+# [Design Intent] L2-4, L3-1, L3-2 artifact를 읽어 전체 화면/ROI 프레임 정규화 지표와 마스킹된 ROI 미디어를 표시한다.
 /home/imella0707/miniconda3/envs/ssakda/bin/python -m streamlit run apps/visitor_flow_l2_dashboard/app.py
 ```
 
@@ -153,8 +186,8 @@ Visitor-flow dashboard: http://127.0.0.1:8503
 - 가장 붐빈 시간대
 - 매장 전면 ROI 내부 sampled observation과 전체 관측 대비 비중
 - ROI 내부 관측의 시간대별 프레임당 평균/p95/max
-- 수동 ROI polygon, bbox, bottom-center가 함께 표시된 overlay
-- 수동 ROI polygon이 연속 frame에 표시된 운영자용 ROI 검증 영상
+- 마스킹 처리된 수동 ROI 대표 이미지
+- 마스킹 처리된 운영자용 ROI 연속 검증 영상
 - 시간대별 프레임당 평균 보행 관측량
 - 시간대별 p95/max 보행 관측량
 - Aug 2/Aug 3 날짜 비교
@@ -164,6 +197,7 @@ Visitor-flow dashboard: http://127.0.0.1:8503
 - 전체 시간대 또는 선택 시간대의 화면 구역별 관측 분포
 - 시간대 기반 마케팅 후보 해석
 - 검증용 YOLO bbox/grid 영상
+- 수동 ROI polygon이 연속 frame에 표시된 비마스킹 내부 debug artifact 경로
 - 개발/검증용 `analysis.json`, `frames.parquet`, `summary.parquet`, `events.parquet` 원본 확인
 
 ## 해석 제한
@@ -183,5 +217,6 @@ Visitor-flow dashboard: http://127.0.0.1:8503
 - 노란 매장 전면 ROI는 카메라별 수동 설정이며 자동 탐지 결과가 아닙니다.
 - ROI 내부 관측량은 bbox bottom-center가 polygon 안에 들어온 sampled observation입니다. 통행량, 선 통과 이벤트, 고유 방문자 수가 아닙니다.
 - 카메라 위치나 crop이 바뀌면 해당 카메라의 ROI polygon을 다시 설정해야 합니다.
-- ROI 검증 영상은 내부 운영자 QA 전용이며 고객 PDF 산출물에 포함하지 않습니다.
+- 운영자 대시보드 기본 화면에는 L3-2 마스킹 이미지와 WebM만 표시합니다.
+- 비마스킹 ROI 검증 영상은 내부 debug artifact이며 기본 화면에서 직접 재생하지 않습니다.
 - ROI overlay 정지 이미지는 얼굴 마스킹 후 고객 PDF의 `분석화면 예시`로 포함할 수 있습니다.

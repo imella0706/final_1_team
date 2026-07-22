@@ -20,6 +20,12 @@ DEFAULT_RESULTS_DIR = (
 DEFAULT_ROI_RESULTS_DIR = (
     REPO_ROOT / "outputs" / "visitor_flow_mvp" / "c0241_20210802_20210803_l3_1_roi"
 )
+DEFAULT_PRIVACY_MEDIA_DIR = (
+    REPO_ROOT
+    / "outputs"
+    / "visitor_flow_mvp"
+    / "c0241_20210802_20210803_l3_2_privacy_media"
+)
 
 REQUIRED_FILES = {
     "analysis": "analysis.json",
@@ -36,6 +42,12 @@ REQUIRED_ROI_FILES = {
     "frames": "roi_frames.parquet",
     "summary": "roi_summary.parquet",
 }
+
+REQUIRED_PRIVACY_MEDIA_FILES = {
+    "summary": Path("qa") / "masking_qa_summary.json",
+    "image": Path("images") / "roi_overlay_preview_masked.jpg",
+}
+PRIVACY_VIDEO_PATH = Path("media") / "roi_preview_masked.webm"
 
 PREVIEW_EXTENSIONS = {".webm", ".mp4"}
 ALL_TIME_BUCKET = "__all_time_buckets__"
@@ -78,6 +90,18 @@ def validate_roi_results_dir(results_dir: Path) -> list[Path]:
     ]
 
 
+def validate_privacy_media_dir(results_dir: Path) -> list[Path]:
+    """Return required L3-2 privacy-safe media artifacts that are missing."""
+    missing = [
+        results_dir / filename
+        for filename in REQUIRED_PRIVACY_MEDIA_FILES.values()
+        if not (results_dir / filename).is_file()
+    ]
+    if not (results_dir / PRIVACY_VIDEO_PATH).is_file():
+        missing.append(results_dir / PRIVACY_VIDEO_PATH)
+    return missing
+
+
 def load_l2_artifacts(
     results_dir: Path,
 ) -> tuple[dict[str, Any], pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
@@ -106,6 +130,15 @@ def load_roi_artifacts(
     frames = pd.read_parquet(results_dir / REQUIRED_ROI_FILES["frames"])
     events = pd.read_parquet(results_dir / REQUIRED_ROI_FILES["events"])
     return analysis, config, summary, frames, events
+
+
+def load_privacy_media(results_dir: Path) -> tuple[dict[str, Any], Path, Path]:
+    """Load L3-2 privacy-safe media metadata and artifact paths."""
+    summary_path = results_dir / REQUIRED_PRIVACY_MEDIA_FILES["summary"]
+    summary = json.loads(summary_path.read_text(encoding="utf-8"))
+    image_path = results_dir / REQUIRED_PRIVACY_MEDIA_FILES["image"]
+    video_path = results_dir / PRIVACY_VIDEO_PATH
+    return summary, image_path, video_path
 
 
 def resolve_repo_path(path_text: str) -> Path:
@@ -151,6 +184,12 @@ def preview_video_by_source_stem(results_dir: Path) -> dict[str, Path]:
         source_stem = preview.stem.split("_yolo_conf_")[0]
         mapping[source_stem] = preview
     return mapping
+
+
+def video_format(path: Path) -> str:
+    if path.suffix.lower() == ".mp4":
+        return "video/mp4"
+    return "video/webm"
 
 
 def format_zone_for_owner(zone_id: str) -> str:
@@ -259,13 +298,29 @@ def render_operator_roi_video(
     roi_analysis: dict[str, Any],
     config: dict[str, Any],
     results_dir: Path,
+    privacy_summary: dict[str, Any],
+    masked_video_path: Path,
 ) -> None:
-    st.markdown("#### 운영자용 ROI 연속 영상 검수")
+    st.markdown("#### 운영자용 ROI 마스킹 연속 영상 검수")
     st.caption(
         f"수동 ROI `{config.get('primary_roi_id', '-')}`가 연속 프레임에서도 같은 "
         "위치에 유지되고 bbox bottom-center 판정이 의도대로 동작하는지 확인하는 "
-        "내부 QA 화면입니다."
+        "내부 QA 화면입니다. 기본 재생 영상은 L3-2 개인정보 보호 미디어입니다."
     )
+
+    if masked_video_path.is_file():
+        st.video(str(masked_video_path), format=video_format(masked_video_path))
+        results = privacy_summary.get("results", {})
+        settings = privacy_summary.get("settings", {})
+        st.caption(
+            "마스킹 영상: "
+            f"{int(results.get('processed_frames', 0))} frames · "
+            f"{float(results.get('source_fps', 0.0)):.1f} FPS · "
+            f"masked regions {int(results.get('masked_region_observations', 0))}건 · "
+            f"mask {settings.get('mask_method', 'unknown')}"
+        )
+    else:
+        st.error(f"L3-2 마스킹 MP4를 찾지 못했습니다: {masked_video_path}")
 
     source_videos = source_video_paths(source_analysis)
     if not source_videos:
@@ -338,18 +393,17 @@ def render_operator_roi_video(
             "  --max-seconds 60 \\\n"
             f"  --output {results_dir / 'preview_videos' / output_name}"
         )
-        st.code(command, language="bash")
+        with st.expander("비마스킹 ROI QA 영상 생성 명령", expanded=False):
+            st.code(command, language="bash")
     else:
-        st.video(str(preview_video), format="video/webm")
-        st.caption(
-            "노란색: 수동 ROI · 초록색: ROI 내부 bbox · 회색: ROI 외부 bbox · "
-            "빨간 점: bbox bottom-center"
-        )
+        with st.expander("비마스킹 ROI QA 영상 경로", expanded=False):
+            st.caption("필요한 디버깅 때만 내부 운영자가 확인합니다. 기본 화면에는 재생하지 않습니다.")
+            st.code(str(preview_video), language="text")
 
     st.warning(
-        "이 영상은 내부 운영자 검수 전용입니다. 고객 PDF에는 원본/가공 영상은 "
-        "포함하지 않고, 대표 ROI 정지 이미지를 넣을 때는 얼굴 마스킹 후 "
-        "분석화면 예시로만 사용합니다."
+        "운영자 화면도 기본적으로 L3-2 마스킹 미디어만 표시합니다. "
+        "비마스킹 ROI WebM과 원본 frame은 내부 디버깅 경로로만 관리하고, "
+        "고객 PDF에는 L3-2 마스킹 대표 이미지만 허용합니다."
     )
 
 
@@ -436,6 +490,9 @@ def render_roi_analysis(
     frames: pd.DataFrame,
     events: pd.DataFrame,
     results_dir: Path,
+    privacy_summary: dict[str, Any],
+    masked_image_path: Path,
+    masked_video_path: Path,
 ) -> None:
     st.subheader("1. 매장 전면 ROI 보행 관측")
     st.caption("수동 normalized polygon · bbox bottom-center 판정 · 10초 sampled frame")
@@ -462,17 +519,22 @@ def render_roi_analysis(
     overlay_path = resolve_repo_path(overlay_path_text) if overlay_path_text else None
     image_column, chart_column = st.columns([1.15, 1])
     with image_column:
-        if overlay_path is not None and overlay_path.is_file():
+        if masked_image_path.is_file():
             st.image(
-                str(overlay_path),
+                str(masked_image_path),
                 caption=(
-                    "노란색: 수동 ROI · 초록색: ROI 내부 bbox · "
-                    "빨간 점: bbox bottom-center"
+                    "L3-2 마스킹 대표 이미지 · 노란색: 수동 ROI · "
+                    "초록색: ROI 내부 bbox · 빨간 점: bbox bottom-center"
                 ),
                 width="stretch",
             )
         else:
-            st.warning(f"ROI overlay를 찾지 못했습니다: {overlay_path_text}")
+            st.warning(f"L3-2 마스킹 대표 이미지를 찾지 못했습니다: {masked_image_path}")
+        with st.expander("비마스킹 ROI overlay 경로", expanded=False):
+            if overlay_path is not None and overlay_path.is_file():
+                st.code(str(overlay_path), language="text")
+            else:
+                st.warning(f"비마스킹 ROI overlay를 찾지 못했습니다: {overlay_path_text}")
 
     with chart_column:
         chart = summary.copy()
@@ -564,6 +626,8 @@ def render_roi_analysis(
         roi_analysis=analysis,
         config=config,
         results_dir=results_dir,
+        privacy_summary=privacy_summary,
+        masked_video_path=masked_video_path,
     )
     with st.expander("ROI 설정과 판정 artifact", expanded=False):
         st.json(config)
@@ -867,11 +931,13 @@ def render_raw_tables(
 
 def main() -> None:
     st.set_page_config(
-        page_title="Visitor Flow L3-1 Dashboard",
+        page_title="Visitor Flow L3 Dashboard",
         layout="wide",
     )
     st.title("CCTV 매장 앞 보행 관측 대시보드")
-    st.caption("C0241 · 2021-08-02/2021-08-03 · L2-4 + L3-1 manual ROI")
+    st.caption(
+        "C0241 · 2021-08-02/2021-08-03 · L2-4 + L3-1 manual ROI + L3-2 privacy media"
+    )
     render_scope_notice()
 
     with st.sidebar:
@@ -883,6 +949,10 @@ def main() -> None:
         roi_results_path_text = st.text_input(
             "L3-1 ROI 결과 폴더",
             value=str(DEFAULT_ROI_RESULTS_DIR.relative_to(REPO_ROOT)),
+        )
+        privacy_media_path_text = st.text_input(
+            "L3-2 개인정보 보호 미디어 폴더",
+            value=str(DEFAULT_PRIVACY_MEDIA_DIR.relative_to(REPO_ROOT)),
         )
         st.caption("절대 경로 또는 저장소 루트 기준 상대 경로를 사용할 수 있습니다.")
 
@@ -918,6 +988,20 @@ def main() -> None:
         st.error("L2와 L3-1 ROI 산출물의 source_analysis_id가 일치하지 않습니다.")
         st.stop()
 
+    privacy_media_dir = resolve_results_dir(privacy_media_path_text)
+    missing_privacy_files = validate_privacy_media_dir(privacy_media_dir)
+    if missing_privacy_files:
+        st.error("필수 L3-2 개인정보 보호 미디어 산출물을 찾지 못했습니다.")
+        st.code("\n".join(str(path) for path in missing_privacy_files))
+        st.stop()
+    try:
+        privacy_summary, masked_image_path, masked_video_path = load_privacy_media(
+            privacy_media_dir
+        )
+    except (json.JSONDecodeError, OSError, KeyError) as error:
+        st.error(f"L3-2 개인정보 보호 미디어 산출물을 읽지 못했습니다: {error}")
+        st.stop()
+
     render_metric_cards(analysis)
     st.divider()
     render_roi_analysis(
@@ -928,6 +1012,9 @@ def main() -> None:
         roi_frames,
         roi_events,
         roi_results_dir,
+        privacy_summary,
+        masked_image_path,
+        masked_video_path,
     )
     st.divider()
     render_time_trend(dashboard_summary)
