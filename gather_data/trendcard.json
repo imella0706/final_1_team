@@ -1,0 +1,55 @@
+{
+  "schema_version": "2.0",
+  "meme_id": "gogumafarm:1bf390d89536004b",
+  "display_name": "니가 좋아💖",
+  "meaning": "좋아하는 대상에게 '니가 좋아'라고 직설적으로 마음을 고백하는 SNS 바이럴 밈. 광고에서는 고백 대상을 메뉴나 상품으로 치환해 애정을 표현한다.",
+  "modalities": ["audio", "text"],
+  "core_asset": "text",
+  "usable_assets": ["copy", "video_storyboard"],
+  "asset_notes": {
+    "copy": "핵심 구 '니가 좋아'가 원본 영상 없이도 밈으로 인지된다. 고백 구조(대상 치환)를 광고 문구에 그대로 이식할 수 있다.",
+    "video_storyboard": "고백 상황의 연출 구조만 차용한다. 원본 음원·영상·안무는 사용할 수 없다.",
+    "image": "특정 장면이나 포즈가 밈의 핵심이 아니므로 이미지 자산은 없다."
+  },
+  "text_transferability": {
+    "standalone_test": "pass",
+    "evidence": [
+      "네이버 블로그 제목에서 원본 영상 링크 없이 '니가 좋아, ○○' 변형 사용 확인",
+      "인스타그램 캡션과 댓글에서 대상 치환형 변형 다수"
+    ]
+  },
+  "rights_risk": {
+    "level": "low",
+    "notes": "핵심 구가 일상 표현이라 문구 인용 위험이 낮다. 원본 음원·영상·인물 모사는 금지한다."
+  },
+  "text_patterns": [
+    "니가 좋아, {메뉴}",
+    "{상황}에도 결국 니가 좋아, {메뉴}"
+  ],
+  "copy_markers": ["니가 좋아"],
+  "suitable_channels": ["instagram"],
+  "suitable_tones": ["playful", "friendly", "witty"],
+  "target_audiences": ["teens", "twenties", "college_students"],
+  "usage_rules": [
+    "핵심 표현 '니가 좋아'를 유지하되, 고백 대상은 대표 메뉴 또는 상품 조합으로 바꾼다",
+    "좋아하는 이유가 필요하면 사용자가 입력한 실제 상품 특징에서만 가져온다",
+    "대표 메뉴와 보조 메뉴가 함께 있으면 나열 대신 둘의 관계나 조합을 표현한다"
+  ],
+  "prohibited_usage": [
+    "'니가 좋아' 뒤에 모든 메뉴명을 쉼표로 나열하는 단순 치환",
+    "원본 인물 모사",
+    "원본 영상·음원·안무 복제",
+    "상품과 관계없는 억지 사용"
+  ],
+  "curation_meta": {
+    "mode": "manual",
+    "status": "reviewed",
+    "notes": "효용 검증을 위해 사람이 직접 작성·검수한 mock 카드이며, 근거 문구와 출처는 자동 대조하지 않는다."
+  },
+  "trend_meta": {
+    "status": "active",
+    "collected_week": "2026-W28",
+    "sources": ["gogumafarm", "naver_blog", "youtube"]
+  },
+  "is_mock": true
+}
