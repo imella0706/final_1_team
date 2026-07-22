@@ -1,0 +1,5 @@
+# [Design Intent] L2-1에서 생성된 parquet/csv/json artifact를 읽는 대시보드 의존성이다.
+# YOLO 추론 의존성은 이 화면 실행에 필요하지 않다.
+pandas==3.0.3
+pyarrow==24.0.0
+streamlit==1.59.2

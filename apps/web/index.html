@@ -4,8 +4,15 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content="BrandMate 광고 문구와 이미지 생성 모델 통합 화면" />
+    <!-- [Design Intent] Leave empty for same-origin production. If the API uses a
+         separate HTTPS origin, set it here and add that exact origin to connect-src. -->
+    <meta name="brandmate-api-origin" content="" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; base-uri 'none'; object-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; connect-src 'self' http://localhost:7660 http://127.0.0.1:7660 http://34.55.162.157:7660; form-action 'self'"
+    />
     <title>BrandMate Ad Content Studio</title>
-    <link rel="stylesheet" href="./styles.css?v=product-compat-20260714" />
+    <link rel="stylesheet" href="./styles.css?v=service-selection-20260721" />
   </head>
   <body>
     <header class="topbar">
@@ -16,13 +23,148 @@
           <small>CONTENT STUDIO</small>
         </span>
       </a>
-      <div class="topbar-status">
-        <span class="status-dot" aria-hidden="true"></span>
-        <span id="api-state">API 확인 중</span>
+      <div class="topbar-actions">
+        <div class="topbar-status">
+          <span class="status-dot" aria-hidden="true"></span>
+          <span id="api-state">인증 확인 중</span>
+        </div>
+        <div class="auth-user" id="auth-user" hidden>
+          <span id="auth-user-name"></span>
+          <button class="topbar-command" id="security-button" type="button">보안</button>
+          <button class="topbar-command" id="logout-button" type="button">로그아웃</button>
+        </div>
       </div>
     </header>
 
-    <main>
+    <dialog class="auth-dialog" id="auth-dialog" aria-labelledby="auth-title">
+      <section class="auth-surface">
+        <div class="auth-heading">
+          <span class="brand-mark" aria-hidden="true">B</span>
+          <div>
+            <p class="eyebrow">BRANDMATE</p>
+            <h1 id="auth-title">Content Studio</h1>
+          </div>
+        </div>
+
+        <div class="auth-tabs" id="auth-tabs" role="tablist" aria-label="인증 방식">
+          <button id="login-tab" type="button" role="tab" aria-selected="true">로그인</button>
+          <button id="signup-tab" type="button" role="tab" aria-selected="false">회원가입</button>
+        </div>
+
+        <form class="auth-form" id="login-form">
+          <label for="login-email">이메일</label>
+          <input id="login-email" name="email" type="email" autocomplete="username" maxlength="320" required />
+          <label for="login-password">비밀번호</label>
+          <input id="login-password" name="password" type="password" autocomplete="current-password" maxlength="128" required />
+          <p class="auth-error" id="login-error" role="alert" hidden></p>
+          <button class="auth-submit" type="submit">로그인</button>
+          <button class="auth-link-button" id="forgot-password-button" type="button">비밀번호를 잊으셨나요?</button>
+        </form>
+
+        <form class="auth-form" id="signup-form" hidden>
+          <label for="signup-name">이름</label>
+          <input id="signup-name" name="displayName" autocomplete="name" maxlength="100" required />
+          <label for="signup-email">이메일</label>
+          <input id="signup-email" name="email" type="email" autocomplete="username" maxlength="320" required />
+          <label for="signup-password">비밀번호</label>
+          <input id="signup-password" name="password" type="password" autocomplete="new-password" minlength="12" maxlength="128" required />
+          <label for="signup-password-confirm">비밀번호 확인</label>
+          <input id="signup-password-confirm" name="passwordConfirm" type="password" autocomplete="new-password" minlength="12" maxlength="128" required />
+          <p class="auth-error" id="signup-error" role="alert" hidden></p>
+          <button class="auth-submit" type="submit">계정 만들기</button>
+        </form>
+
+        <form class="auth-form" id="forgot-password-form" hidden>
+          <h2>비밀번호 재설정</h2>
+          <p class="auth-description">가입한 이메일로 일회용 재설정 링크를 보냅니다.</p>
+          <label for="forgot-password-email">이메일</label>
+          <input id="forgot-password-email" name="email" type="email" autocomplete="email" maxlength="320" required />
+          <p class="auth-error" id="forgot-password-error" role="alert" hidden></p>
+          <button class="auth-submit" type="submit">재설정 메일 보내기</button>
+          <button class="auth-link-button auth-back-button" type="button">로그인으로 돌아가기</button>
+        </form>
+
+        <form class="auth-form" id="reset-password-form" hidden>
+          <h2>새 비밀번호 설정</h2>
+          <label for="reset-password">새 비밀번호</label>
+          <input id="reset-password" name="password" type="password" autocomplete="new-password" minlength="12" maxlength="128" required />
+          <label for="reset-password-confirm">새 비밀번호 확인</label>
+          <input id="reset-password-confirm" name="passwordConfirm" type="password" autocomplete="new-password" minlength="12" maxlength="128" required />
+          <p class="auth-error" id="reset-password-error" role="alert" hidden></p>
+          <button class="auth-submit" type="submit">비밀번호 변경</button>
+          <button class="auth-link-button auth-back-button" type="button">로그인으로 돌아가기</button>
+        </form>
+      </section>
+    </dialog>
+
+    <dialog class="auth-dialog" id="security-dialog" aria-labelledby="security-title">
+      <section class="auth-surface">
+        <div class="security-heading">
+          <div>
+            <p class="eyebrow">ACCOUNT SECURITY</p>
+            <h1 id="security-title">계정 보안</h1>
+          </div>
+          <button class="topbar-command" id="security-close-button" type="button">닫기</button>
+        </div>
+
+        <section class="security-section">
+          <h2>로그인된 기기</h2>
+          <p class="auth-description">모르는 기기는 즉시 로그아웃시키세요.</p>
+          <div class="session-list" id="session-list"></div>
+        </section>
+
+        <form class="auth-form security-section" id="change-password-form">
+          <h2>비밀번호 변경</h2>
+          <label for="current-password">현재 비밀번호</label>
+          <input id="current-password" name="currentPassword" type="password" autocomplete="current-password" maxlength="128" required />
+          <label for="new-password">새 비밀번호</label>
+          <input id="new-password" name="newPassword" type="password" autocomplete="new-password" minlength="12" maxlength="128" required />
+          <label for="new-password-confirm">새 비밀번호 확인</label>
+          <input id="new-password-confirm" name="newPasswordConfirm" type="password" autocomplete="new-password" minlength="12" maxlength="128" required />
+          <p class="auth-error" id="change-password-error" role="alert" hidden></p>
+          <button class="auth-submit" type="submit">비밀번호 변경 후 전체 로그아웃</button>
+        </form>
+      </section>
+    </dialog>
+
+    <main id="app-main" hidden>
+      <section class="service-selection" id="service-selection" aria-labelledby="service-selection-title">
+        <div class="service-heading">
+          <p class="eyebrow">BRANDMATE WORKSPACE</p>
+          <h1 id="service-selection-title">무엇을 시작할까요?</h1>
+          <p>
+            광고 콘텐츠 생성은 기존 BrandMate 화면에서 진행하고, 상권 분석은 개발 중인
+            CCTV 보행 관측 대시보드 POC를 별도 창으로 엽니다.
+          </p>
+        </div>
+
+        <div class="service-grid" aria-label="서비스 선택">
+          <button class="service-card ad-card" id="open-ad-studio" type="button">
+            <span class="service-badge">A</span>
+            <strong>광고 생성</strong>
+            <small>매장 정보와 상품 정보를 바탕으로 광고 문구와 이미지를 만듭니다.</small>
+            <span class="service-action">광고 생성 시작</span>
+          </button>
+
+          <a
+            class="service-card analysis-card"
+            href="http://127.0.0.1:8503"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            <span class="service-badge">C</span>
+            <strong>상권 분석</strong>
+            <small>
+              CCTV 보행 관측량과 시간대별 상권 분석 결과를 Streamlit POC로 확인합니다.
+              추후 Brandmate 웹 화면으로 통합할 예정입니다.
+            </small>
+            <span class="service-note">로컬 Streamlit 서버 필요</span>
+            <span class="service-action">대시보드 새 탭 열기</span>
+          </a>
+        </div>
+      </section>
+
+      <section class="ad-studio" id="ad-studio" hidden>
       <section class="intro">
         <div>
           <p class="eyebrow">COPY + IMAGE MODEL PIPELINE</p>
@@ -33,6 +175,7 @@
           </p>
         </div>
         <div class="flow-summary" aria-label="생성 흐름">
+          <button class="text-button" id="back-to-services" type="button">서비스 선택으로 돌아가기</button>
           <span>입력</span><i></i><span>카피 모델</span><i></i><span>이미지 모델</span><i></i><span>콘텐츠</span>
         </div>
       </section>
@@ -70,6 +213,11 @@
                 <label for="copy-model">광고 문구 모델 <b>필수</b></label>
                 <select id="copy-model" name="copyModel"></select>
                 <small id="copy-model-help">모델 정보를 불러오는 중입니다.</small>
+              </div>
+              <div class="model-field vision">
+                <label for="vision-model">사진 분석 모델 <b>필수</b></label>
+                <select id="vision-model" name="visionModel"></select>
+                <small id="vision-model-help">Vision 모델 정보를 불러오는 중입니다.</small>
               </div>
               <div class="model-field image">
                 <label for="image-model">이미지 생성 모델 <b>필수</b></label>
@@ -172,7 +320,7 @@
             </fieldset>
 
             <div class="field">
-              <label for="business-name">상호명 <b>필수</b></label>
+              <label for="business-name">가게명 <b>필수</b></label>
               <input id="business-name" name="businessName" value="오후의 조각" maxlength="100" required />
             </div>
 
@@ -180,12 +328,8 @@
               <label>상품과 가격 <b>필수</b></label>
               <div class="product-list" id="product-list">
                 <div class="product-row">
-                  <input name="productName" value="수제 딸기 티라미수" placeholder="상품명" required />
-                  <input name="productPrice" value="6,500원" placeholder="가격" maxlength="80" />
-                </div>
-                <div class="product-row">
-                  <input name="productName" value="피치에이드" placeholder="상품명" />
-                  <input name="productPrice" value="5,000원" placeholder="가격" maxlength="80" />
+                  <input name="productName" placeholder="상품명" required />
+                  <input name="productPrice" placeholder="가격" maxlength="80" />
                 </div>
               </div>
               <button class="text-button add-product-button" id="add-product-button" type="button">상품 추가</button>
@@ -357,8 +501,9 @@
           </div>
         </section>
       </div>
+      </section>
     </main>
 
-    <script src="./app.js?v=channel-output-format-20260715"></script>
+    <script src="./app.js?v=service-selection-20260721"></script>
   </body>
 </html>

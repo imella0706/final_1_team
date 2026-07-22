@@ -10,6 +10,7 @@ import faiss
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
+from utils.reproducibility import DEFAULT_RANDOM_SEED, set_global_seed
 
 # ============================================================
 # Project paths
@@ -724,6 +725,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> None:
+    set_global_seed(DEFAULT_RANDOM_SEED)
     args = parse_args()
 
     validate_input_files()

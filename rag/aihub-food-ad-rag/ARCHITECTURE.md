@@ -1,4 +1,4 @@
-﻿# Architecture
+# Architecture
 
 ## 목적
 
@@ -81,6 +81,17 @@ data/embeddings/faiss.index
 data/embeddings/faiss_mapping.csv
 ```
 
+
+### Reproducibility Layer
+
+`src/utils/reproducibility.py` is the shared seed utility called by the v2 generation path scripts `01`~`08` and `10`~`15`.
+
+```text
+DEFAULT_RANDOM_SEED = 42
+```
+
+It sets Python `random`, NumPy, PyTorch, CUDA seeds and deterministic options on a best-effort basis. The v2 `can_rebuild=true` statement assumes this seed setup plus the same input data, intermediate artifacts, dependency versions, and local path layout.
+
 ### Final DB Layer
 
 역할:
@@ -94,8 +105,8 @@ data/embeddings/faiss_mapping.csv
 현재 완성 DB:
 
 ```text
-data/final_db/5gb/
-data/final_db/5gb_v2_diverse/
+data/final_db/processed\aihub_food_image_text\v1\food_description_data/
+data/final_db/processed\aihub_food_image_text\v2\food_description_data/
 ```
 
 설계만 준비된 폴더:
@@ -135,7 +146,7 @@ app/prompt_rag.py
 | 11 | `11_select_diverse_representatives.py` | 음식별 정위/측면 대표 이미지 선택 |
 | 12 | `12_build_diverse_embedding_subset.py` | 선택 대표 이미지에 해당하는 임베딩 subset 생성 |
 | 13 | `13_build_diverse_faiss.py` | diverse subset 전용 FAISS 인덱스 생성 |
-| 14 | `14_make_diverse_final_db.py` | `5gb_v2_diverse` 최종 DB 패키징 |
+| 14 | `14_make_diverse_final_db.py` | `processed\aihub_food_image_text\v2\food_description_data` 최종 DB 패키징 |
 | 15 | `15_export_final_db_assets.py` | 관리용 CSV, LLM JSON, 루트 master summary 생성 |
 
 ## DB 요약 파일 정책
@@ -152,4 +163,4 @@ summary.json
 data/final_db/final_db_summary.json
 ```
 
-`src/15_export_final_db_assets.py`는 `5gb`, `5gb_v2_diverse` 등 완성 DB 폴더를 읽어 루트 `final_db_summary.json`을 갱신한다.
+`src/15_export_final_db_assets.py`는 `processed\aihub_food_image_text\v1\food_description_data`, `processed\aihub_food_image_text\v2\food_description_data` 등 완성 DB 폴더를 읽어 루트 `final_db_summary.json`을 갱신한다.

@@ -1,8 +1,9 @@
 import base64
 import binascii
+import asyncio
 import copy
+import io
 import json
-import os
 import random
 import time
 from pathlib import Path
@@ -11,6 +12,7 @@ from typing import Any
 from urllib.parse import urlencode
 
 import httpx
+from huggingface_hub import InferenceClient
 
 from app.core.config import settings
 from app.extensions.ad_content.schemas import AdImageRequest, AdImageResponse, ImageModel
@@ -24,7 +26,6 @@ class ImageModelProviderError(RuntimeError):
     """Raised when the image model provider rejects or fails a request."""
 
 
-DEFAULT_IMAGE_BASE_URL = "https://router.huggingface.co/hf-inference"
 DATA_URL_BASE64_MARKER = ";base64,"
 REFERENCE_IMAGE_EXTENSIONS = {
     "image/jpeg": "jpg",
@@ -71,11 +72,6 @@ def _build_payload(request: AdImageRequest) -> dict:
     if request.negative_prompt:
         payload["parameters"]["negative_prompt"] = request.negative_prompt
     return payload
-
-
-def _image_endpoint(model: str) -> str:
-    base_url = os.getenv("BRANDMATE_IMAGE_BASE_URL", DEFAULT_IMAGE_BASE_URL)
-    return f"{base_url.rstrip('/')}/models/{model}"
 
 
 def _is_openai_image_model(model: str) -> bool:
@@ -320,9 +316,45 @@ async def _generate_ad_image_comfyui(request: AdImageRequest) -> AdImageResponse
 
 
 async def _sleep(seconds: float) -> None:
-    import asyncio
-
     await asyncio.sleep(seconds)
+
+
+def _generate_hugging_face_image(
+    request: AdImageRequest,
+    api_key: str,
+) -> tuple[bytes, str]:
+    client = InferenceClient(
+        provider=settings.hf_image_provider,
+        api_key=api_key,
+        timeout=settings.llm_timeout_seconds,
+    )
+    if request.reference_image_data_url:
+        reference_bytes, _, _ = _decode_reference_image(request.reference_image_data_url)
+        model = settings.hf_image_edit_model
+        image = client.image_to_image(
+            reference_bytes,
+            prompt=_reference_guided_prompt(request.prompt),
+            negative_prompt=request.negative_prompt,
+            num_inference_steps=request.num_inference_steps,
+            guidance_scale=request.guidance_scale,
+            model=model,
+            target_size={"width": request.width, "height": request.height},
+        )
+    else:
+        model = request.model.value
+        image = client.text_to_image(
+            request.prompt,
+            negative_prompt=request.negative_prompt,
+            height=request.height,
+            width=request.width,
+            num_inference_steps=request.num_inference_steps,
+            guidance_scale=request.guidance_scale,
+            model=model,
+            seed=request.seed,
+        )
+    buffer = io.BytesIO()
+    image.save(buffer, format="PNG")
+    return buffer.getvalue(), model
 
 
 async def generate_ad_image(request: AdImageRequest) -> AdImageResponse:
@@ -344,35 +376,23 @@ async def generate_ad_image(request: AdImageRequest) -> AdImageResponse:
         )
 
     started_at = perf_counter()
-    endpoint = _image_endpoint(request.model.value)
-    headers = {
-        "Authorization": f"Bearer {settings.llm_api_key.get_secret_value()}",
-        "Accept": "image/png",
-        "Content-Type": "application/json",
-    }
-
     try:
-        async with httpx.AsyncClient(timeout=settings.llm_timeout_seconds) as client:
-            response = await client.post(endpoint, headers=headers, json=_build_payload(request))
-            response.raise_for_status()
-        image_bytes, media_type = await _extract_image(response)
-    except httpx.HTTPStatusError as error:
-        detail = _provider_detail(error.response)
+        image_bytes, routed_model = await asyncio.to_thread(
+            _generate_hugging_face_image,
+            request,
+            settings.llm_api_key.get_secret_value(),
+        )
+    except Exception as error:
         raise ImageModelProviderError(
-            f"{request.model.value} image generation failed: {detail}"
-        ) from error
-    except httpx.HTTPError as error:
-        raise ImageModelProviderError(
-            "Could not connect to the image model provider. "
-            "Check internet access and BRANDMATE_IMAGE_BASE_URL "
-            f"({DEFAULT_IMAGE_BASE_URL}). Root error: {type(error).__name__}"
+            f"{request.model.value} image generation failed via Hugging Face "
+            f"provider {settings.hf_image_provider}: {error}"
         ) from error
 
     return AdImageResponse(
-        model=request.model.value,
+        model=routed_model,
         prompt=request.prompt,
         image_base64=base64.b64encode(image_bytes).decode("ascii"),
-        media_type=media_type,
+        media_type="image/png",
         latency_ms=round((perf_counter() - started_at) * 1000),
     )
 

@@ -1,12 +1,24 @@
 const pageHost = window.location.hostname || "127.0.0.1";
-const API_BASE_URL = `http://${pageHost}:7660/api/v1`;
+const configuredApiOrigin = document
+  .querySelector('meta[name="brandmate-api-origin"]')
+  ?.content.trim()
+  .replace(/\/$/, "");
+const isStaticDevelopmentPort = ["5500", "5501"].includes(window.location.port);
+const defaultApiOrigin = isStaticDevelopmentPort
+  ? `${window.location.protocol}//${pageHost}:7660`
+  : window.location.origin;
+// [Design Intent] Static local development talks to :7660. Production defaults
+// to a same-origin reverse proxy, avoiding HTTPS mixed-content and CORS drift.
+const API_BASE_URL = `${configuredApiOrigin || defaultApiOrigin}/api/v1`;
 
 const $ = (selector) => document.querySelector(selector);
 
 const form = $("#ad-form");
 const copyModelSelect = $("#copy-model");
+const visionModelSelect = $("#vision-model");
 const imageModelSelect = $("#image-model");
 const copyModelHelp = $("#copy-model-help");
+const visionModelHelp = $("#vision-model-help");
 const imageModelHelp = $("#image-model-help");
 const apiState = $("#api-state");
 const channelSelect = $("#channel-select");
@@ -33,22 +45,49 @@ const copyNaverBlogButton = $("#copy-naver-blog-button");
 const referenceImageLabel = $("#reference-image-label");
 const productList = $("#product-list");
 const addProductButton = $("#add-product-button");
+const appMain = $("#app-main");
+const authDialog = $("#auth-dialog");
+const authTabs = $("#auth-tabs");
+const authUser = $("#auth-user");
+const authUserName = $("#auth-user-name");
+const loginTab = $("#login-tab");
+const signupTab = $("#signup-tab");
+const loginForm = $("#login-form");
+const signupForm = $("#signup-form");
+const forgotPasswordForm = $("#forgot-password-form");
+const resetPasswordForm = $("#reset-password-form");
+const loginError = $("#login-error");
+const signupError = $("#signup-error");
+const forgotPasswordError = $("#forgot-password-error");
+const resetPasswordError = $("#reset-password-error");
+const forgotPasswordButton = $("#forgot-password-button");
+const logoutButton = $("#logout-button");
+const securityButton = $("#security-button");
+const securityDialog = $("#security-dialog");
+const securityCloseButton = $("#security-close-button");
+const sessionList = $("#session-list");
+const changePasswordForm = $("#change-password-form");
+const changePasswordError = $("#change-password-error");
+const serviceSelection = $("#service-selection");
+const adStudio = $("#ad-studio");
+const openAdStudioButton = $("#open-ad-studio");
+const backToServicesButton = $("#back-to-services");
 
 let hasGeneratedAd = false;
 let referencePreviewDataUrl = null;
 let latestNaverBlogPasteText = "";
+let accessToken = null;
+let currentUser = null;
+let refreshRequest = null;
+const initialActionParams = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+let pendingResetToken = initialActionParams.get("reset_token");
 
 const fallbackCopyModels = [
-  {
-    id: "openai/gpt-5.5",
-    name: "OpenAI GPT-5.5",
-    note: "최신 플래그십 GPT 모델. 광고 기획/카피 품질 비교용 기본 추천",
-    recommended: true,
-  },
   {
     id: "openai/gpt-5.4-mini",
     name: "OpenAI GPT-5.4 Mini",
     note: "속도/비용 테스트용 GPT 모델. 실서비스 후보 비교에 적합",
+    recommended: true,
   },
   {
     id: "Qwen/Qwen2.5-7B-Instruct",
@@ -66,23 +105,45 @@ const fallbackImageModels = [
   {
     id: "openai/gpt-image-1-mini",
     name: "OpenAI gpt-image-1-mini",
+    provider: "OpenAI",
     note: "저비용/일반 이미지 생성용으로 우선 사용합니다.",
     recommended: true,
   },
   {
     id: "black-forest-labs/FLUX.1-schnell",
     name: "FLUX.1 Schnell",
+    provider: "Hugging Face Router",
     note: "광고 시안용 이미지 생성을 빠르게 확인할 때 적합합니다.",
   },
   {
     id: "stabilityai/stable-diffusion-xl-base-1.0",
     name: "Stable Diffusion XL Base 1.0",
+    provider: "Hugging Face Router",
     note: "범용 이미지 생성 모델입니다.",
   },
   {
     id: "prompthero/openjourney",
     name: "Openjourney",
+    provider: "Hugging Face Router",
     note: "스타일이 있는 홍보/포스터 시안에 적합합니다.",
+  },
+];
+
+const fallbackVisionModels = [
+  {
+    id: "openai/gpt-5.4-mini",
+    name: "GPT-5.4 Mini Vision",
+    provider: "OpenAI",
+    note: "기존 OpenAI 사진 분석 모델입니다.",
+    enabled: true,
+    recommended: true,
+  },
+  {
+    id: "Qwen/Qwen2.5-VL-7B-Instruct",
+    name: "Qwen2.5-VL-7B-Instruct",
+    provider: "Hugging Face",
+    note: "사진 이해, OCR, 이미지 설명과 한국어 분석에 적합합니다.",
+    enabled: true,
   },
 ];
 
@@ -938,6 +999,7 @@ async function readForm() {
       detail: `${audienceDetail || ""}`.trim(),
     },
     image_model: data.get("imageModel"),
+    vision_model: data.get("visionModel"),
     image_width: 1024,
     image_height: 1280,
     reference_image_data_url: referenceImageDataUrl,
@@ -945,18 +1007,241 @@ async function readForm() {
   };
 }
 
-async function fetchJson(path, options = {}) {
-  const response = await fetch(`${API_BASE_URL}${path}`, options);
+class ApiRequestError extends Error {
+  constructor(message, status, code = "API_REQUEST_FAILED") {
+    super(message);
+    this.name = "ApiRequestError";
+    this.status = status;
+    this.code = code;
+  }
+}
+
+async function requestJson(path, options = {}, useAccessToken = false) {
+  const headers = new Headers(options.headers || {});
+  if (useAccessToken && accessToken) {
+    headers.set("Authorization", `Bearer ${accessToken}`);
+  }
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    ...options,
+    headers,
+    credentials: "include",
+  });
   let body = {};
   try {
     body = await response.json();
   } catch {
     body = {};
   }
+  return { response, body };
+}
+
+function toApiError(response, body) {
+  const error = body.error || {};
+  return new ApiRequestError(
+    error.message || body.detail || `API error (${response.status})`,
+    response.status,
+    error.code,
+  );
+}
+
+function applySession(session) {
+  accessToken = session.access_token;
+  currentUser = session.user;
+}
+
+async function authRequest(path, options = {}) {
+  const { response, body } = await requestJson(path, options, false);
   if (!response.ok) {
-    throw new Error(body.detail || `API error (${response.status})`);
+    throw toApiError(response, body);
   }
   return body;
+}
+
+async function refreshSession() {
+  if (!refreshRequest) {
+    const rotate = () => authRequest("/auth/refresh", { method: "POST" });
+    // [Design Intent] In-tab calls share one Promise and the Web Locks API
+    // serializes refresh rotation across tabs that share the same HttpOnly cookie.
+    const coordinated = navigator.locks?.request
+      ? navigator.locks.request("brandmate-auth-refresh", rotate)
+      : rotate();
+    refreshRequest = coordinated
+      .then((session) => {
+        applySession(session);
+        return session;
+      })
+      .finally(() => {
+        refreshRequest = null;
+      });
+  }
+  return refreshRequest;
+}
+
+async function fetchJson(path, options = {}, allowRefresh = true) {
+  const { response, body } = await requestJson(path, options, true);
+  if (response.status === 401 && allowRefresh) {
+    try {
+      await refreshSession();
+      return fetchJson(path, options, false);
+    } catch {
+      showAuthGate("세션이 만료되었습니다. 다시 로그인해 주세요.");
+      throw new ApiRequestError("로그인이 필요합니다.", 401, "AUTH_REQUIRED");
+    }
+  }
+  if (!response.ok) {
+    throw toApiError(response, body);
+  }
+  return body;
+}
+
+function setAuthMode(mode) {
+  const showLogin = mode === "login";
+  const showSignup = mode === "signup";
+  const showForgot = mode === "forgot";
+  const showReset = mode === "reset";
+  authTabs.hidden = !(showLogin || showSignup);
+  loginTab.setAttribute("aria-selected", String(showLogin));
+  signupTab.setAttribute("aria-selected", String(showSignup));
+  loginForm.hidden = !showLogin;
+  signupForm.hidden = !showSignup;
+  forgotPasswordForm.hidden = !showForgot;
+  resetPasswordForm.hidden = !showReset;
+  [loginError, signupError, forgotPasswordError, resetPasswordError].forEach((element) => {
+    element.hidden = true;
+    element.classList.remove("auth-notice");
+  });
+  window.setTimeout(() => {
+    const focusTarget = {
+      login: "#login-email",
+      signup: "#signup-name",
+      forgot: "#forgot-password-email",
+      reset: "#reset-password",
+    }[mode];
+    $(focusTarget)?.focus();
+  }, 0);
+}
+
+function showAuthGate(message = "", notice = false) {
+  accessToken = null;
+  currentUser = null;
+  appMain.hidden = true;
+  serviceSelection.hidden = false;
+  adStudio.hidden = true;
+  authUser.hidden = true;
+  apiState.textContent = "로그인 필요";
+  apiState.className = "offline";
+  setAuthMode("login");
+  loginError.textContent = message;
+  loginError.classList.toggle("auth-notice", notice);
+  loginError.hidden = !message;
+  if (!authDialog.open) {
+    authDialog.showModal();
+  }
+}
+
+function showServiceSelection() {
+  serviceSelection.hidden = false;
+  adStudio.hidden = true;
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
+function showAdStudio() {
+  serviceSelection.hidden = true;
+  adStudio.hidden = false;
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
+function showAuthenticated(session) {
+  applySession(session);
+  authUserName.textContent = currentUser.display_name;
+  authUser.hidden = false;
+  appMain.hidden = false;
+  showServiceSelection();
+  if (authDialog.open) {
+    authDialog.close();
+  }
+}
+
+function setFormBusy(authForm, busy) {
+  const submit = authForm.querySelector('button[type="submit"]');
+  submit.disabled = busy;
+}
+
+function renderSessions(sessions) {
+  sessionList.replaceChildren();
+  sessions.forEach((session) => {
+    const row = document.createElement("div");
+    row.className = "session-item";
+    const description = document.createElement("div");
+    const name = document.createElement("strong");
+    const lastSeen = document.createElement("small");
+    name.textContent = `${session.device_name}${session.current ? " · 현재 기기" : ""}`;
+    lastSeen.textContent = `최근 사용 ${new Date(session.last_seen_at).toLocaleString("ko-KR")}`;
+    description.append(name, lastSeen);
+    row.append(description);
+    if (!session.current) {
+      const revokeButton = document.createElement("button");
+      revokeButton.type = "button";
+      revokeButton.className = "topbar-command";
+      revokeButton.textContent = "로그아웃";
+      revokeButton.addEventListener("click", async () => {
+        revokeButton.disabled = true;
+        try {
+          await fetchJson(`/auth/sessions/${session.id}`, { method: "DELETE" });
+          await loadSessions();
+        } catch (error) {
+          window.alert(error.message);
+        } finally {
+          revokeButton.disabled = false;
+        }
+      });
+      row.append(revokeButton);
+    }
+    sessionList.append(row);
+  });
+}
+
+async function loadSessions() {
+  const body = await fetchJson("/auth/sessions");
+  renderSessions(body.sessions);
+}
+
+async function bootstrapAuth() {
+  const verifyToken = initialActionParams.get("verify_token");
+  if (verifyToken) {
+    try {
+      await authRequest("/auth/verify-email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token: verifyToken }),
+      });
+      // [Design Intent] Action tokens arrive in the URL fragment, which is never
+      // sent to the static web server, and are removed from browser history here.
+      window.history.replaceState(
+        {},
+        "",
+        `${window.location.pathname}${window.location.search}`,
+      );
+      showAuthGate("이메일 인증이 완료되었습니다. 로그인해 주세요.", true);
+    } catch (error) {
+      showAuthGate(error.message);
+    }
+    return;
+  }
+  if (pendingResetToken) {
+    appMain.hidden = true;
+    authUser.hidden = true;
+    setAuthMode("reset");
+    if (!authDialog.open) authDialog.showModal();
+    return;
+  }
+  try {
+    const session = await refreshSession();
+    showAuthenticated(session);
+    await loadModels();
+  } catch {
+    showAuthGate();
+  }
 }
 
 function fillSelect(select, models) {
@@ -972,25 +1257,86 @@ function fillSelect(select, models) {
   });
 }
 
+function fillVisionSelect(models) {
+  visionModelSelect.replaceChildren();
+  const groups = new Map();
+  models.forEach((model) => {
+    const provider = model.provider || "기타";
+    if (!groups.has(provider)) {
+      const group = document.createElement("optgroup");
+      group.label = provider;
+      groups.set(provider, group);
+      visionModelSelect.append(group);
+    }
+    const option = document.createElement("option");
+    option.value = model.id;
+    option.textContent = model.enabled === false ? `${model.name} (설정 필요)` : model.name;
+    option.dataset.note = model.note;
+    option.dataset.provider = provider;
+    option.disabled = model.enabled === false;
+    option.selected = Boolean(model.recommended && model.enabled !== false);
+    groups.get(provider).append(option);
+  });
+}
+
+function imageProviderGroup(provider) {
+  if (provider === "OpenAI" || provider === "OpenAI Responses API") {
+    return "GPT / OpenAI";
+  }
+  if (provider === "Hugging Face Router") {
+    return "Hugging Face";
+  }
+  if (provider === "Local ComfyUI") {
+    return "Local ComfyUI";
+  }
+  return provider || "기타";
+}
+
+function fillImageSelect(models) {
+  imageModelSelect.replaceChildren();
+  const groups = new Map();
+  models.forEach((model) => {
+    const groupName = imageProviderGroup(model.provider);
+    if (!groups.has(groupName)) {
+      const group = document.createElement("optgroup");
+      group.label = groupName;
+      groups.set(groupName, group);
+      imageModelSelect.append(group);
+    }
+    const option = document.createElement("option");
+    option.value = model.id;
+    option.textContent = model.name;
+    option.dataset.note = model.note;
+    option.dataset.provider = model.provider || "";
+    option.selected = Boolean(model.recommended);
+    groups.get(groupName).append(option);
+  });
+}
+
 function updateModelHelp() {
   const copyOption = copyModelSelect.selectedOptions[0];
+  const visionOption = visionModelSelect.selectedOptions[0];
   const imageOption = imageModelSelect.selectedOptions[0];
   copyModelHelp.textContent = copyOption?.dataset.note || "광고 문구 모델을 선택해 주세요.";
+  visionModelHelp.textContent = visionOption?.dataset.note || "사진 분석 모델을 선택해 주세요.";
   imageModelHelp.textContent = imageOption?.dataset.note || "이미지 생성 모델을 선택해 주세요.";
 }
 
 async function loadModels() {
   fillSelect(copyModelSelect, fallbackCopyModels);
-  fillSelect(imageModelSelect, fallbackImageModels);
+  fillVisionSelect(fallbackVisionModels);
+  fillImageSelect(fallbackImageModels);
   updateModelHelp();
 
   try {
-    const [copyModels, imageModels] = await Promise.all([
+    const [copyModels, visionModels, imageModels] = await Promise.all([
       fetchJson("/ad-copies/models"),
+      fetchJson("/ad-content/vision-models"),
       fetchJson("/ad-content/image-models"),
     ]);
     fillSelect(copyModelSelect, copyModels);
-    fillSelect(imageModelSelect, imageModels);
+    fillVisionSelect(visionModels);
+    fillImageSelect(imageModels);
     updateModelHelp();
     apiState.textContent = "API 연결됨";
     apiState.className = "online";
@@ -998,6 +1344,7 @@ async function loadModels() {
     apiState.textContent = "API 연결 실패, 기본 목록 사용";
     apiState.className = "offline";
     copyModelHelp.textContent = error.message;
+    visionModelHelp.textContent = error.message;
     imageModelHelp.textContent = error.message;
   }
 }
@@ -1184,12 +1531,15 @@ form.addEventListener("submit", async (event) => {
 });
 
 copyModelSelect.addEventListener("change", updateModelHelp);
+visionModelSelect.addEventListener("change", updateModelHelp);
 imageModelSelect.addEventListener("change", updateModelHelp);
 referenceImageInput?.addEventListener("change", updateReferencePreview);
 referenceCutoutToggle?.addEventListener("change", updateReferencePreview);
 referencePreviewClear?.addEventListener("click", clearReferencePreview);
 channelSelect?.addEventListener("change", updateChannelMode);
 addProductButton?.addEventListener("click", addProductRow);
+openAdStudioButton?.addEventListener("click", showAdStudio);
+backToServicesButton?.addEventListener("click", showServiceSelection);
 
 resetButton.addEventListener("click", () => {
   form.reset();
@@ -1242,6 +1592,196 @@ copyNaverBlogButton?.addEventListener("click", async () => {
   }
 });
 
+loginTab.addEventListener("click", () => setAuthMode("login"));
+signupTab.addEventListener("click", () => setAuthMode("signup"));
+forgotPasswordButton.addEventListener("click", () => setAuthMode("forgot"));
+[...document.querySelectorAll(".auth-back-button")].forEach((button) => {
+  button.addEventListener("click", () => setAuthMode("login"));
+});
+authDialog.addEventListener("cancel", (event) => event.preventDefault());
+
+loginForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  loginError.hidden = true;
+  setFormBusy(loginForm, true);
+  const data = new FormData(loginForm);
+  try {
+    const session = await authRequest("/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        email: data.get("email"),
+        password: data.get("password"),
+      }),
+    });
+    loginForm.reset();
+    showAuthenticated(session);
+    await loadModels();
+  } catch (error) {
+    loginError.textContent = error.message;
+    loginError.hidden = false;
+  } finally {
+    setFormBusy(loginForm, false);
+  }
+});
+
+signupForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  signupError.hidden = true;
+  const data = new FormData(signupForm);
+  if (data.get("password") !== data.get("passwordConfirm")) {
+    signupError.textContent = "비밀번호가 일치하지 않습니다.";
+    signupError.hidden = false;
+    return;
+  }
+  setFormBusy(signupForm, true);
+  try {
+    const credentials = {
+      email: data.get("email"),
+      password: data.get("password"),
+    };
+    const created = await authRequest("/auth/signup", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        ...credentials,
+        display_name: data.get("displayName"),
+      }),
+    });
+    if (!created.user.email_verified) {
+      $("#login-email").value = credentials.email;
+      signupForm.reset();
+      showAuthGate("인증 메일을 보냈습니다. 이메일의 링크를 확인해 주세요.", true);
+      return;
+    }
+    const session = await authRequest("/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(credentials),
+    });
+    signupForm.reset();
+    showAuthenticated(session);
+    await loadModels();
+  } catch (error) {
+    signupError.textContent = error.message;
+    signupError.hidden = false;
+  } finally {
+    setFormBusy(signupForm, false);
+  }
+});
+
+forgotPasswordForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  setFormBusy(forgotPasswordForm, true);
+  forgotPasswordError.hidden = true;
+  forgotPasswordError.classList.remove("auth-notice");
+  const data = new FormData(forgotPasswordForm);
+  try {
+    const result = await authRequest("/auth/password-reset/request", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: data.get("email") }),
+    });
+    forgotPasswordError.textContent = result.message;
+    forgotPasswordError.classList.add("auth-notice");
+    forgotPasswordError.hidden = false;
+  } catch (error) {
+    forgotPasswordError.textContent = error.message;
+    forgotPasswordError.hidden = false;
+  } finally {
+    setFormBusy(forgotPasswordForm, false);
+  }
+});
+
+resetPasswordForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  resetPasswordError.hidden = true;
+  const data = new FormData(resetPasswordForm);
+  if (data.get("password") !== data.get("passwordConfirm")) {
+    resetPasswordError.textContent = "비밀번호가 일치하지 않습니다.";
+    resetPasswordError.hidden = false;
+    return;
+  }
+  setFormBusy(resetPasswordForm, true);
+  try {
+    await authRequest("/auth/password-reset/confirm", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        token: pendingResetToken,
+        new_password: data.get("password"),
+      }),
+    });
+    pendingResetToken = null;
+    window.history.replaceState(
+      {},
+      "",
+      `${window.location.pathname}${window.location.search}`,
+    );
+    resetPasswordForm.reset();
+    showAuthGate("비밀번호가 변경되었습니다. 새 비밀번호로 로그인해 주세요.", true);
+  } catch (error) {
+    resetPasswordError.textContent = error.message;
+    resetPasswordError.hidden = false;
+  } finally {
+    setFormBusy(resetPasswordForm, false);
+  }
+});
+
+securityButton.addEventListener("click", async () => {
+  securityButton.disabled = true;
+  try {
+    await loadSessions();
+    securityDialog.showModal();
+  } catch (error) {
+    window.alert(error.message);
+  } finally {
+    securityButton.disabled = false;
+  }
+});
+
+securityCloseButton.addEventListener("click", () => securityDialog.close());
+
+changePasswordForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  changePasswordError.hidden = true;
+  const data = new FormData(changePasswordForm);
+  if (data.get("newPassword") !== data.get("newPasswordConfirm")) {
+    changePasswordError.textContent = "새 비밀번호가 일치하지 않습니다.";
+    changePasswordError.hidden = false;
+    return;
+  }
+  setFormBusy(changePasswordForm, true);
+  try {
+    await fetchJson("/auth/password/change", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        current_password: data.get("currentPassword"),
+        new_password: data.get("newPassword"),
+      }),
+    });
+    changePasswordForm.reset();
+    securityDialog.close();
+    showAuthGate("비밀번호가 변경되어 모든 기기에서 로그아웃되었습니다.", true);
+  } catch (error) {
+    changePasswordError.textContent = error.message;
+    changePasswordError.hidden = false;
+  } finally {
+    setFormBusy(changePasswordForm, false);
+  }
+});
+
+logoutButton.addEventListener("click", async () => {
+  logoutButton.disabled = true;
+  try {
+    await authRequest("/auth/logout", { method: "POST" });
+  } finally {
+    logoutButton.disabled = false;
+    showAuthGate();
+  }
+});
+
 showEmptyState();
 updateChannelMode();
-loadModels();
+bootstrapAuth();

@@ -4,7 +4,7 @@
 
 | 버전 | 목표 용량 |
 |---|---:|
-| 5gb | 5GB |
+| processed\aihub_food_image_text\v1\food_description_data | processed\aihub_food_image_text\v1\food_description_data |
 | 10gb | 10GB |
 | 20gb | 20GB |
 
@@ -46,3 +46,16 @@ pub: alcohol만 포함하지 않고 fried_side, grilled_side, seafood_side, kore
 목표 용량은 정확히 일치하지 않을 수 있습니다.
 
 configs/db_size_policy.yaml의 size_tolerance_mb 기준으로 허용 오차를 둡니다.
+
+## v2 diverse DB Policy
+
+`processed\aihub_food_image_text\v2\food_description_data` is not built with the baseline business_category balancing policy. The v2 DB prioritizes:
+
+1. maximize unique food types
+2. select one front and one side representative per food when possible
+3. prefer Bounding Box ratio 40~70%
+4. prefer high center score
+5. prefer high Blur Score
+6. prefer high resolution
+
+Therefore, `category_balanced` is false for `processed\aihub_food_image_text\v2\food_description_data`, and restaurant remains the largest category.

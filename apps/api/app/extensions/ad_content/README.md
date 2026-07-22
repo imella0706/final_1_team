@@ -55,7 +55,7 @@ models.py
 image_service.py
 ```
 
-Hugging Face Inference Router 스타일의 이미지 생성 API를 호출합니다.
+Hugging Face 공식 클라이언트로 현재 지원되는 이미지 공급자를 자동 선택해 호출합니다.
 
 ```text
 image_prompt.py
@@ -136,9 +136,15 @@ Hugging Face Router는 외부 유료 API 경로이므로 현재 운영 기본값
 ```env
 # [Design Intent] 외부 API 테스트는 운영 기본값이 아니라 임시 우회 경로로만 둔다.
 BRANDMATE_IMAGE_PROVIDER=huggingface
-BRANDMATE_IMAGE_BASE_URL=https://router.huggingface.co/hf-inference
+# auto는 모델을 지원하는 현재 공급자를 Hugging Face Router가 선택합니다.
+BRANDMATE_HF_IMAGE_PROVIDER=auto
+BRANDMATE_HF_IMAGE_EDIT_MODEL=black-forest-labs/FLUX.1-Kontext-dev
 BRANDMATE_LLM_API_KEY=...
 ```
+
+참고 사진이 없는 Hugging Face 요청은 선택한 text-to-image 모델을 사용합니다. 참고 사진이
+있으면 사진 원본 바이트를 `FLUX.1-Kontext-dev` image-to-image 요청에 직접 전달하며, 실제
+사용된 편집 모델은 응답의 `image.model`과 artifact 메타데이터에 기록됩니다.
 
 현재 비전 모델 평가코드는 터미널 생성 기준이며, 웹요청 중 자동으로 실행되지 않습니다. 평가지표, `report.json`, `report.md`, 평가용 이미지 저장은 터미널에서 `scriptsevaluate_vision_models`를 실행했을 때만 생성됩니다. 웹 UI에는 기존처럼 광고 문구 생성 시간과 이미지 생성 시간만 표시됩니다.
 
