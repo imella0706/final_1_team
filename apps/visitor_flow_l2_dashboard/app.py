@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Render L2 visitor-flow aggregation artifacts as a Streamlit dashboard."""
+"""Render L2 visitor-flow and L3-1 manual ROI artifacts."""
 
 from __future__ import annotations
 
@@ -11,11 +11,14 @@ import pandas as pd
 import streamlit as st
 
 
-# [Design Intent] 대시보드는 YOLO를 다시 실행하지 않는다. L2 집계 artifact만
-# 읽어서 frame-normalized 시간대 비교와 화면 grid 관측 분포를 검증한다.
+# [Design Intent] 대시보드는 YOLO를 다시 실행하지 않는다. L2 집계와 L3-1 ROI
+# artifact를 읽어서 전체 화면과 매장 전면 관측 결과를 함께 검증한다.
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_RESULTS_DIR = (
     REPO_ROOT / "outputs" / "visitor_flow_mvp" / "c0241_20210802_20210803_l2_4"
+)
+DEFAULT_ROI_RESULTS_DIR = (
+    REPO_ROOT / "outputs" / "visitor_flow_mvp" / "c0241_20210802_20210803_l3_1_roi"
 )
 
 REQUIRED_FILES = {
@@ -24,6 +27,14 @@ REQUIRED_FILES = {
     "events": "events.parquet",
     "frames": "frames.parquet",
     "summary": "summary.parquet",
+}
+
+REQUIRED_ROI_FILES = {
+    "analysis": "roi_analysis.json",
+    "config": "roi_config.json",
+    "events": "roi_events.parquet",
+    "frames": "roi_frames.parquet",
+    "summary": "roi_summary.parquet",
 }
 
 PREVIEW_EXTENSIONS = {".webm", ".mp4"}
@@ -58,6 +69,15 @@ def validate_results_dir(results_dir: Path) -> list[Path]:
     ]
 
 
+def validate_roi_results_dir(results_dir: Path) -> list[Path]:
+    """Return required L3-1 ROI artifacts that are missing."""
+    return [
+        results_dir / filename
+        for filename in REQUIRED_ROI_FILES.values()
+        if not (results_dir / filename).is_file()
+    ]
+
+
 def load_l2_artifacts(
     results_dir: Path,
 ) -> tuple[dict[str, Any], pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
@@ -70,6 +90,22 @@ def load_l2_artifacts(
     frames = pd.read_parquet(results_dir / REQUIRED_FILES["frames"])
     events = pd.read_parquet(results_dir / REQUIRED_FILES["events"])
     return analysis, dashboard_summary, summary, frames, events
+
+
+def load_roi_artifacts(
+    results_dir: Path,
+) -> tuple[dict[str, Any], dict[str, Any], pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """Load deterministic L3-1 ROI metadata and tables."""
+    analysis = json.loads(
+        (results_dir / REQUIRED_ROI_FILES["analysis"]).read_text(encoding="utf-8")
+    )
+    config = json.loads(
+        (results_dir / REQUIRED_ROI_FILES["config"]).read_text(encoding="utf-8")
+    )
+    summary = pd.read_parquet(results_dir / REQUIRED_ROI_FILES["summary"])
+    frames = pd.read_parquet(results_dir / REQUIRED_ROI_FILES["frames"])
+    events = pd.read_parquet(results_dir / REQUIRED_ROI_FILES["events"])
+    return analysis, config, summary, frames, events
 
 
 def resolve_repo_path(path_text: str) -> Path:
@@ -138,7 +174,7 @@ def render_video_validation(
     analysis: dict[str, Any],
     results_dir: Path,
 ) -> None:
-    st.subheader("2. 실제 영상에서 구역 기준 확인")
+    st.subheader("3. 실제 영상에서 구역 기준 확인")
     st.caption(
         "노란 선으로 나뉜 24칸이 아래 히트맵의 24칸과 같은 기준입니다. "
         "영상은 탐지 품질과 구역 기준을 눈으로 확인하기 위한 대표 피크 구간입니다."
@@ -218,11 +254,110 @@ def render_video_validation(
     )
 
 
+def render_operator_roi_video(
+    source_analysis: dict[str, Any],
+    roi_analysis: dict[str, Any],
+    config: dict[str, Any],
+    results_dir: Path,
+) -> None:
+    st.markdown("#### 운영자용 ROI 연속 영상 검수")
+    st.caption(
+        f"수동 ROI `{config.get('primary_roi_id', '-')}`가 연속 프레임에서도 같은 "
+        "위치에 유지되고 bbox bottom-center 판정이 의도대로 동작하는지 확인하는 "
+        "내부 QA 화면입니다."
+    )
+
+    source_videos = source_video_paths(source_analysis)
+    if not source_videos:
+        st.warning("analysis.json에서 원본 mp4 경로를 찾지 못했습니다.")
+        return
+
+    previews = preview_video_by_source_stem(results_dir)
+    preview_source_stems = set(previews)
+    preferred_video_id = str(roi_analysis.get("preview", {}).get("video_id", ""))
+    selectable_videos = [
+        video_path
+        for video_path in source_videos
+        if video_path.stem in preview_source_stems
+    ]
+    if not selectable_videos:
+        selectable_videos = source_videos
+
+    default_index = next(
+        (
+            index
+            for index, video_path in enumerate(selectable_videos)
+            if video_path.stem == preferred_video_id
+            or video_path.stem in preview_source_stems
+        ),
+        0,
+    )
+    if len(selectable_videos) == 1:
+        selected_video = selectable_videos[0]
+        st.markdown(f"**ROI 검증 clip:** `{selected_video.stem}`")
+    else:
+        selected_video = st.selectbox(
+            "ROI 검증 clip 선택",
+            options=selectable_videos,
+            index=default_index,
+            format_func=lambda path: path.stem,
+            key="roi_validation_clip",
+        )
+
+    preview_video = previews.get(selected_video.stem)
+    if preview_video is None:
+        st.info(
+            "선택한 clip의 ROI 검증 영상이 아직 없습니다. 아래 명령으로 오프라인 "
+            "artifact를 만든 뒤 대시보드를 새로고침하세요."
+        )
+        confidence = float(source_analysis.get("confidence_threshold", 0.50))
+        grid = source_analysis.get("grid", {})
+        model_path = str(source_analysis.get("model", "/path/to/yolo.pt"))
+        preview_timestamp_sec = float(
+            roi_analysis.get("preview", {}).get("timestamp_ms", 0)
+        ) / 1000.0
+        start_sec = max(0, round(preview_timestamp_sec - 20))
+        output_name = (
+            f"{selected_video.stem}_yolo_conf_{confidence:.2f}_roi_start_{start_sec}s"
+            .replace(".", "p")
+            + ".webm"
+        )
+        command = (
+            "/home/imella0707/miniconda3/envs/ssakda/bin/python "
+            "scripts/visitor_flow_l2_render_preview.py \\\n"
+            f"  --video {selected_video} \\\n"
+            f"  --model {model_path} \\\n"
+            "  --device 0 \\\n"
+            f"  --imgsz {int(source_analysis.get('imgsz', 960))} \\\n"
+            f"  --conf {confidence:.2f} \\\n"
+            f"  --grid-cols {int(grid.get('cols', 6))} \\\n"
+            f"  --grid-rows {int(grid.get('rows', 4))} \\\n"
+            f"  --roi-config {results_dir / 'roi_config.json'} \\\n"
+            "  --hide-grid \\\n"
+            f"  --start-sec {start_sec} \\\n"
+            "  --max-seconds 60 \\\n"
+            f"  --output {results_dir / 'preview_videos' / output_name}"
+        )
+        st.code(command, language="bash")
+    else:
+        st.video(str(preview_video), format="video/webm")
+        st.caption(
+            "노란색: 수동 ROI · 초록색: ROI 내부 bbox · 회색: ROI 외부 bbox · "
+            "빨간 점: bbox bottom-center"
+        )
+
+    st.warning(
+        "이 영상은 내부 운영자 검수 전용입니다. 고객 PDF에는 원본/가공 영상은 "
+        "포함하지 않고, 대표 ROI 정지 이미지를 넣을 때는 얼굴 마스킹 후 "
+        "분석화면 예시로만 사용합니다."
+    )
+
+
 def render_scope_notice() -> None:
     st.warning(
         "이 화면은 CCTV 화면에서 사람이 얼마나 자주 보였는지 비교하는 POC입니다. "
         "표시 값은 정확한 방문객 수가 아니라, 시간대별 붐빔 정도를 보는 보행 관측량입니다. "
-        "화면 구역 정보는 원근 보정 전의 화면 좌표 기준 관측 분포입니다."
+        "ROI와 화면 구역 정보는 원근 보정 전의 화면 좌표 기준 관측 분포입니다."
     )
 
 
@@ -293,11 +428,157 @@ def render_metric_cards(analysis: dict[str, Any]) -> None:
         st.dataframe(detail, hide_index=True, width="stretch")
 
 
+def render_roi_analysis(
+    source_analysis: dict[str, Any],
+    analysis: dict[str, Any],
+    config: dict[str, Any],
+    summary: pd.DataFrame,
+    frames: pd.DataFrame,
+    events: pd.DataFrame,
+    results_dir: Path,
+) -> None:
+    st.subheader("1. 매장 전면 ROI 보행 관측")
+    st.caption("수동 normalized polygon · bbox bottom-center 판정 · 10초 sampled frame")
+
+    peak_bucket = str(analysis.get("peak_time_bucket", ""))
+    peak_label = peak_bucket[:16] if len(peak_bucket) >= 16 else "-"
+    first, second, third, fourth = st.columns(4)
+    first.metric("ROI 내부 관측", f"{int(analysis.get('roi_observations', 0))}건")
+    second.metric(
+        "전체 관측 중 ROI 비중",
+        f"{float(analysis.get('roi_observation_share', 0.0)) * 100:.1f}%",
+    )
+    third.metric("ROI 상대 피크", peak_label)
+    fourth.metric(
+        "피크 프레임당 평균",
+        f"{float(analysis.get('peak_mean_roi_observations_per_sampled_frame', 0.0)):.3f}",
+    )
+    st.info(
+        "ROI 내부 관측은 빨간 bbox 하단 중심점이 노란 polygon 안에 들어온 sampled "
+        "observation입니다. 같은 사람이 여러 frame에 나타날 수 있어 통행량이나 고유 방문자 수가 아닙니다."
+    )
+
+    overlay_path_text = str(analysis.get("preview", {}).get("path", ""))
+    overlay_path = resolve_repo_path(overlay_path_text) if overlay_path_text else None
+    image_column, chart_column = st.columns([1.15, 1])
+    with image_column:
+        if overlay_path is not None and overlay_path.is_file():
+            st.image(
+                str(overlay_path),
+                caption=(
+                    "노란색: 수동 ROI · 초록색: ROI 내부 bbox · "
+                    "빨간 점: bbox bottom-center"
+                ),
+                width="stretch",
+            )
+        else:
+            st.warning(f"ROI overlay를 찾지 못했습니다: {overlay_path_text}")
+
+    with chart_column:
+        chart = summary.copy()
+        chart["time_label"] = pd.to_datetime(chart["time_bucket"]).dt.strftime("%H:%M")
+        hour_counts = chart.groupby("time_label")["date_id"].nunique()
+        comparable_hours = sorted(hour_counts[hour_counts >= 2].index.tolist())
+        chart = chart.pivot_table(
+            index="time_label",
+            columns="date_id",
+            values="mean_roi_observations_per_sampled_frame",
+            aggfunc="first",
+        ).sort_index()
+        st.bar_chart(chart, height=360)
+        st.caption(
+            "시간대별 ROI 내부 관측의 sampled frame당 평균. "
+            "두 날짜가 모두 있는 직접 비교 시간대: "
+            f"{', '.join(comparable_hours) if comparable_hours else '없음'}"
+        )
+        if comparable_hours and len(comparable_hours) < len(chart):
+            st.warning(
+                "일부 시간대는 한 날짜에만 존재합니다. 날짜 편차 검증은 겹치는 "
+                "시간대만 기준으로 보고, 나머지는 각 날짜의 표본 내 피크 후보로만 해석하세요."
+            )
+
+    display = summary.copy()
+    display["time_bucket"] = pd.to_datetime(display["time_bucket"]).dt.strftime(
+        "%Y-%m-%d %H:%M"
+    )
+    display["roi_observation_share_pct"] = display["roi_observation_share"] * 100
+    st.dataframe(
+        display[
+            [
+                "date_id",
+                "time_bucket",
+                "sampled_frame_count",
+                "roi_observations",
+                "mean_roi_observations_per_sampled_frame",
+                "p95_roi_observations_per_sampled_frame",
+                "max_roi_observations_per_sampled_frame",
+                "roi_observation_share_pct",
+            ]
+        ],
+        hide_index=True,
+        width="stretch",
+        column_config={
+            "date_id": "날짜",
+            "time_bucket": "시간대",
+            "sampled_frame_count": "sampled frame",
+            "roi_observations": "ROI 관측 합계",
+            "mean_roi_observations_per_sampled_frame": st.column_config.NumberColumn(
+                "ROI 프레임당 평균",
+                format="%.3f",
+            ),
+            "p95_roi_observations_per_sampled_frame": st.column_config.NumberColumn(
+                "ROI p95",
+                format="%.3f",
+            ),
+            "max_roi_observations_per_sampled_frame": "ROI max",
+            "roi_observation_share_pct": st.column_config.NumberColumn(
+                "전체 관측 중 ROI 비중",
+                format="%.1f%%",
+            ),
+        },
+    )
+    overlap = summary.copy()
+    overlap["hour"] = pd.to_datetime(overlap["time_bucket"]).dt.strftime("%H:%M")
+    overlap_hours = (
+        overlap.groupby("hour")["date_id"].nunique().loc[lambda count: count >= 2].index
+    )
+    overlap = overlap[overlap["hour"].isin(overlap_hours)]
+    if not overlap.empty:
+        overlap_chart = overlap.pivot_table(
+            index="hour",
+            columns="date_id",
+            values="mean_roi_observations_per_sampled_frame",
+            aggfunc="first",
+        ).sort_index()
+        st.caption("날짜 편차 직접 비교: 두 날짜가 모두 있는 시간대만 표시")
+        st.dataframe(
+            overlap_chart,
+            width="stretch",
+            column_config={
+                column: st.column_config.NumberColumn(column, format="%.3f")
+                for column in overlap_chart.columns
+            },
+        )
+    render_operator_roi_video(
+        source_analysis=source_analysis,
+        roi_analysis=analysis,
+        config=config,
+        results_dir=results_dir,
+    )
+    with st.expander("ROI 설정과 판정 artifact", expanded=False):
+        st.json(config)
+        st.dataframe(frames.head(30), hide_index=True, width="stretch")
+        st.dataframe(events.head(30), hide_index=True, width="stretch")
+        st.caption(f"현재 읽는 L3-1 결과 폴더: {results_dir}")
+
+
 def render_time_trend(dashboard_summary: pd.DataFrame) -> None:
-    st.subheader("1. 시간대별 프레임 정규화 보행 관측")
+    st.subheader("2. 전체 화면 시간대별 프레임 정규화 보행 관측")
     chart = dashboard_summary.copy()
     chart["time_label"] = pd.to_datetime(chart["time_bucket"]).dt.strftime("%H:%M")
     if "date_id" in chart.columns:
+        hour_counts = chart.groupby("time_label")["date_id"].nunique()
+        comparable_hours = sorted(hour_counts[hour_counts >= 2].index.tolist())
         chart = chart.pivot_table(
             index="time_label",
             columns="date_id",
@@ -305,8 +586,14 @@ def render_time_trend(dashboard_summary: pd.DataFrame) -> None:
             aggfunc="first",
         ).sort_index()
     else:
+        comparable_hours = []
         chart = chart.set_index("time_label")[["mean_persons_per_sampled_frame"]]
     st.bar_chart(chart, height=320)
+    st.caption(
+        "두 날짜가 모두 있는 직접 비교 시간대: "
+        f"{', '.join(comparable_hours) if comparable_hours else '없음'}. "
+        "겹치지 않는 시간대는 날짜 간 차이가 아니라 해당 날짜 표본의 관측 결과입니다."
+    )
 
     display = dashboard_summary.copy()
     display["time_bucket"] = pd.to_datetime(display["time_bucket"]).dt.strftime(
@@ -392,20 +679,16 @@ def build_heatmap_table(
     grid_cols: int,
 ) -> pd.DataFrame:
     if selected_bucket_key == ALL_TIME_BUCKET:
-        selected = (
-            summary.groupby("zone_id", as_index=False)["person_detection_observations"]
-            .sum()
-        )
+        selected = summary.groupby("zone_id", as_index=False)[
+            "person_detection_observations"
+        ].sum()
     else:
         selected_date_id, selected_time_bucket = selected_bucket_key.split("|", 1)
         selected = summary.loc[
             (summary["date_id"].astype(str) == selected_date_id)
             & (summary["time_bucket"].astype(str) == selected_time_bucket)
         ]
-    counts = {
-        zone_id: 0
-        for zone_id in grid_labels(rows=grid_rows, cols=grid_cols)
-    }
+    counts = {zone_id: 0 for zone_id in grid_labels(rows=grid_rows, cols=grid_cols)}
     counts.update(
         selected.set_index("zone_id")["person_detection_observations"]
         .astype(int)
@@ -427,10 +710,8 @@ def render_grid_heatmap(
     summary: pd.DataFrame,
     dashboard_summary: pd.DataFrame,
 ) -> None:
-    st.subheader("3. 화면 구역별 보행 관측 분포")
-    st.caption(
-        "화면 기준 · 원근 미보정 · 실제 지면 밀집도 아님"
-    )
+    st.subheader("4. 화면 구역별 보행 관측 분포")
+    st.caption("화면 기준 · 원근 미보정 · 실제 지면 밀집도 아님")
     st.info(
         "아래 24칸은 검증 영상에 보이는 노란 6x4 grid와 같은 기준입니다. "
         "각 칸의 숫자는 선택한 시간대에 그 화면 구역에서 사람이 보인 관측량이고, "
@@ -443,8 +724,7 @@ def render_grid_heatmap(
     bucket_rows = bucket_rows.sort_values(["date_id", "time_bucket"])
     bucket_labels = {
         f"{row.date_id}|{row.time_bucket}": (
-            f"{row.date_id} "
-            f"{pd.to_datetime(row.time_bucket).strftime('%H:%M')}"
+            f"{row.date_id} {pd.to_datetime(row.time_bucket).strftime('%H:%M')}"
         )
         for row in bucket_rows.itertuples(index=False)
     }
@@ -484,8 +764,7 @@ def render_grid_heatmap(
     )
 
     zone_rows = (
-        summary.groupby("zone_id", as_index=False)
-        .agg(
+        summary.groupby("zone_id", as_index=False).agg(
             person_detection_observations=(
                 "person_detection_observations",
                 "sum",
@@ -546,7 +825,7 @@ def render_grid_heatmap(
 
 
 def render_marketing_interpretation(dashboard_summary: pd.DataFrame) -> None:
-    st.subheader("4. 마케팅 해석 후보")
+    st.subheader("5. 마케팅 해석 후보")
     peak = dashboard_summary.sort_values(
         "mean_persons_per_sampled_frame",
         ascending=False,
@@ -562,7 +841,7 @@ def render_marketing_interpretation(dashboard_summary: pd.DataFrame) -> None:
         "- 오전 시간대 관측량이 높으면 아침 판촉 후보로 볼 수 있습니다.\n"
         "- 점심/오후 시간대 관측량은 매장 전면 노출이 커질 수 있는 시간대 후보로 볼 수 있습니다.\n"
         "- 늦은 저녁 관측량은 테이크아웃, 배달 픽업 후보 시간대로 볼 수 있습니다.\n"
-        "- 입간판 위치 같은 공간 기반 추천은 Post-MVP ROI 검증 이후에만 다룹니다.\n"
+        "- 매장 전면 ROI 관측이 높은 시간대는 짧은 쇼윈도·입간판 문구 테스트 후보입니다.\n"
         "- 현재 마케팅 후보는 규칙 기반 가설이며 매출 상승 검증 결과가 아닙니다."
     )
 
@@ -574,7 +853,7 @@ def render_raw_tables(
     summary: pd.DataFrame,
     results_dir: Path,
 ) -> None:
-    st.subheader("5. 개발/검증용 원본 artifact")
+    st.subheader("6. 개발/검증용 원본 artifact")
     with st.expander("analysis.json", expanded=False):
         st.json(analysis)
     with st.expander("summary.parquet sample", expanded=False):
@@ -588,11 +867,11 @@ def render_raw_tables(
 
 def main() -> None:
     st.set_page_config(
-        page_title="Visitor Flow L2 Dashboard",
+        page_title="Visitor Flow L3-1 Dashboard",
         layout="wide",
     )
     st.title("CCTV 매장 앞 보행 관측 대시보드")
-    st.caption("C0241 · 2021-08-02/2021-08-03 · L2-4 frame-normalized artifact")
+    st.caption("C0241 · 2021-08-02/2021-08-03 · L2-4 + L3-1 manual ROI")
     render_scope_notice()
 
     with st.sidebar:
@@ -600,6 +879,10 @@ def main() -> None:
         results_path_text = st.text_input(
             "L2 결과 폴더",
             value=str(DEFAULT_RESULTS_DIR.relative_to(REPO_ROOT)),
+        )
+        roi_results_path_text = st.text_input(
+            "L3-1 ROI 결과 폴더",
+            value=str(DEFAULT_ROI_RESULTS_DIR.relative_to(REPO_ROOT)),
         )
         st.caption("절대 경로 또는 저장소 루트 기준 상대 경로를 사용할 수 있습니다.")
 
@@ -618,7 +901,34 @@ def main() -> None:
         st.error(f"L2 산출물을 읽지 못했습니다: {error}")
         st.stop()
 
+    roi_results_dir = resolve_results_dir(roi_results_path_text)
+    missing_roi_files = validate_roi_results_dir(roi_results_dir)
+    if missing_roi_files:
+        st.error("필수 L3-1 ROI 산출물을 찾지 못했습니다.")
+        st.code("\n".join(str(path) for path in missing_roi_files))
+        st.stop()
+    try:
+        roi_analysis, roi_config, roi_summary, roi_frames, roi_events = (
+            load_roi_artifacts(roi_results_dir)
+        )
+    except (json.JSONDecodeError, OSError, KeyError, pd.errors.ParserError) as error:
+        st.error(f"L3-1 ROI 산출물을 읽지 못했습니다: {error}")
+        st.stop()
+    if roi_analysis.get("source_analysis_id") != analysis.get("analysis_id"):
+        st.error("L2와 L3-1 ROI 산출물의 source_analysis_id가 일치하지 않습니다.")
+        st.stop()
+
     render_metric_cards(analysis)
+    st.divider()
+    render_roi_analysis(
+        analysis,
+        roi_analysis,
+        roi_config,
+        roi_summary,
+        roi_frames,
+        roi_events,
+        roi_results_dir,
+    )
     st.divider()
     render_time_trend(dashboard_summary)
     st.divider()
