@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run the L2-3 three-config YOLO benchmark with a frozen validation threshold."""
+"""Run the L2-3 three-config YOLO config comparison with a frozen validation threshold."""
 
 from __future__ import annotations
 
@@ -60,7 +60,7 @@ def parse_args() -> argparse.Namespace:
         nargs="+",
         choices=tuple(CONFIGS),
         default=list(CONFIGS),
-        help="Subset of benchmark configurations to execute.",
+        help="Subset of YOLO configurations to execute.",
     )
     return parser.parse_args()
 
@@ -455,7 +455,7 @@ def run_date(
     return summary
 
 
-def benchmark_row(
+def config_compare_row(
     config_id: str,
     model_path: Path,
     imgsz: int,
@@ -519,7 +519,7 @@ def main() -> None:
     )
     args.output_dir.mkdir(parents=True, exist_ok=True)
 
-    benchmark_rows = []
+    compare_rows = []
     config_summaries = []
     inference_confidence_floor = min(thresholds)
     for config_id in args.configs:
@@ -566,7 +566,7 @@ def main() -> None:
             output_dir=config_output_dir / f"validation_{args.validation_date}",
         )
 
-        row = benchmark_row(
+        row = config_compare_row(
             config_id=config_id,
             model_path=model_path,
             imgsz=imgsz,
@@ -575,7 +575,7 @@ def main() -> None:
             calibration=calibration,
             validation=validation,
         )
-        benchmark_rows.append(row)
+        compare_rows.append(row)
         config_summaries.append(
             {
                 "config_id": config_id,
@@ -588,7 +588,7 @@ def main() -> None:
         )
 
     ranked_rows = sorted(
-        benchmark_rows,
+        compare_rows,
         key=lambda row: (
             float(row["validation_f1"]),
             float(row["validation_recall"]),
@@ -600,13 +600,13 @@ def main() -> None:
     rank_by_config = {row["config_id"]: rank for rank, row in enumerate(ranked_rows, 1)}
     final_rows = [
         {"validation_rank": rank_by_config[row["config_id"]], **row}
-        for row in benchmark_rows
+        for row in compare_rows
     ]
-    write_csv(args.output_dir / "model_benchmark.csv", final_rows)
+    write_csv(args.output_dir / "model_config_compare.csv", final_rows)
 
     selected = ranked_rows[0]
-    benchmark_summary = {
-        "scope": "L2-3_three_config_frozen_threshold_benchmark",
+    compare_summary = {
+        "scope": "L2-3_three_config_frozen_threshold_comparison",
         "calibration_date": args.calibration_date,
         "validation_date": args.validation_date,
         "camera_id": args.camera_id,
@@ -624,17 +624,17 @@ def main() -> None:
         ),
         "selected_config_id": selected["config_id"],
         "selected_config": selected,
-        "benchmark_rows": final_rows,
+        "config_compare_rows": final_rows,
         "config_summaries": config_summaries,
         "limitations": [
             "This is sampled-frame bbox detection evaluation, not unique visitor counting.",
-            "The benchmark covers one fixed camera and two adjacent dates only.",
+            "The comparison covers one fixed camera and two adjacent dates only.",
             "Timing is hardware- and software-environment-specific.",
             "Aug 3 selects the final model configuration, so another date is still needed for an unbiased final holdout estimate.",
         ],
     }
-    (args.output_dir / "model_benchmark.json").write_text(
-        json.dumps(benchmark_summary, ensure_ascii=False, indent=2),
+    (args.output_dir / "model_config_compare.json").write_text(
+        json.dumps(compare_summary, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
 

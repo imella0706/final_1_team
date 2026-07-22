@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Archived L1-5 multi-clip YOLO evaluation wrapper.
 
-Use scripts/visitor_flow_yolo_benchmark.py for active L2-3/L2-3b experiments.
+Use scripts/visitor_flow_yolo_config_compare.py for active L2-3/L2-3b experiments.
 This file is kept only to reproduce the earlier L1-5 batch evaluation artifact.
 """
 
