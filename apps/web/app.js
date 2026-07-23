@@ -39,6 +39,7 @@ const referencePreviewName = $("#reference-preview-name");
 const referencePreviewMeta = $("#reference-preview-meta");
 const referencePreviewClear = $("#reference-preview-clear");
 const referenceCutoutToggle = $("#reference-cutout");
+const useVisionAnalysisToggle = $("#use-vision-analysis");
 const downloadPosterButton = $("#download-poster-button");
 const copyPosterButton = $("#copy-poster-button");
 const copyNaverBlogButton = $("#copy-naver-blog-button");
@@ -131,12 +132,41 @@ const fallbackImageModels = [
 
 const fallbackVisionModels = [
   {
+    id: "local/qwen3-vl:4b",
+    name: "Qwen3-VL 4B (Local)",
+    provider: "Local / Ollama",
+    note: "이미지 이해와 속도의 균형이 좋은 로컬 Vision 모델입니다.",
+    enabled: true,
+    recommended: true,
+  },
+  {
+    id: "local/qwen2.5vl:7b",
+    name: "Qwen2.5-VL 7B (Local)",
+    provider: "Local / Ollama",
+    note: "사진 이해, OCR, 한국어 이미지 설명에 적합한 로컬 모델입니다.",
+    enabled: true,
+  },
+  {
+    id: "local/qwen3-vl:2b",
+    name: "Qwen3-VL 2B (Local)",
+    provider: "Local / Ollama",
+    note: "가볍고 빠른 로컬 Vision 비교 모델입니다.",
+    enabled: true,
+  },
+  {
+    id: "local/qwen3-vl:8b",
+    name: "Qwen3-VL 8B (Local)",
+    provider: "Local / Ollama",
+    note: "더 높은 이미지 추론 성능을 비교하는 로컬 모델입니다.",
+    enabled: true,
+  },
+  {
     id: "openai/gpt-5.4-mini",
     name: "GPT-5.4 Mini Vision",
     provider: "OpenAI",
     note: "기존 OpenAI 사진 분석 모델입니다.",
     enabled: true,
-    recommended: true,
+    recommended: false,
   },
   {
     id: "Qwen/Qwen2.5-VL-7B-Instruct",
@@ -999,7 +1029,8 @@ async function readForm() {
       detail: `${audienceDetail || ""}`.trim(),
     },
     image_model: data.get("imageModel"),
-    vision_model: data.get("visionModel"),
+    vision_model: visionModelSelect.value,
+    use_vision_analysis: Boolean(useVisionAnalysisToggle?.checked),
     image_width: 1024,
     image_height: 1280,
     reference_image_data_url: referenceImageDataUrl,
@@ -1257,6 +1288,33 @@ function fillSelect(select, models) {
   });
 }
 
+function fillCopySelect(models) {
+  copyModelSelect.replaceChildren();
+  const groups = new Map();
+  models.forEach((model) => {
+    const provider = model.provider === "ollama"
+      ? "Local / Ollama"
+      : model.provider === "openai"
+        ? "GPT / OpenAI"
+        : model.provider === "huggingface"
+          ? "Hugging Face"
+          : model.provider || "기타";
+    if (!groups.has(provider)) {
+      const group = document.createElement("optgroup");
+      group.label = provider;
+      groups.set(provider, group);
+      copyModelSelect.append(group);
+    }
+    const option = document.createElement("option");
+    option.value = model.id;
+    option.textContent = model.name;
+    option.dataset.note = model.note;
+    option.dataset.provider = model.provider || "";
+    option.selected = Boolean(model.recommended);
+    groups.get(provider).append(option);
+  });
+}
+
 function fillVisionSelect(models) {
   visionModelSelect.replaceChildren();
   const groups = new Map();
@@ -1318,12 +1376,15 @@ function updateModelHelp() {
   const visionOption = visionModelSelect.selectedOptions[0];
   const imageOption = imageModelSelect.selectedOptions[0];
   copyModelHelp.textContent = copyOption?.dataset.note || "광고 문구 모델을 선택해 주세요.";
-  visionModelHelp.textContent = visionOption?.dataset.note || "사진 분석 모델을 선택해 주세요.";
+  visionModelSelect.disabled = !useVisionAnalysisToggle?.checked;
+  visionModelHelp.textContent = useVisionAnalysisToggle?.checked
+    ? visionOption?.dataset.note || "사진 분석 모델을 선택해 주세요."
+    : "사진 분석을 건너뛰고 원본 사진을 이미지 생성 모델에 바로 전달합니다.";
   imageModelHelp.textContent = imageOption?.dataset.note || "이미지 생성 모델을 선택해 주세요.";
 }
 
 async function loadModels() {
-  fillSelect(copyModelSelect, fallbackCopyModels);
+  fillCopySelect(fallbackCopyModels);
   fillVisionSelect(fallbackVisionModels);
   fillImageSelect(fallbackImageModels);
   updateModelHelp();
@@ -1334,7 +1395,7 @@ async function loadModels() {
       fetchJson("/ad-content/vision-models"),
       fetchJson("/ad-content/image-models"),
     ]);
-    fillSelect(copyModelSelect, copyModels);
+    fillCopySelect(copyModels);
     fillVisionSelect(visionModels);
     fillImageSelect(imageModels);
     updateModelHelp();
@@ -1532,6 +1593,7 @@ form.addEventListener("submit", async (event) => {
 
 copyModelSelect.addEventListener("change", updateModelHelp);
 visionModelSelect.addEventListener("change", updateModelHelp);
+useVisionAnalysisToggle?.addEventListener("change", updateModelHelp);
 imageModelSelect.addEventListener("change", updateModelHelp);
 referenceImageInput?.addEventListener("change", updateReferencePreview);
 referenceCutoutToggle?.addEventListener("change", updateReferencePreview);

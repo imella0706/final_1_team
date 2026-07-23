@@ -58,7 +58,12 @@ def _request_payload(
     payload: dict[str, Any] = {
         "model": provider_model_name,
         "messages": messages,
-        "temperature": 0.2 if invalid_content is not None else 0.75,
+        "temperature": (
+            0.2
+            if invalid_content is not None
+            or provider == TextRuntimeProvider.HUGGING_FACE_ROUTER
+            else 0.75
+        ),
     }
     token_limit_key = (
         "max_completion_tokens"
@@ -68,14 +73,20 @@ def _request_payload(
     )
     payload[token_limit_key] = 4000 if request.channel.value == "naver_blog" else 2000
     if structured and request.channel.value != "naver_blog":
-        payload["response_format"] = {
-            "type": "json_schema",
-            "json_schema": {
-                "name": "AdCopyContent",
-                "schema": AdCopyContent.model_json_schema(),
-                "strict": True,
-            },
-        }
+        if provider == TextRuntimeProvider.HUGGING_FACE_ROUTER:
+            # HF inference providers vary in strict json_schema support. The compact
+            # JSON-object constraint is more reliable for 7B/8B open models and the
+            # response is still validated against AdCopyContent after generation.
+            payload["response_format"] = {"type": "json_object"}
+        else:
+            payload["response_format"] = {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "AdCopyContent",
+                    "schema": AdCopyContent.model_json_schema(),
+                    "strict": True,
+                },
+            }
     return payload
 
 
@@ -116,6 +127,16 @@ def _extract_content(response: httpx.Response) -> str:
     except (json.JSONDecodeError, KeyError, IndexError, TypeError) as error:
         raise InvalidModelOutputError(
             "모델 응답에서 광고 문구 내용을 찾을 수 없습니다."
+        ) from error
+
+
+def _extract_ollama_content(response: httpx.Response) -> str:
+    try:
+        body = response.json()
+        return body["message"]["content"]
+    except (json.JSONDecodeError, KeyError, TypeError) as error:
+        raise InvalidModelOutputError(
+            "Ollama 응답에서 광고 문구 내용을 찾을 수 없습니다."
         ) from error
 
 
@@ -180,6 +201,47 @@ async def _call_model(
         raise ModelNotConfiguredError(
             f"{config.api_key_setting}가 없습니다. API 서버의 .env를 설정해주세요."
         )
+
+    if provider == TextRuntimeProvider.OLLAMA:
+        ollama_root = base_url.rstrip("/").removesuffix("/v1")
+        endpoint = f"{ollama_root}/api/chat"
+        payload = {
+            "model": provider_model_name,
+            "messages": build_prompt_messages(
+                request,
+                supports_system_role=model_spec.supports_system_role,
+                invalid_content=invalid_content,
+            ),
+            "stream": False,
+            # Ollama's JSON grammar is reliable across the small local models.
+            # The full Pydantic schema currently exceeds its grammar parser.
+            "format": "json",
+            "options": {
+                "temperature": 0.2 if invalid_content is not None else 0.5,
+                "num_predict": 4000
+                if request.channel.value == "naver_blog"
+                else 2000,
+            },
+        }
+        try:
+            async with httpx.AsyncClient(timeout=settings.llm_timeout_seconds) as client:
+                response = await client.post(
+                    endpoint,
+                    headers={"Content-Type": "application/json"},
+                    json=payload,
+                )
+                response.raise_for_status()
+        except httpx.HTTPStatusError as error:
+            detail = error.response.text[:500]
+            raise ModelProviderError(
+                f"{request.model.value} 호출이 거절되었습니다: {detail}"
+            ) from error
+        except httpx.HTTPError as error:
+            raise ModelProviderError(
+                f"Ollama 서버에 연결할 수 없습니다: {ollama_root} "
+                f"({type(error).__name__})"
+            ) from error
+        return _extract_ollama_content(response)
 
     endpoint = f"{base_url.rstrip('/')}/chat/completions"
     headers = {"Content-Type": "application/json"}

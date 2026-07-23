@@ -13,11 +13,16 @@ class ImageModel(StrEnum):
     OPENAI_GPT_5_5_IMAGE_TOOL = "openai-responses/gpt-5.5"
     FLUX_SCHNELL = "black-forest-labs/FLUX.1-schnell"
     SDXL_BASE = "stabilityai/stable-diffusion-xl-base-1.0"
+    SDXL_TURBO = "stabilityai/sdxl-turbo"
     OPENJOURNEY = "prompthero/openjourney"
 
 
 class VisionModel(StrEnum):
     OPENAI_GPT_5_4_MINI = "openai/gpt-5.4-mini"
+    LOCAL_QWEN_2_5_VL_7B = "local/qwen2.5vl:7b"
+    LOCAL_QWEN_3_VL_2B = "local/qwen3-vl:2b"
+    LOCAL_QWEN_3_VL_4B = "local/qwen3-vl:4b"
+    LOCAL_QWEN_3_VL_8B = "local/qwen3-vl:8b"
     QWEN_2_5_VL_7B = "Qwen/Qwen2.5-VL-7B-Instruct"
     QWEN_3_VL_2B = "Qwen/Qwen3-VL-2B-Instruct"
     QWEN_3_VL_4B = "Qwen/Qwen3-VL-4B-Instruct"
@@ -80,6 +85,7 @@ class AdContentRequest(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     copy_request: AdCopyRequest = Field(alias="copy")
+    use_vision_analysis: bool = True
     vision_model: VisionModel = VisionModel.OPENAI_GPT_5_4_MINI
     image_model: ImageModel = ImageModel.OPENAI_GPT_IMAGE_1_MINI
     image_width: int = Field(default=1024, ge=512, le=1536)

@@ -116,7 +116,7 @@ def _build_instagram_package(
     ]
 
     overlay_headline = remove_prohibited_terms(
-        f"오늘은 달콤하게, 특별하게", prohibited_terms
+        "오늘은 달콤하게, 특별하게", prohibited_terms
     )
     opening = f"{request.business_name}의 {product}를 소개합니다."
     if sales_features:

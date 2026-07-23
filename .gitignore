@@ -40,6 +40,7 @@ outputs/
 Thumbs.db
 
 outputs
+/runtime/
 
 # Airflow local runtime artifacts
 airflow/logs/
