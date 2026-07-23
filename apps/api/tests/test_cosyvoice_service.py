@@ -1,5 +1,7 @@
 import importlib.util
+import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 
 SERVICE_FILE = (
@@ -117,6 +119,53 @@ def test_generate_uses_instruct_mode_with_separate_acting_direction(
     ]
 
 
+def test_generate_cross_lingual_processes_every_narration_segment(
+    tmp_path, monkeypatch
+) -> None:
+    calls: list[str] = []
+
+    class FakeModel:
+        sample_rate = 24000
+
+        def inference_cross_lingual(
+            self, text: str, voice_path: str, stream: bool, speed: float
+        ):
+            calls.append(text)
+            yield {"tts_speech": object()}
+
+    engine = SERVER.CosyVoiceEngine()
+    engine.inference_mode = "cross_lingual"
+    engine.voice_dir = tmp_path
+    (tmp_path / "woman_serious.wav").write_bytes(b"wav")
+    engine._model = FakeModel()
+    monkeypatch.setattr(
+        SERVER,
+        "split_tts_text",
+        lambda text: ["첫 번째 구간입니다.", "두 번째 구간입니다."],
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "torch",
+        SimpleNamespace(cat=lambda chunks, dim: chunks),
+    )
+    monkeypatch.setattr(engine, "_wav_bytes", lambda speech, sample_rate: b"audio")
+
+    audio, voice = engine.generate(
+        SERVER.TTSRequest(
+            input="긴 광고 대본",
+            voice="woman_serious",
+            instructions="이 지시는 사용하지 않습니다.",
+        )
+    )
+
+    assert audio == b"audio"
+    assert voice == "woman_serious"
+    assert calls == [
+        SERVER.CosyVoiceEngine._cross_lingual_text("첫 번째 구간입니다."),
+        SERVER.CosyVoiceEngine._cross_lingual_text("두 번째 구간입니다."),
+    ]
+
+
 def test_voice_path_uses_default_voice(tmp_path) -> None:
     engine = SERVER.CosyVoiceEngine()
     engine.voice_dir = tmp_path
@@ -145,3 +194,17 @@ def test_normalize_korean_tts_text_handles_time_and_counters() -> None:
     normalized = SERVER.normalize_korean_tts_text(text)
 
     assert normalized == "오전 열한 시 삼십 분에 음료 두 잔과 디저트 세 개를 준비합니다."
+
+
+def test_split_tts_text_keeps_long_narration_in_order() -> None:
+    sentences = [
+        "첫 번째 상품을 소개합니다.",
+        "두 번째 혜택을 자세히 안내합니다.",
+        "마지막으로 방문을 권합니다.",
+    ]
+
+    chunks = SERVER.split_tts_text(" ".join(sentences), max_chars=35)
+
+    assert len(chunks) >= 2
+    assert " ".join(chunks) == " ".join(sentences)
+    assert all(len(chunk) <= 35 for chunk in chunks)

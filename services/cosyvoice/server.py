@@ -15,6 +15,7 @@ from pydantic import BaseModel, Field
 
 SERVICE_DIR = Path(__file__).resolve().parent
 VOICE_NAME_PATTERN = re.compile(r"^[A-Za-z0-9._-]+$")
+TTS_SEGMENT_MAX_CHARS = 180
 SINO_DIGITS = ("영", "일", "이", "삼", "사", "오", "육", "칠", "팔", "구")
 NATIVE_ONES = ("", "한", "두", "세", "네", "다섯", "여섯", "일곱", "여덟", "아홉")
 NATIVE_TENS = {
@@ -119,6 +120,43 @@ def normalize_korean_tts_text(text: str) -> str:
     return normalized
 
 
+def split_tts_text(text: str, max_chars: int = TTS_SEGMENT_MAX_CHARS) -> list[str]:
+    sentences = [
+        sentence.strip()
+        for sentence in re.split(r"(?<=[.!?。！？])\s+|\n+", text.strip())
+        if sentence.strip()
+    ]
+    chunks: list[str] = []
+    current = ""
+
+    for sentence in sentences:
+        remaining = sentence
+        while len(remaining) > max_chars:
+            split_at = remaining.rfind(" ", 0, max_chars + 1)
+            if split_at < max_chars // 2:
+                split_at = max_chars
+            prefix = remaining[:split_at].strip()
+            if current:
+                chunks.append(current)
+                current = ""
+            if prefix:
+                chunks.append(prefix)
+            remaining = remaining[split_at:].strip()
+
+        if not remaining:
+            continue
+        candidate = f"{current} {remaining}".strip()
+        if current and len(candidate) > max_chars:
+            chunks.append(current)
+            current = remaining
+        else:
+            current = candidate
+
+    if current:
+        chunks.append(current)
+    return chunks or [text.strip()]
+
+
 class TTSRequest(BaseModel):
     input: str = Field(min_length=1, max_length=4096)
     voice: str = Field(default="default", min_length=1, max_length=80)
@@ -146,7 +184,7 @@ class CosyVoiceEngine:
             "COSYVOICE_MODEL_NAME", "Fun-CosyVoice3-0.5B-2512"
         )
         configured_mode = os.getenv(
-            "COSYVOICE_INFERENCE_MODE", "instruct"
+            "COSYVOICE_INFERENCE_MODE", "cross_lingual"
         ).strip().lower()
         self.inference_mode = (
             configured_mode
@@ -232,25 +270,28 @@ class CosyVoiceEngine:
         model = self._ensure_model()
         resolved_voice, voice_path = self._voice_path(request.voice)
         tts_text = normalize_korean_tts_text(request.input)
+        tts_segments = split_tts_text(tts_text)
 
         with self._generation_lock:
             try:
-                if self.inference_mode == "instruct":
-                    generator = model.inference_instruct2(
-                        tts_text,
-                        self._instruction(request.instructions, request.speed),
-                        str(voice_path),
-                        stream=False,
-                        speed=request.speed,
-                    )
-                else:
-                    generator = model.inference_cross_lingual(
-                        self._cross_lingual_text(tts_text),
-                        str(voice_path),
-                        stream=False,
-                        speed=request.speed,
-                    )
-                chunks = [result["tts_speech"] for result in generator]
+                chunks = []
+                for segment in tts_segments:
+                    if self.inference_mode == "instruct":
+                        generator = model.inference_instruct2(
+                            segment,
+                            self._instruction(request.instructions, request.speed),
+                            str(voice_path),
+                            stream=False,
+                            speed=request.speed,
+                        )
+                    else:
+                        generator = model.inference_cross_lingual(
+                            self._cross_lingual_text(segment),
+                            str(voice_path),
+                            stream=False,
+                            speed=request.speed,
+                        )
+                    chunks.extend(result["tts_speech"] for result in generator)
             except Exception as error:
                 raise RuntimeError(
                     f"CosyVoice 음성 생성 실패: {type(error).__name__}: {error}"
