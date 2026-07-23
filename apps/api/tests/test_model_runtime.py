@@ -45,6 +45,24 @@ def test_nvidia_settings_resolve_model_alias(monkeypatch) -> None:
     )
 
 
+def test_local_ollama_settings_resolve_each_benchmark_model(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "local_llm_base_url", "http://127.0.0.1:11434/v1")
+    expected = {
+        "local/qwen2.5:1.5b": "qwen2.5:1.5b",
+        "local/qwen2.5:7b": "qwen2.5:7b",
+        "local/mistral:7b": "mistral:7b",
+    }
+
+    for model_id, routed_model in expected.items():
+        config = get_text_model_config(model_id)
+        assert config.provider == TextRuntimeProvider.OLLAMA
+        assert resolve_base_url(config) == "http://127.0.0.1:11434/v1"
+        assert resolve_model_name(config) == routed_model
+        assert infer_provider(resolve_base_url(config), config.provider) == (
+            TextRuntimeProvider.OLLAMA
+        )
+
+
 def test_llm_generate_endpoint_delegates_to_service(monkeypatch) -> None:
     async def fake_generate_text(request):
         return LlmGenerateResponse(

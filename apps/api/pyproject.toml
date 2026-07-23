@@ -22,6 +22,7 @@ dependencies = [
 dev = [
   "pytest>=8.0",
   "ruff>=0.8",
+  "pytest-asyncio>=0.23",
 ]
 image = [
   "accelerate>=0.33",
@@ -41,6 +42,7 @@ notebook = [
 [tool.pytest.ini_options]
 pythonpath = ["."]
 testpaths = ["tests"]
+asyncio_mode = "auto"
 
 [tool.setuptools.packages.find]
 include = ["app*"]
