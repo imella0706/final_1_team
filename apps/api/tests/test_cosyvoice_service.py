@@ -1,5 +1,7 @@
 import importlib.util
+import struct
 import sys
+import wave
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -226,15 +228,41 @@ def test_cross_lingual_whisper_voice_uses_fixed_style_instruction(
     assert output_gains == [SERVER.VOICE_OUTPUT_GAINS["woman_whisper"]]
 
 
-def test_male_whisper_uses_clearer_instruction_and_lower_gain() -> None:
-    male_instruction = SERVER.VOICE_STYLE_INSTRUCTIONS["man_whisper"]
+def test_male_whisper_uses_single_reference_channel(tmp_path) -> None:
+    whisper_voice = tmp_path / "man_whisper.wav"
+    with wave.open(str(whisper_voice), "wb") as wav_file:
+        wav_file.setnchannels(2)
+        wav_file.setsampwidth(2)
+        wav_file.setframerate(48000)
+        wav_file.writeframes(struct.pack("<8h", 1, 11, 2, 12, 3, 13, 4, 14))
+    engine = SERVER.CosyVoiceEngine()
+    engine.voice_dir = tmp_path
 
-    assert male_instruction != SERVER.VOICE_STYLE_INSTRUCTIONS["woman_whisper"]
-    assert "不要沙哑" in male_instruction
-    assert "不要使用过重的气声" in male_instruction
+    reference_path = engine._reference_voice_path("man_whisper", whisper_voice)
+
+    assert reference_path != whisper_voice
+    with wave.open(str(reference_path), "rb") as wav_file:
+        assert wav_file.getnchannels() == 1
+        assert struct.unpack("<4h", wav_file.readframes(4)) == (11, 12, 13, 14)
+    assert "man_whisper" not in SERVER.VOICE_STYLE_INSTRUCTIONS
     assert (
         SERVER.VOICE_OUTPUT_GAINS["man_whisper"]
         < SERVER.VOICE_OUTPUT_GAINS["woman_whisper"]
+    )
+
+
+def test_male_whisper_keeps_mono_reference(tmp_path) -> None:
+    whisper_voice = tmp_path / "man_whisper.wav"
+    with wave.open(str(whisper_voice), "wb") as wav_file:
+        wav_file.setnchannels(1)
+        wav_file.setsampwidth(2)
+        wav_file.setframerate(16000)
+        wav_file.writeframes(struct.pack("<2h", 1, 2))
+    engine = SERVER.CosyVoiceEngine()
+    engine.voice_dir = tmp_path
+
+    assert (
+        engine._reference_voice_path("man_whisper", whisper_voice) == whisper_voice
     )
 
 

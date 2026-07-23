@@ -85,11 +85,13 @@ the narration script after CosyVoice's system marker, preventing acting
 instructions from leaking into generated speech. Long narration is split at
 sentence boundaries and generated in order to reduce omitted phrases. The
 selected emotion reference recording and speed control still affect the result.
-The `man_whisper` and `woman_whisper` presets use a short, fixed model-native
-whisper instruction because cross-lingual speaker embeddings alone do not
-reliably preserve whispered articulation. The male preset uses a clearer,
-less-breathy instruction and a separately calibrated output gain to avoid a
-hoarse result. Custom web instructions remain disabled in this mode.
+The `woman_whisper` preset uses a short, fixed model-native whisper instruction
+because cross-lingual speaker embeddings alone do not reliably preserve
+whispered articulation. The male whisper recording has different left and
+right channels, so BrandMate extracts its cleaner right channel as a mono
+reference instead of averaging both channels. It then uses the regular
+cross-lingual path without a forced acting instruction, avoiding an exaggerated
+hoarse delivery. Custom web instructions remain disabled in this mode.
 
 The experimental `instruct` mode can be enabled explicitly, but may speak parts
 of the instruction:

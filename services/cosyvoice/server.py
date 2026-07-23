@@ -1,8 +1,10 @@
+import array
 import asyncio
 import io
 import os
 import re
 import sys
+import tempfile
 import threading
 import wave
 from pathlib import Path
@@ -17,15 +19,13 @@ SERVICE_DIR = Path(__file__).resolve().parent
 VOICE_NAME_PATTERN = re.compile(r"^[A-Za-z0-9._-]+$")
 TTS_SEGMENT_MAX_CHARS = 180
 VOICE_OUTPUT_GAINS = {
-    "man_whisper": 0.35,
+    "man_whisper": 0.55,
     "woman_whisper": 0.63,
 }
+VOICE_REFERENCE_CHANNELS = {
+    "man_whisper": 1,
+}
 VOICE_STYLE_INSTRUCTIONS = {
-    "man_whisper": (
-        "You are a helpful assistant. "
-        "请用轻柔、低声、清晰且自然的方式说这句话，"
-        "不要沙哑，也不要使用过重的气声。<|endofprompt|>"
-    ),
     "woman_whisper": (
         "You are a helpful assistant. "
         "请用轻声耳语、贴近听众且自然的方式说这句话。<|endofprompt|>"
@@ -223,6 +223,38 @@ class CosyVoiceEngine:
             f"참조 음성이 없습니다. {self.voice_dir / 'default.wav'} 파일을 추가해주세요."
         )
 
+    def _reference_voice_path(self, voice: str, selected_path: Path) -> Path:
+        channel = VOICE_REFERENCE_CHANNELS.get(voice)
+        if channel is None:
+            return selected_path
+        try:
+            with wave.open(str(selected_path), "rb") as source:
+                if source.getnchannels() <= channel or source.getsampwidth() != 2:
+                    return selected_path
+                params = source.getparams()
+                samples = array.array("h")
+                samples.frombytes(source.readframes(source.getnframes()))
+                if sys.byteorder != "little":
+                    samples.byteswap()
+                mono_samples = samples[channel :: params.nchannels]
+
+            source_stat = selected_path.stat()
+            cache_dir = Path(tempfile.gettempdir()) / "brandmate-cosyvoice-references"
+            cache_dir.mkdir(parents=True, exist_ok=True)
+            cached_path = cache_dir / (
+                f"{selected_path.stem}-{source_stat.st_mtime_ns}-"
+                f"{source_stat.st_size}-channel-{channel}.wav"
+            )
+            if not cached_path.is_file():
+                with wave.open(str(cached_path), "wb") as output:
+                    output.setnchannels(1)
+                    output.setsampwidth(params.sampwidth)
+                    output.setframerate(params.framerate)
+                    output.writeframes(mono_samples.tobytes())
+            return cached_path
+        except (OSError, EOFError, wave.Error):
+            return selected_path
+
     def _ensure_model(self) -> Any:
         if self._model is not None:
             return self._model
@@ -289,6 +321,7 @@ class CosyVoiceEngine:
         preset_instruction = VOICE_STYLE_INSTRUCTIONS.get(resolved_voice)
 
         with self._generation_lock:
+            voice_path = self._reference_voice_path(resolved_voice, voice_path)
             try:
                 chunks = []
                 for segment in tts_segments:
