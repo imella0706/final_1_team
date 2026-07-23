@@ -1437,7 +1437,10 @@ function renderResult(input, result) {
     ? recommendation.publish_hashtags.join(" ")
     : hashtags;
   const shortPosterHeadline =
-    buildShortPosterHeadline(input) || recommendation.overlay_headline || recommendation.publish_title || headline;
+    recommendation.overlay_headline ||
+    recommendation.publish_title ||
+    headline ||
+    buildShortPosterHeadline(input);
   const posterTitle = splitPosterTitle(shortPosterHeadline);
   latestNaverBlogPasteText = buildNaverBlogPasteText(input, recommendation, copy, publishHashtags);
   setText("#overlay-headline", shortPosterHeadline);

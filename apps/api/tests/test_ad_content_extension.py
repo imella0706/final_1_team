@@ -42,6 +42,16 @@ def sample_content_request() -> dict[str, object]:
     }
 
 
+def test_generate_content_rejects_unknown_nested_trend_card() -> None:
+    request = sample_content_request()
+    request["copy"]["trend_card_id"] = "unknown_meme"
+
+    response = post(app, "/api/v1/ad-content/generate", json=request)
+
+    assert response.status_code == 422
+    assert response.json() == {"detail": "TrendCard를 찾을 수 없습니다: unknown_meme"}
+
+
 def test_image_model_catalog_is_exposed(monkeypatch) -> None:
     monkeypatch.setattr(settings, "image_provider", "comfyui")
 

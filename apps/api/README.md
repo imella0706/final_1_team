@@ -257,6 +257,30 @@ origin/feature/ad-copy-model-integration
 app/modules/model_runtime/docs/CHANGES_FROM_AD_COPY_MODEL_BRANCH.md
 ```
 
+## 수동 TrendCard 설정
+
+현재 TrendCard는 자동 생성하지 않고 `gather_data/trendcard.json`을 사람이 직접 작성하고
+검수합니다. Instagram 광고 생성 요청은 클라이언트가 `meme_id`를 하드코딩하지 않아도 이
+활성 카드 한 장을 서버에서 읽어 사용합니다. 따라서 카드를 교체할 때는 JSON의 내용과
+`meme_id`만 함께 수정하면 됩니다.
+
+광고 생성에 사용하는 카드에는 다음 값이 필요합니다.
+
+- `curation_meta.mode`: `manual`
+- `curation_meta.status`: `reviewed`
+- `copy_markers`: 생성 결과에 핵심 표현이 반영됐는지 확인할 짧고 명확한 문구
+- `is_mock`: 효용 검증용 가공 카드이면 `true`
+
+소스 체크아웃에서는 기본 경로를 자동으로 찾습니다. API를 wheel 또는 별도 디렉터리에서
+실행할 때는 수동 JSON을 배포 환경에 복사하거나 마운트하고 경로를 지정하세요.
+
+```env
+BRANDMATE_TREND_CARD_PATH=gather_data/trendcard.json
+```
+
+상대 경로는 저장소 루트를 기준으로 해석됩니다. JSON은 요청마다 다시 읽기 때문에 내용만
+수정한 경우 API 재시작은 필요하지 않습니다.
+
 ## 테스트
 
 ```cmd

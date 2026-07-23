@@ -131,6 +131,11 @@ class AdCopyRequest(BaseModel):
     seo_keywords: list[str] = Field(default_factory=list, max_length=10)
     blog_length: str | None = Field(default=None, max_length=40)
     additional_request: str | None = Field(default=None, max_length=500)
+    trend_card_id: str | None = Field(
+        default=None,
+        max_length=100,
+        pattern=r"^[A-Za-z0-9:_-]+$",
+    )
     operating_info: str | None = Field(default=None, max_length=300)
     blog_photo_notes: list[str] = Field(default_factory=list, max_length=10)
 
@@ -170,7 +175,6 @@ class AdCopyRequest(BaseModel):
     @classmethod
     def normalize_channel(cls, value):
         return CHANNEL_MAP.get(value, value) if isinstance(value, str) else value
-
 
 class BusinessSummary(BaseModel):
     business_name: str = Field(min_length=1, max_length=100)
@@ -344,6 +348,7 @@ class AdCopyResponse(AdCopyContent):
     routed_model: str = ""
     provider: str = ""
     prompt_version: str = ""
+    trend_card_id: str | None = None
     image_prompt: str = ""
     llm_prompt: dict[str, object] = Field(default_factory=dict)
     latency_ms: int = 0
