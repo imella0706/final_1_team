@@ -20,7 +20,11 @@ def main() -> int:
         choices=("food_specialized", "coco_yolo11n"),
         help="음식 특화 best.pt 또는 기본 COCO yolo11n.pt 탐지기를 이번 실행에만 선택합니다.",
     )
-    parser.add_argument("--enable-matting", action="store_true", help="BiRefNet 매팅을 활성화합니다.")
+    parser.add_argument(
+        "--enable-matting",
+        action="store_true",
+        help="호환성 옵션입니다. BiRefNet은 사용하지 않고 SAM 알파만 사용합니다.",
+    )
     parser.add_argument(
         "--enable-background-generator", action="store_true", help="배경 생성기를 활성화합니다."
     )
@@ -37,8 +41,9 @@ def main() -> int:
             config.models.setdefault("foreground_detector", {})[
                 "active_profile"
             ] = args.detector_profile
-        if args.enable_matting:
-            config.models.setdefault("matting", {})["enabled"] = True
+        # BiRefNet은 기존·생성 접시 모드 모두에서 사용하지 않는다. 과거 노트북의
+        # --enable-matting 인수도 호환성만 유지하며 모델 로딩을 활성화하지 않는다.
+        config.models.setdefault("matting", {})["enabled"] = False
         if args.enable_background_generator:
             config.models.setdefault("background_generator", {})["enabled"] = True
         if args.diagnostic_center_fallback:

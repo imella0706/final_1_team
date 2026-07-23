@@ -18,12 +18,31 @@ def build_background_prompt(metadata: dict[str, Any]) -> BackgroundPrompt:
     if angle_label not in {"top", "45"}:
         angle_label = "45"
     placement = "center" if angle_label == "top" else "center_lower"
+    generated_plate = bool(metadata.get("generated_plate", False))
     supplied_prompt = str(
         metadata.get("background_prompt_base", metadata.get("background_prompt", ""))
     ).strip()
-    if supplied_prompt:
+    # A frontal interior cannot be a physically plausible support surface for a
+    # top-down dish.  Keep the business mood only as a material choice and make
+    # the geometry unambiguous for the generator.
+    if angle_label == "top":
         return BackgroundPrompt(
-            prompt=_apply_camera_angle_constraint(supplied_prompt, angle_label),
+            prompt=_topdown_table_prompt(metadata, generated_plate=generated_plate),
+            placement=placement,
+            light_direction=str(metadata.get("light_direction", "left")),
+            camera_angle=angle_label,
+        )
+    if supplied_prompt:
+        # 기존 업종 프롬프트에는 "no plate"가 포함될 수 있다. 생성 접시 모드에서는
+        # 해당 부정 조건을 제거하지 않으면 같은 프롬프트 안에서 접시 생성과 제거를
+        # 동시에 요구하게 되어 후보 품질이 크게 흔들린다.
+        if generated_plate:
+            supplied_prompt = _allow_generated_plate(supplied_prompt)
+        return BackgroundPrompt(
+            prompt=_apply_camera_angle_constraint(
+                f"{supplied_prompt.rstrip(', ')}, {_plate_constraint(generated_plate)}",
+                angle_label,
+            ),
             placement=placement,
             light_direction=str(metadata.get("light_direction", "left")),
             camera_angle=angle_label,
@@ -39,7 +58,7 @@ def build_background_prompt(metadata: dict[str, Any]) -> BackgroundPrompt:
         "clean empty table surface, "
         f"soft diffused light from the {light}, {mood} mood, {complement} "
         f"clear empty placement area in the {placement.replace('_', ' ')}, "
-        "commercial food photography background, empty table, no food, no plate, "
+        f"commercial food photography background, {_plate_constraint(generated_plate)}, "
         "no bowl, no cup, no utensils, no people, no text, no logo, no watermark"
     )
     return BackgroundPrompt(
@@ -48,6 +67,44 @@ def build_background_prompt(metadata: dict[str, Any]) -> BackgroundPrompt:
         light_direction=light,
         camera_angle=angle_label,
     )
+
+
+def _topdown_table_prompt(metadata: dict[str, Any], *, generated_plate: bool) -> str:
+    business = str(metadata.get("business_type", "cafe")).replace("_", " ")
+    mood = str(metadata.get("desired_mood", "warm natural"))
+    light = str(metadata.get("light_direction", "left"))
+    return (
+        f"Photorealistic premium {business} advertising tabletop, "
+        "strict overhead top-down food photography, camera directly above the table at 90 degrees, "
+        "a single continuous matte natural wooden table surface filling the entire frame, "
+        f"soft diffuse daylight from the {light}, {mood} mood, subtle realistic wood grain, "
+        f"{_plate_constraint(generated_plate)}, "
+        "no food, no bowl, no cup, no glass, no utensils, no napkin, "
+        "no decoration, no plant, no people, no text, no logo, no watermark, "
+        "no horizon, no wall, no window, no chair, no interior, no side view, no eye-level view"
+    )
+
+
+def _plate_constraint(generated_plate: bool) -> str:
+    if generated_plate:
+        return (
+            "one empty round white ceramic dinner plate centered on the table, "
+            "fully visible with a clean intact rim, large enough to hold one dish"
+        )
+    return "empty table, no plate"
+
+
+def _allow_generated_plate(prompt: str) -> str:
+    """생성 접시 모드와 충돌하는 사용자 프롬프트의 접시 금지 문구만 제거한다."""
+    cleaned = prompt
+    for phrase in (
+        "no plate,",
+        "no plate",
+        "no plates,",
+        "no plates",
+    ):
+        cleaned = cleaned.replace(phrase, "")
+    return cleaned
 
 
 def _apply_camera_angle_constraint(base_prompt: str, angle_label: str) -> str:

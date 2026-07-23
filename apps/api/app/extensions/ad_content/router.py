@@ -42,6 +42,11 @@ from app.modules.ad_copy.service import (
     ModelProviderError,
     generate_ad_copy,
 )
+from app.modules.ad_copy.trend_context import (
+    TrendCardDataError,
+    TrendCardNotFoundError,
+    TrendCardNotUsableError,
+)
 
 router = APIRouter(prefix="/ad-content", tags=["ad-content"])
 
@@ -227,7 +232,12 @@ async def generate_content(request: AdContentRequest) -> AdContentResponse:
             image_warnings = image_validation.warnings
             visual_brief_payload = copy.visual_brief.model_dump(mode="json")
             product_visualization_payload = product_visualization.model_dump(mode="json")
-    except ModelNotConfiguredError as error:
+    except (TrendCardNotFoundError, TrendCardNotUsableError) as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(error),
+        ) from error
+    except (TrendCardDataError, ModelNotConfiguredError) as error:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=str(error),

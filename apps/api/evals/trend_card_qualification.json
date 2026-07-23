@@ -1,0 +1,46 @@
+{
+  "experiment_id": "trend-card-qualification-evidence-v1",
+  "description": "고정된 production TrendCard 전략으로 여러 카드의 downstream 광고 생성 품질을 수집하는 evidence-only 평가",
+  "base_model": "Qwen/Qwen2.5-7B-Instruct",
+  "strategy": "trendcard",
+  "quality_status": "evidence_only",
+  "dataset_path": "meme_ad_copy_cases.json",
+  "fixture_review_path": "meme_fixture_review.json",
+  "cards": [
+    {
+      "id": "trendcard",
+      "label": "니가 좋아",
+      "path": "../../../gather_data/trendcard.json",
+      "enabled": true
+    },
+    {
+      "id": "trendcard1",
+      "label": "파라파라나 춰야지",
+      "path": "../../../gather_data/trendcard1.json",
+      "enabled": true
+    },
+    {
+      "id": "trendcard2",
+      "label": "감옥에서 누가 돌아왔게",
+      "path": "../../../gather_data/trendcard2.json",
+      "enabled": true
+    }
+  ],
+  "generation": {
+    "temperature": 0.75,
+    "max_tokens": 2000,
+    "max_attempts": 2,
+    "repeats": 3,
+    "concurrency": 1,
+    "generation_seed": 20260721,
+    "shuffle_seed": 20260721
+  },
+  "judge": {
+    "enabled": true,
+    "model": "gpt-4.1-mini-2025-04-14",
+    "base_url": "https://api.openai.com/v1",
+    "api_key_env": "BRANDMATE_OPENAI_API_KEY",
+    "temperature": 0,
+    "timeout_seconds": 60
+  }
+}
