@@ -114,6 +114,18 @@ class BiRefNetMattingService:
         binary = (structural_mask >= 128).astype(np.uint8) * 255
         raw_area = int(np.count_nonzero(binary))
         raw_components = self._component_count(binary)
+        minimum_area = max(1, self.sam_min_component_area)
+
+        # Remove isolated SAM speckle before closing.  Closing first can connect
+        # cloth texture or background dots to the dish rim and produces a ragged
+        # alpha edge after feathering.
+        component_count, labels, stats, _ = cv2.connectedComponentsWithStats(binary, 8)
+        prefiltered = np.zeros_like(binary)
+        for label_id in range(1, component_count):
+            if int(stats[label_id, cv2.CC_STAT_AREA]) >= minimum_area:
+                prefiltered[labels == label_id] = 255
+        binary = prefiltered
+        prefiltered_components = self._component_count(binary)
 
         kernel_size = max(1, self.sam_closing_kernel)
         kernel_size = kernel_size + 1 if kernel_size % 2 == 0 else kernel_size
@@ -126,7 +138,6 @@ class BiRefNetMattingService:
 
         component_count, labels, stats, _ = cv2.connectedComponentsWithStats(binary, 8)
         stabilized = np.zeros_like(binary)
-        minimum_area = max(1, self.sam_min_component_area)
         for label_id in range(1, component_count):
             if int(stats[label_id, cv2.CC_STAT_AREA]) >= minimum_area:
                 stabilized[labels == label_id] = 255
@@ -137,6 +148,7 @@ class BiRefNetMattingService:
         metrics = {
             "raw_area": raw_area,
             "raw_components": raw_components,
+            "prefiltered_components": prefiltered_components,
             "stabilized_area": int(np.count_nonzero(stabilized)),
             "stabilized_components": self._component_count(stabilized),
             "closing_kernel": kernel_size,

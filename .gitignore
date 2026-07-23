@@ -46,4 +46,10 @@ airflow/logs/
 airflow/mock_gcs/logs/
 # Added by code-review-graph
 .code-review-graph/
+
+# AIHub 학습 모델은 대용량 바이너리이므로 저장소에 포함하지 않는다.
+/apps/api/food-image-cleanup-pipeline/3-021.AI모델/
+/apps/api/food-image-cleanup-pipeline/data/training/
+/apps/api/food-image-cleanup-pipeline/runs/
 .kiro
+.3-021.AI모델

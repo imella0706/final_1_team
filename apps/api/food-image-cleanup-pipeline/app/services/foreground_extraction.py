@@ -4,8 +4,14 @@ import cv2
 import numpy as np
 
 
-def foreground_mask(food_mask: np.ndarray, container_mask: np.ndarray) -> np.ndarray:
+def foreground_mask(food_mask: np.ndarray | None, container_mask: np.ndarray | None) -> np.ndarray:
     """Combine food and its serving container into one protected foreground."""
+    if food_mask is None and container_mask is None:
+        raise ValueError("at least one foreground mask is required")
+    if food_mask is None:
+        return container_mask.copy()
+    if container_mask is None:
+        return food_mask.copy()
     if food_mask.shape != container_mask.shape:
         raise ValueError("food_mask and container_mask must have the same size")
     return np.maximum(food_mask, container_mask)

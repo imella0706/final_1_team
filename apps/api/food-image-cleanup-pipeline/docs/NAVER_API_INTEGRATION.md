@@ -9,7 +9,8 @@
 ```text
 네이버 블로그 선택 + 음식 사진 업로드
 → API가 업로드 사진을 파이프라인 작업 파일로 저장
-→ SAM 2.1/BiRefNet 품질 검사로 음식·용기 전경 분리
+→ GroundingDINO·학습한 YOLO11n·SAM 2.1 Small으로 음식·접시 전경 분리
+→ 접시 보존 마스크와 SAM 알파로 원본 접시 외곽 보존
 → 업종별 빈 배경 프롬프트로 Sana 또는 FLUX 배경 생성
 → 그림자·색상 조화·OpenCLIP 차단 검증
 → 합성 JPG를 네이버 광고 문구 응답의 image로 반환
@@ -21,7 +22,7 @@
 
 ## 음식 탐지 모델
 
-네이버 채널에서 이미지 보정이 활성화되면 같은 파이프라인 설정을 사용한다. 기본 탐지 프로필은 `food_specialized`이며, 학습한 음식 전용 YOLO11n 가중치 `food-image-cleanup-pipeline/models/best.pt`로 음식 위치를 찾는다. 실행 보고서의 `step_2_yolo_detection.model`과 `step_2_yolo_detection.profile`이 각각 `models/best.pt`, `food_specialized`인지 확인하면 실제 적용 여부를 알 수 있다.
+네이버 채널에서 이미지 보정이 활성화되면 같은 파이프라인 설정을 사용한다. 먼저 GroundingDINO가 `plate`, `dish`, `bowl`, `food`, `meal` 등의 프롬프트로 후보 상자를 제시하고, 기본 탐지 프로필 `food_specialized`의 학습한 음식 전용 YOLO11n 가중치 `food-image-cleanup-pipeline/models/best.pt`가 음식 위치를 보완한다. 실행 보고서의 `step_2_yolo_detection.model`과 `step_2_yolo_detection.profile`이 각각 `models/best.pt`, `food_specialized`인지 확인하면 실제 적용 여부를 알 수 있다.
 
 비교 또는 장애 진단을 위해서만 `configs/pipeline.yaml`의 `models.foreground_detector.active_profile`을 `coco_yolo11n`으로 바꿔 기본 COCO YOLO11n을 선택할 수 있다. 운영 기본값은 학습 모델을 사용하는 `food_specialized`다.
 

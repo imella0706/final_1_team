@@ -4,9 +4,10 @@
 
 ```text
 입력
-→ 학습한 음식 전용 YOLO11n(`models/best.pt`) 탐지
-→ SAM 2.1 Tiny 구조 마스크
-→ BiRefNet 품질 검사형 미세 보정
+→ GroundingDINO 문장 기반 음식·접시 후보 탐지
+→ 학습한 음식 전용 YOLO11n(`models/best.pt`) 탐지 보완
+→ SAM 2.1 Small 음식·접시 구조 마스크
+→ 접시 보존 마스크와 안정화된 SAM 알파
 → 원본 전경 RGBA
 → Sana 또는 FLUX 빈 배경
 → 그림자·경계·밝기 조화
@@ -19,7 +20,7 @@
 - 음식 탐지 기본 프로필은 `food_specialized`다. 기본 COCO YOLO11n은 `coco_yolo11n` 프로필을 명시적으로 선택한 경우에만 사용한다.
 - 중앙 사각형은 `--diagnostic-center-fallback` 연결 테스트에서만 사용한다.
 - SAM 마스크는 합성 전에 닫힘 연산, 작은 연결 요소 제거, 내부 구멍 채우기를 적용한다. 원본 SAM 마스크는 디버그용으로 별도 보관한다.
-- BiRefNet은 안정화된 SAM을 대체하지 않는다. IoU, 면적 비율, 연결 요소 수 검사에 실패하면 안정화된 SAM 마스크를 사용한다.
+- 현재 기본 설정에서는 BiRefNet을 실행하지 않는다(`models.matting.enabled: false`). 음식·접시의 알파는 안정화된 SAM 마스크와 접시 보존 마스크만으로 만든다.
 - OpenCLIP은 전경 마스크 바깥을 동일한 중립색으로 제거한 비교 이미지로만 유사도를 계산한다. 새 배경 자체는 유사도 하락 원인이 아니다.
 - OpenCLIP 유사도가 0.8 미만이면 SAM으로 재합성한다. 다시 실패하면 원본 반환 경로로 종료하고 광고 이미지를 저장하지 않는다.
 
@@ -34,7 +35,7 @@
 
 ## 필수 디버그 산출물
 
-성공 또는 검증 실패 보고서에는 원본·안정화 SAM 마스크, BiRefNet/SAM 알파, RGBA 전경 미리보기, OpenCLIP 전경 비교 이미지, 최종 또는 거부된 합성 이미지 경로를 `debug_artifacts`로 저장한다.
+성공 또는 검증 실패 보고서에는 원본·안정화 SAM 마스크, 접시 보존 마스크, SAM 기반 알파, RGBA 전경 미리보기, OpenCLIP 전경 비교 이미지, 최종 또는 거부된 합성 이미지 경로를 `debug_artifacts`로 저장한다.
 
 ## 각도·후보·기하 검증 계층
 
