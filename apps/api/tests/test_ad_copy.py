@@ -9,7 +9,8 @@ from app.core.config import settings
 from app.modules.ad_copy.models import get_model_spec
 from app.modules.ad_copy.prompt import PROMPT_VERSION, build_prompt
 from app.modules.ad_copy.schemas import AdCopyRequest, AdModel, AgeGroup, TargetAudience
-from app.modules.ad_copy.service import _parse_content, generate_ad_copy
+from app.modules.ad_copy.service import _parse_content, _request_payload, generate_ad_copy
+from app.modules.model_runtime.schemas import TextRuntimeProvider
 from tests.api_client import get, post
 
 
@@ -168,10 +169,12 @@ def test_model_catalog_contains_all_comparison_models() -> None:
 
     assert response.status_code == 200
     models = response.json()
-    assert len(models) == 6
+    assert len(models) == 9
     models_by_id = {model["id"]: model for model in models}
-    assert models[0]["id"] == "Qwen/Qwen2.5-7B-Instruct"
-    assert models[0]["provider"] == "huggingface"
+    assert models[0]["id"] == "local/qwen2.5:1.5b"
+    assert models[0]["provider"] == "ollama"
+    assert models_by_id["local/qwen2.5:7b"]["recommended"] is True
+    assert models_by_id["local/mistral:7b"]["provider"] == "ollama"
     assert models_by_id["meta-llama/Llama-3.1-8B-Instruct"]["availability"] == "gated"
     assert models_by_id["nvidia/meta/llama-3.1-8b-instruct"]["provider"] == "nvidia"
     assert models_by_id["openai/gpt-5.4"]["provider"] == "openai"
@@ -250,6 +253,61 @@ def test_openai_model_uses_its_own_endpoint_and_api_key(monkeypatch) -> None:
     assert captured_requests[0]["json"]["max_completion_tokens"] == 2000
     assert "max_tokens" not in captured_requests[0]["json"]
     assert captured_requests[0]["json"]["response_format"]["type"] == "json_schema"
+
+
+def test_hugging_face_payload_uses_compact_json_mode_and_low_temperature() -> None:
+    request = AdCopyRequest.model_validate(sample_request())
+
+    payload = _request_payload(
+        request,
+        provider=TextRuntimeProvider.HUGGING_FACE_ROUTER,
+        provider_model_name="Qwen/Qwen2.5-7B-Instruct",
+        structured=True,
+    )
+
+    assert payload["temperature"] == 0.2
+    assert payload["response_format"] == {"type": "json_object"}
+    assert "json_schema" not in payload["response_format"]
+
+
+def test_local_ollama_model_uses_native_json_output(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    class FakeAsyncClient:
+        def __init__(self, **kwargs) -> None:
+            del kwargs
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args) -> None:
+            del args
+
+        async def post(self, url, *, headers, json):
+            captured.update({"url": url, "headers": headers, "json": json})
+            return httpx.Response(
+                200,
+                request=httpx.Request("POST", url),
+                json={"message": {"content": valid_ad_copy_json()}},
+            )
+
+    monkeypatch.setattr(settings, "local_llm_base_url", "http://127.0.0.1:11434/v1")
+    monkeypatch.setattr(
+        "app.modules.ad_copy.service.httpx.AsyncClient",
+        FakeAsyncClient,
+    )
+    request = sample_request()
+    request["model"] = "local/qwen2.5:1.5b"
+
+    response = post(app, "/api/v1/ad-copies/generate", json=request)
+
+    assert response.status_code == 200
+    assert response.json()["provider"] == "ollama"
+    assert captured["url"] == "http://127.0.0.1:11434/api/chat"
+    assert captured["json"]["model"] == "qwen2.5:1.5b"
+    assert captured["json"]["stream"] is False
+    assert captured["json"]["format"] == "json"
+    assert captured["json"]["options"]["num_predict"] == 2000
 
 
 def test_generate_uses_selected_model_and_returns_structured_copy(monkeypatch) -> None:

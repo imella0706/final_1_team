@@ -94,12 +94,29 @@ IMAGE_MODEL_CATALOG = (
 
 COMFYUI_IMAGE_MODEL_CATALOG = (
     ImageModelSpec(
-        id=ImageModel.FLUX_SCHNELL,
-        name="FLUX.1 Schnell GGUF",
+        id=ImageModel.SDXL_BASE,
+        name="SDXL Base 1.0 · Local img2img",
         provider="Local ComfyUI",
-        availability=ImageModelAvailability.GATED,
-        note="Local Flux Schnell pipeline served by ComfyUI with the GGUF loader.",
+        availability=ImageModelAvailability.HOSTED,
+        note=(
+            "로컬 GPU에서 실행합니다. 사진이 있으면 img2img, 없으면 text-to-image를 "
+            "사용합니다."
+        ),
         recommended=True,
+    ),
+    ImageModelSpec(
+        id=ImageModel.SDXL_TURBO,
+        name="SDXL Turbo · Local",
+        provider="Local ComfyUI",
+        availability=ImageModelAvailability.HOSTED,
+        note="1~4 step 고속 로컬 모델입니다. Base 모델과 속도·품질을 비교합니다.",
+    ),
+    ImageModelSpec(
+        id=ImageModel.FLUX_SCHNELL,
+        name="FLUX.1 Schnell Q4 · Local",
+        provider="Local ComfyUI",
+        availability=ImageModelAvailability.HOSTED,
+        note="GGUF Q4 양자화 FLUX 모델입니다. 로컬 text-to-image 비교용입니다.",
     ),
 )
 
@@ -111,7 +128,12 @@ def list_image_model_options() -> list[ImageModelOption]:
             *[
                 spec
                 for spec in IMAGE_MODEL_CATALOG
-                if spec.id != ImageModel.FLUX_SCHNELL
+                if spec.id
+                not in {
+                    ImageModel.FLUX_SCHNELL,
+                    ImageModel.SDXL_BASE,
+                    ImageModel.SDXL_TURBO,
+                }
             ],
         )
     else:
@@ -123,7 +145,13 @@ def list_image_model_options() -> list[ImageModelOption]:
             name=spec.name,
             provider=spec.provider,
             availability=spec.availability,
-            recommended=spec.recommended,
+            recommended=(
+                spec.recommended
+                and (
+                    settings.image_provider.lower() != "comfyui"
+                    or spec.provider == "Local ComfyUI"
+                )
+            ),
             note=spec.note,
         )
         for spec in catalog

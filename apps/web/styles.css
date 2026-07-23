@@ -747,6 +747,12 @@ fieldset {
   accent-color: var(--coral);
 }
 
+.model-field .vision-analysis-toggle {
+  display: inline-flex;
+  width: fit-content;
+  margin: 10px 0 8px;
+}
+
 .reference-preview {
   margin-top: 12px;
   padding: 10px;

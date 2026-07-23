@@ -215,8 +215,12 @@
                 <small id="copy-model-help">모델 정보를 불러오는 중입니다.</small>
               </div>
               <div class="model-field vision">
-                <label for="vision-model">사진 분석 모델 <b>필수</b></label>
+                <label for="vision-model">사진 분석 모델</label>
                 <select id="vision-model" name="visionModel"></select>
+                <label class="inline-toggle vision-analysis-toggle">
+                  <input id="use-vision-analysis" name="useVisionAnalysis" type="checkbox" checked />
+                  <span>업로드 사진 분석 사용</span>
+                </label>
                 <small id="vision-model-help">Vision 모델 정보를 불러오는 중입니다.</small>
               </div>
               <div class="model-field image">
@@ -504,6 +508,6 @@
       </section>
     </main>
 
-    <script src="./app.js?v=service-selection-20260721"></script>
+    <script src="./app.js?v=service-selection-local-vision-20260723"></script>
   </body>
 </html>

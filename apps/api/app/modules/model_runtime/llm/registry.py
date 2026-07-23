@@ -16,6 +16,30 @@ class TextModelConfig:
 
 
 MODEL_MAP: dict[str, TextModelConfig] = {
+    "local/qwen2.5:1.5b": TextModelConfig(
+        display_name="Qwen2.5 1.5B · Local",
+        provider=TextRuntimeProvider.OLLAMA,
+        default_model="qwen2.5:1.5b",
+        base_url_setting="local_llm_base_url",
+        model_setting="local_qwen_1_5b_model",
+        api_key_setting="local_llm_api_key",
+    ),
+    "local/qwen2.5:7b": TextModelConfig(
+        display_name="Qwen2.5 7B · Local",
+        provider=TextRuntimeProvider.OLLAMA,
+        default_model="qwen2.5:7b",
+        base_url_setting="local_llm_base_url",
+        model_setting="local_qwen_7b_model",
+        api_key_setting="local_llm_api_key",
+    ),
+    "local/mistral:7b": TextModelConfig(
+        display_name="Mistral 7B v0.3 · Local",
+        provider=TextRuntimeProvider.OLLAMA,
+        default_model="mistral:7b",
+        base_url_setting="local_llm_base_url",
+        model_setting="local_mistral_7b_model",
+        api_key_setting="local_llm_api_key",
+    ),
     "openai/gpt-5.5": TextModelConfig(
         display_name="OpenAI GPT-5.5",
         provider=TextRuntimeProvider.OPENAI,
@@ -103,30 +127,6 @@ MODEL_MAP: dict[str, TextModelConfig] = {
         base_url_setting="nvidia_base_url",
         model_setting="nvidia_llama_model",
         api_key_setting="nvidia_api_key",
-    ),
-    "gpt-5.5": TextModelConfig(
-        display_name="GPT-5.5",
-        provider=TextRuntimeProvider.OPENAI,
-        default_model="gpt-5.5",
-        base_url_setting="openai_base_url",
-        model_setting="openai_gpt_5_5_model",
-        api_key_setting="openai_api_key",
-    ),
-    "gpt-5.4": TextModelConfig(
-        display_name="GPT-5.4",
-        provider=TextRuntimeProvider.OPENAI,
-        default_model="gpt-5.4",
-        base_url_setting="openai_base_url",
-        model_setting="openai_gpt_5_4_model",
-        api_key_setting="openai_api_key",
-    ),
-    "gpt-5.4-mini": TextModelConfig(
-        display_name="GPT-5.4 Mini",
-        provider=TextRuntimeProvider.OPENAI,
-        default_model="gpt-5.4-mini",
-        base_url_setting="openai_base_url",
-        model_setting="openai_gpt_5_4_mini_model",
-        api_key_setting="openai_api_key",
     ),
     "gpt-5.4-nano": TextModelConfig(
         display_name="GPT-5.4 Nano",

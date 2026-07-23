@@ -19,6 +19,37 @@ class ModelSpec:
 
 MODEL_CATALOG = (
     ModelSpec(
+        id=AdModel.LOCAL_QWEN_2_5_1_5B,
+        name="Qwen2.5 1.5B · Local",
+        size="1.5B Q4",
+        provider="ollama",
+        routed_model="qwen2.5:1.5b",
+        availability=ModelAvailability.LOCAL_ONLY,
+        note="경량 로컬 기준 모델. Ollama와 RTX 3060에서 실행합니다.",
+        supports_structured_output=True,
+    ),
+    ModelSpec(
+        id=AdModel.LOCAL_QWEN_2_5_7B,
+        name="Qwen2.5 7B · Local",
+        size="7B Q4",
+        provider="ollama",
+        routed_model="qwen2.5:7b",
+        availability=ModelAvailability.LOCAL_ONLY,
+        note="한국어 광고 문구 품질 비교용 로컬 7B 모델입니다.",
+        recommended=True,
+        supports_structured_output=True,
+    ),
+    ModelSpec(
+        id=AdModel.LOCAL_MISTRAL_7B,
+        name="Mistral 7B v0.3 · Local",
+        size="7B Q4",
+        provider="ollama",
+        routed_model="mistral:7b",
+        availability=ModelAvailability.LOCAL_ONLY,
+        note="Qwen과 비교할 범용 로컬 7B 모델입니다.",
+        supports_structured_output=True,
+    ),
+    ModelSpec(
         id=AdModel.QWEN_2_5_7B,
         name="Qwen 2.5 7B Instruct",
         size="7.6B",

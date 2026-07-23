@@ -107,7 +107,7 @@ async def generate_content(request: AdContentRequest) -> AdContentResponse:
         is_naver_blog = copy_request.channel.value == "naver_blog"
         blog_photo_notes: list[str] = []
         blog_vision_prompt: dict[str, object] = {}
-        if is_naver_blog and request.blog_images:
+        if is_naver_blog and request.blog_images and request.use_vision_analysis:
             blog_photo_notes, blog_vision_prompt = await describe_blog_images(
                 request.blog_images,
                 copy_request,
@@ -116,6 +116,12 @@ async def generate_content(request: AdContentRequest) -> AdContentResponse:
             copy_request = copy_request.model_copy(
                 update={"blog_photo_notes": blog_photo_notes}
             )
+        elif is_naver_blog and request.blog_images:
+            blog_vision_prompt = {
+                "analysis_enabled": False,
+                "model": request.vision_model.value,
+                "image_count": len(request.blog_images),
+            }
 
         copy = await generate_ad_copy(copy_request)
 
@@ -161,11 +167,20 @@ async def generate_content(request: AdContentRequest) -> AdContentResponse:
             regeneration_count = 0
         else:
             product_visualization = await visualize_products(copy_request, copy)
-            reference_image_context, vision_prompt = await describe_reference_image(
-                request.reference_image_data_url,
-                copy_request,
-                request.vision_model,
-            )
+            if request.use_vision_analysis:
+                reference_image_context, vision_prompt = await describe_reference_image(
+                    request.reference_image_data_url,
+                    copy_request,
+                    request.vision_model,
+                )
+                vision_prompt["analysis_enabled"] = True
+            else:
+                reference_image_context = None
+                vision_prompt = {
+                    "analysis_enabled": False,
+                    "model": request.vision_model.value,
+                    "reference_image_provided": bool(request.reference_image_data_url),
+                }
             image_prompt, negative_prompt = normalize_image_prompt(
                 copy,
                 copy_request,
@@ -267,6 +282,7 @@ async def generate_content(request: AdContentRequest) -> AdContentResponse:
         models={
             "copy_model": copy.model,
             "vision_model": request.vision_model.value,
+            "vision_analysis": "enabled" if request.use_vision_analysis else "disabled",
             "image_model": image.model,
             "image_provider": settings.image_provider,
             "image_prompt_template": settings.image_prompt_template,

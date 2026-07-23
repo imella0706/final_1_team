@@ -33,6 +33,8 @@ REFERENCE_IMAGE_EXTENSIONS = {
     "image/png": "png",
     "image/webp": "webp",
 }
+LOCAL_SDXL_MODELS = {ImageModel.SDXL_BASE, ImageModel.SDXL_TURBO}
+LOCAL_COMFYUI_MODELS = {*LOCAL_SDXL_MODELS, ImageModel.FLUX_SCHNELL}
 
 
 def _secret_value(value) -> str | None:
@@ -45,6 +47,12 @@ def _secret_value(value) -> str | None:
 
 DEFAULT_COMFYUI_WORKFLOW_PATH = (
     Path(__file__).resolve().parent / "workflows" / "flux_schnell_gguf_api.json"
+)
+SDXL_TEXT_TO_IMAGE_WORKFLOW_PATH = (
+    Path(__file__).resolve().parent / "workflows" / "sdxl_text_to_image_api.json"
+)
+SDXL_IMAGE_TO_IMAGE_WORKFLOW_PATH = (
+    Path(__file__).resolve().parent / "workflows" / "sdxl_image_to_image_api.json"
 )
 
 PROMPT_NODE_ID = "5"
@@ -173,14 +181,18 @@ async def _extract_image(response: httpx.Response) -> tuple[bytes, str]:
     )
 
 
-def _workflow_template_path() -> Path:
+def _workflow_template_path(request: AdImageRequest) -> Path:
     if settings.comfyui_workflow_path:
         return Path(settings.comfyui_workflow_path)
+    if request.model in LOCAL_SDXL_MODELS:
+        if request.reference_image_data_url:
+            return SDXL_IMAGE_TO_IMAGE_WORKFLOW_PATH
+        return SDXL_TEXT_TO_IMAGE_WORKFLOW_PATH
     return DEFAULT_COMFYUI_WORKFLOW_PATH
 
 
-def _load_comfyui_workflow_template() -> dict[str, Any]:
-    path = _workflow_template_path()
+def _load_comfyui_workflow_template(request: AdImageRequest) -> dict[str, Any]:
+    path = _workflow_template_path(request)
     try:
         with path.open("r", encoding="utf-8") as file:
             workflow = json.load(file)
@@ -198,11 +210,63 @@ def _load_comfyui_workflow_template() -> dict[str, Any]:
     return workflow
 
 
-def _build_comfyui_workflow(request: AdImageRequest) -> dict[str, Any]:
+def _build_sdxl_workflow(
+    request: AdImageRequest,
+    reference_filename: str | None,
+) -> dict[str, Any]:
+    workflow = copy.deepcopy(_load_comfyui_workflow_template(request))
+    try:
+        checkpoint = (
+            settings.comfyui_sdxl_turbo_checkpoint
+            if request.model == ImageModel.SDXL_TURBO
+            else settings.comfyui_sdxl_checkpoint
+        )
+        workflow["1"]["inputs"]["ckpt_name"] = checkpoint
+        workflow["2"]["inputs"]["text"] = request.prompt
+        workflow["3"]["inputs"]["text"] = request.negative_prompt or ""
+        is_turbo = request.model == ImageModel.SDXL_TURBO
+        workflow["7"]["inputs"]["steps"] = (
+            min(request.num_inference_steps, 4)
+            if is_turbo
+            else request.num_inference_steps
+        )
+        workflow["7"]["inputs"]["cfg"] = (
+            1.0 if is_turbo else max(request.guidance_scale, 5.0)
+        )
+        if is_turbo:
+            workflow["7"]["inputs"]["sampler_name"] = "euler_ancestral"
+            workflow["7"]["inputs"]["scheduler"] = "normal"
+        workflow["7"]["inputs"]["seed"] = (
+            request.seed if request.seed is not None else random.randint(0, 2**32 - 1)
+        )
+        workflow["9"]["inputs"]["filename_prefix"] = "brandmate_sdxl"
+        if reference_filename:
+            workflow["4"]["inputs"]["image"] = reference_filename
+            workflow["5"]["inputs"]["width"] = request.width
+            workflow["5"]["inputs"]["height"] = request.height
+            workflow["7"]["inputs"]["denoise"] = settings.comfyui_img2img_denoise
+        else:
+            workflow["4"]["inputs"]["width"] = request.width
+            workflow["4"]["inputs"]["height"] = request.height
+            workflow["7"]["inputs"]["denoise"] = 1.0
+    except KeyError as error:
+        raise ImageModelNotConfiguredError(
+            "SDXL ComfyUI workflow does not match the expected BrandMate node ids."
+        ) from error
+    return workflow
+
+
+def _build_comfyui_workflow(
+    request: AdImageRequest,
+    reference_filename: str | None = None,
+) -> dict[str, Any]:
     # [Design Intent]
     # The LLM only controls safe runtime fields. The ComfyUI graph, model names,
     # and node wiring stay fixed so a malformed LLM response cannot rewrite the pipeline.
-    workflow = copy.deepcopy(_load_comfyui_workflow_template())
+    if request.model in LOCAL_SDXL_MODELS:
+        return _build_sdxl_workflow(request, reference_filename)
+
+    workflow = copy.deepcopy(_load_comfyui_workflow_template(request))
 
     try:
         workflow[PROMPT_NODE_ID]["inputs"]["text"] = request.prompt
@@ -211,8 +275,14 @@ def _build_comfyui_workflow(request: AdImageRequest) -> dict[str, Any]:
         workflow[LATENT_NODE_ID]["inputs"]["height"] = request.height
         workflow[SAMPLING_MODEL_NODE_ID]["inputs"]["width"] = request.width
         workflow[SAMPLING_MODEL_NODE_ID]["inputs"]["height"] = request.height
-        workflow[KSAMPLER_NODE_ID]["inputs"]["steps"] = request.num_inference_steps
-        workflow[FLUX_GUIDANCE_NODE_ID]["inputs"]["guidance"] = request.guidance_scale
+        workflow[KSAMPLER_NODE_ID]["inputs"]["steps"] = min(
+            request.num_inference_steps,
+            4,
+        )
+        workflow[FLUX_GUIDANCE_NODE_ID]["inputs"]["guidance"] = min(
+            request.guidance_scale,
+            3.5,
+        )
         workflow[KSAMPLER_NODE_ID]["inputs"]["cfg"] = 1.0
         workflow[KSAMPLER_NODE_ID]["inputs"]["seed"] = (
             request.seed if request.seed is not None else random.randint(0, 2**32 - 1)
@@ -234,6 +304,22 @@ def _find_saved_image(history: dict[str, Any], prompt_id: str) -> dict[str, str]
     prompt_history = history.get(prompt_id)
     if not isinstance(prompt_history, dict):
         raise ImageModelProviderError(f"ComfyUI history did not contain prompt_id={prompt_id}.")
+
+    status = prompt_history.get("status")
+    if isinstance(status, dict) and status.get("status_str") == "error":
+        messages = status.get("messages")
+        if isinstance(messages, list):
+            for message in reversed(messages):
+                if not isinstance(message, list) or len(message) < 2:
+                    continue
+                detail = message[1]
+                if message[0] == "execution_error" and isinstance(detail, dict):
+                    error_message = detail.get("exception_message")
+                    if isinstance(error_message, str) and error_message.strip():
+                        raise ImageModelProviderError(
+                            f"ComfyUI workflow failed: {error_message.strip()}"
+                        )
+        raise ImageModelProviderError("ComfyUI workflow failed without an error message.")
 
     outputs = prompt_history.get("outputs")
     if not isinstance(outputs, dict):
@@ -266,19 +352,49 @@ async def _download_comfyui_image(client: httpx.AsyncClient, image: dict[str, st
     return response.content
 
 
+async def _upload_comfyui_reference(
+    client: httpx.AsyncClient,
+    data_url: str,
+) -> str:
+    image_bytes, media_type, filename = _decode_reference_image(data_url)
+    response = await client.post(
+        _comfyui_url("/upload/image"),
+        files={"image": (filename, image_bytes, media_type)},
+        data={"type": "input", "overwrite": "true"},
+    )
+    response.raise_for_status()
+    body = response.json()
+    name = body.get("name")
+    subfolder = body.get("subfolder") or ""
+    if not isinstance(name, str) or not name:
+        raise ImageModelProviderError("ComfyUI image upload did not return a filename.")
+    return f"{subfolder}/{name}" if subfolder else name
+
+
 async def _generate_ad_image_comfyui(request: AdImageRequest) -> AdImageResponse:
-    if request.model != ImageModel.FLUX_SCHNELL:
+    if request.model not in LOCAL_COMFYUI_MODELS:
         raise ImageModelNotConfiguredError(
-            "Local ComfyUI generation currently supports only FLUX.1 Schnell."
+            "Local ComfyUI generation supports FLUX.1 Schnell and SDXL Base 1.0."
+        )
+    if request.model == ImageModel.FLUX_SCHNELL and request.reference_image_data_url:
+        raise ImageModelNotConfiguredError(
+            "Local FLUX.1 Schnell is text-to-image only. Select Local SDXL to use an "
+            "uploaded reference photo."
         )
 
     started_at = perf_counter()
-    workflow = _build_comfyui_workflow(request)
     timeout = settings.comfyui_timeout_seconds
     deadline = time.monotonic() + timeout
 
     try:
         async with httpx.AsyncClient(timeout=timeout) as client:
+            reference_filename = None
+            if request.reference_image_data_url:
+                reference_filename = await _upload_comfyui_reference(
+                    client,
+                    request.reference_image_data_url,
+                )
+            workflow = _build_comfyui_workflow(request, reference_filename)
             prompt_response = await client.post(
                 _comfyui_url("/prompt"),
                 json={"prompt": workflow},
@@ -360,7 +476,7 @@ def _generate_hugging_face_image(
 async def generate_ad_image(request: AdImageRequest) -> AdImageResponse:
     if (
         settings.image_provider.lower() == "comfyui"
-        and request.model == ImageModel.FLUX_SCHNELL
+        and request.model in LOCAL_COMFYUI_MODELS
     ):
         return await _generate_ad_image_comfyui(request)
 
