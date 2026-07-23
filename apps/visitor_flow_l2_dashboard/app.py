@@ -62,6 +62,9 @@ MARKETING_SIGNAL_LABELS = {
     "storefront_visibility_candidate": "점심/오후 노출 후보",
     "evening_takeout_or_signage_candidate": "저녁 테이크아웃 후보",
 }
+DEFAULT_REPORT_STORE_NAME = "탐앤탐스 C0241 분석 사례"
+DEFAULT_REPORT_LOCATION = "매장 전면 보행로 및 계단 진입 동선"
+DEFAULT_REPORT_NUMBER = "BM-C0241-20210802-01"
 
 
 def resolve_results_dir(path_text: str) -> Path:
@@ -209,6 +212,279 @@ def format_zone_for_owner(zone_id: str, *, compact: bool = False) -> str:
 
 def format_marketing_signal(signal: str) -> str:
     return MARKETING_SIGNAL_LABELS.get(signal, signal)
+
+
+def format_report_date(date_value: str) -> str:
+    """Format an ISO date as a customer-facing Korean report date."""
+    timestamp = pd.to_datetime(date_value)
+    return timestamp.strftime("%Y.%m.%d")
+
+
+def build_customer_report_facts(
+    analysis: dict[str, Any],
+    dashboard_summary: pd.DataFrame,
+    roi_analysis: dict[str, Any],
+) -> dict[str, Any]:
+    """Build deterministic, customer-safe facts from validated L2/L3 artifacts."""
+    summary = dashboard_summary.copy()
+    summary["timestamp"] = pd.to_datetime(summary["time_bucket"])
+    summary["hour"] = summary["timestamp"].dt.strftime("%H:%M")
+    summary = summary.sort_values(["timestamp", "date_id"]).reset_index(drop=True)
+
+    peak = summary.sort_values(
+        "mean_persons_per_sampled_frame",
+        ascending=False,
+    ).iloc[0]
+    peak_date_id = str(peak["date_id"])
+    date_averages = {
+        str(item["date_id"]): float(item["mean_persons_per_sampled_frame"])
+        for item in analysis.get("date_summary", [])
+    }
+    peak_date_average = date_averages.get(peak_date_id, 0.0)
+    peak_mean = float(peak["mean_persons_per_sampled_frame"])
+    peak_to_date_average = peak_mean / peak_date_average if peak_date_average else 0.0
+
+    clip_summaries = analysis.get("clip_summaries", [])
+    total_duration_seconds = sum(
+        float(clip.get("frame_count", 0)) / float(clip.get("fps", 1))
+        for clip in clip_summaries
+        if float(clip.get("fps", 0)) > 0
+    )
+    if total_duration_seconds <= 0:
+        total_duration_seconds = (
+            float(analysis.get("sampled_frames", 0))
+            * float(analysis.get("sample_every_sec", 0))
+        )
+
+    dates = sorted(str(date_id) for date_id in summary["date_id"].unique())
+    observed_hours = {
+        date_id: sorted(
+            summary.loc[summary["date_id"] == date_id, "hour"].unique().tolist()
+        )
+        for date_id in dates
+    }
+    hour_date_counts = summary.groupby("hour")["date_id"].nunique()
+    comparable_hours = sorted(hour_date_counts[hour_date_counts >= 2].index.tolist())
+    comparable = summary[summary["hour"].isin(comparable_hours)].copy()
+
+    return {
+        "camera_id": str(roi_analysis.get("camera_id", "C0241")),
+        "dates": dates,
+        "observed_hours": observed_hours,
+        "clip_count": int(analysis.get("clip_count", 0)),
+        "analysis_minutes": int(round(total_duration_seconds / 60)),
+        "analysis_scene_count": int(analysis.get("sampled_frames", 0)),
+        "peak_date_id": peak_date_id,
+        "peak_hour": str(peak["hour"]),
+        "peak_scene_average": peak_mean,
+        "peak_date_average": peak_date_average,
+        "peak_to_date_average": peak_to_date_average,
+        "storefront_share": float(roi_analysis.get("roi_observation_share", 0.0)),
+        "storefront_peak_date_id": str(roi_analysis.get("peak_date_id", "")),
+        "storefront_peak_hour": pd.to_datetime(
+            roi_analysis.get("peak_time_bucket")
+        ).strftime("%H:%M"),
+        "storefront_peak_scene_average": float(
+            roi_analysis.get(
+                "peak_mean_roi_observations_per_sampled_frame",
+                0.0,
+            )
+        ),
+        "comparable_hours": comparable_hours,
+        "comparable_summary": comparable,
+    }
+
+
+def customer_time_chart(summary: pd.DataFrame, value_column: str) -> pd.DataFrame:
+    """Create a compact date-by-hour table for customer-facing charts."""
+    chart = summary.copy()
+    chart["시간대"] = pd.to_datetime(chart["time_bucket"]).dt.strftime("%H시")
+    chart["날짜"] = pd.to_datetime(chart["date_id"]).dt.strftime("%m월 %d일")
+    return chart.pivot_table(
+        index="시간대",
+        columns="날짜",
+        values=value_column,
+        aggfunc="first",
+    ).sort_index()
+
+
+def render_customer_report(
+    analysis: dict[str, Any],
+    dashboard_summary: pd.DataFrame,
+    roi_analysis: dict[str, Any],
+    roi_summary: pd.DataFrame,
+    masked_image_path: Path,
+    *,
+    store_name: str,
+    survey_location: str,
+    report_number: str,
+) -> None:
+    """Render the customer report without exposing operator implementation details."""
+    facts = build_customer_report_facts(analysis, dashboard_summary, roi_analysis)
+    date_labels = [format_report_date(date_id) for date_id in facts["dates"]]
+    period_label = " ~ ".join(date_labels)
+
+    st.header("CCTV 보행 관측 기반 상권분석 보고서")
+    st.markdown(f"**{store_name}**")
+    st.caption(f"조사 기간 {period_label} · 보고서 번호 {report_number}")
+
+    st.divider()
+    st.subheader("1. 조사 개요")
+    observed_time_rows = [
+        f"{format_report_date(date_id)}: "
+        + ", ".join(f"{hour[:2]}시" for hour in facts["observed_hours"][date_id])
+        for date_id in facts["dates"]
+    ]
+    overview = pd.DataFrame(
+        [
+            {"항목": "조사 대상", "내용": store_name},
+            {"항목": "조사 위치", "내용": survey_location},
+            {"항목": "조사 기간", "내용": period_label},
+            {"항목": "실제 관측 시간대", "내용": " / ".join(observed_time_rows)},
+            {
+                "항목": "분석 범위",
+                "내용": (
+                    f"영상 {facts['clip_count']}개 · 총 {facts['analysis_minutes']}분 · "
+                    f"분석 장면 {facts['analysis_scene_count']}개"
+                ),
+            },
+            {"항목": "분석 목적", "내용": "시간대별 보행 관측 변화와 매장 전면 노출 기회 파악"},
+        ]
+    )
+    st.table(overview)
+
+    st.divider()
+    st.subheader("2. 핵심 발견")
+    first, second, third, fourth = st.columns(4)
+    first.metric(
+        "가장 높은 관측 시간대",
+        f"{format_report_date(facts['peak_date_id'])} {facts['peak_hour']}",
+    )
+    second.metric(
+        "해당 시간대 장면당 평균",
+        f"{facts['peak_scene_average']:.2f}명",
+    )
+    third.metric(
+        "매장 전면 관심구역 비중",
+        f"{facts['storefront_share'] * 100:.1f}%",
+    )
+    fourth.metric(
+        "분석 범위",
+        f"{facts['clip_count']}개 영상 · {facts['analysis_minutes']}분",
+    )
+    st.markdown(
+        f"분석한 영상 표본에서는 **{format_report_date(facts['peak_date_id'])} "
+        f"{facts['peak_hour']}**의 보행 관측 수준이 가장 높았습니다. 해당 시간대에는 "
+        f"분석 장면마다 평균 **{facts['peak_scene_average']:.2f}명**이 보였으며, "
+        f"같은 날짜 평균의 **{facts['peak_to_date_average']:.2f}배**였습니다."
+    )
+    st.caption(
+        "장면당 평균은 일정 간격으로 확인한 화면에서 동시에 보인 사람 수의 평균입니다. "
+        "방문객 총수나 고유 방문자 수를 뜻하지 않습니다."
+    )
+
+    st.divider()
+    st.subheader("3. 시간대별 보행 관측 추이")
+    st.bar_chart(
+        customer_time_chart(
+            dashboard_summary,
+            "mean_persons_per_sampled_frame",
+        ),
+        x_label="시간대",
+        y_label="장면당 평균 관측(명)",
+        stack=False,
+        height=380,
+    )
+    st.markdown(
+        f"가장 강한 신호는 **{facts['peak_hour']}**에 나타났습니다. "
+        "이 시간대는 매장 전면 메시지와 단기 프로모션의 노출 효과를 시험할 "
+        "우선 후보입니다. 영상이 제공되지 않은 시간대는 추정하지 않았습니다."
+    )
+
+    st.divider()
+    st.subheader("4. 매장 전면 관심구역 분석")
+    image_column, chart_column = st.columns([1.15, 1])
+    with image_column:
+        if masked_image_path.is_file():
+            st.image(
+                str(masked_image_path),
+                caption=(
+                    "개인정보 보호 처리된 분석 예시 · 노란 선은 매장 전면과 "
+                    "계단 진입 동선을 포함한 관심구역"
+                ),
+                width="stretch",
+            )
+        else:
+            st.warning("고객 보고서용 개인정보 보호 이미지를 찾지 못했습니다.")
+    with chart_column:
+        st.bar_chart(
+            customer_time_chart(
+                roi_summary,
+                "mean_roi_observations_per_sampled_frame",
+            ),
+            x_label="시간대",
+            y_label="장면당 평균 관측(명)",
+            stack=False,
+            height=360,
+        )
+        st.caption("시간대별 매장 전면 관심구역의 장면당 평균 관측 수준")
+    st.markdown(
+        "전체 보행 관측 중 매장 전면과 계단 진입 동선을 포함한 관심구역에서 "
+        f"나타난 비중은 {facts['storefront_share'] * 100:.1f}%입니다. "
+        "매장 전면 관심구역의 "
+        f"관측 수준은 **{format_report_date(facts['storefront_peak_date_id'])} "
+        f"{facts['storefront_peak_hour']}**에 가장 높았습니다. 이 비중은 매장 입장률이나 "
+        "구매 전환율이 아니라, 분석 화면에서 매장 접근 가능 구역에 보인 관측의 비율입니다."
+    )
+
+    st.divider()
+    st.subheader("5. 날짜별 공통 시간대 비교")
+    comparable = facts["comparable_summary"]
+    if facts["comparable_hours"] and not comparable.empty:
+        comparison_chart = customer_time_chart(
+            comparable,
+            "mean_persons_per_sampled_frame",
+        )
+        st.bar_chart(
+            comparison_chart,
+            x_label="공통 관측 시간대",
+            y_label="장면당 평균 관측(명)",
+            stack=False,
+            height=320,
+        )
+        st.markdown(
+            "두 날짜에 모두 영상이 있는 "
+            f"**{', '.join(hour[:2] + '시' for hour in facts['comparable_hours'])}**만 "
+            "직접 비교했습니다. 공통 시간대가 제한적이므로 날짜 전체의 우열로 확대 "
+            "해석하지 않고, 반복 관측이 필요한 시간 후보를 찾는 데 사용합니다."
+        )
+    else:
+        st.info("두 날짜에 공통으로 관측된 시간대가 없어 직접 비교하지 않았습니다.")
+
+    st.divider()
+    st.subheader("6. 운영·마케팅 실행 제안")
+    st.markdown(
+        f"**1순위 · {facts['peak_hour']} 전후 매장 전면 노출 테스트**  \n"
+        "입간판이나 쇼윈도 메시지는 한 번에 이해되는 짧은 문구로 구성하고, "
+        "테이크아웃·세트 메뉴처럼 즉시 행동으로 이어질 제안을 1~2주간 시험합니다.\n\n"
+        "**2순위 · 날짜 편차를 확인한 뒤 운영 변경**  \n"
+        "현재 결과만으로 인력이나 영업시간을 바로 바꾸지 않습니다. 같은 요일과 시간대를 "
+        "추가 관측해 반복되는 패턴인지 먼저 확인합니다.\n\n"
+        "**성과 확인 · 매출 데이터와 연결**  \n"
+        "프로모션 전후의 POS 주문 수, 쿠폰 사용, 시간대별 객단가를 함께 비교해야 "
+        "보행 관측이 실제 매출 행동으로 이어졌는지 판단할 수 있습니다."
+    )
+
+    st.divider()
+    st.subheader("7. 분석 범위와 활용 기준")
+    st.markdown(
+        f"- 본 결과는 {facts['clip_count']}개 영상, 총 {facts['analysis_minutes']}분의 "
+        "관측 표본을 분석한 결과입니다.\n"
+        "- 같은 사람이 여러 분석 장면에 반복해서 보일 수 있어 고유 방문자 수가 아닙니다.\n"
+        "- 하루 전체 연속 촬영이 아니므로 일일 총 통행량이나 일평균 유동인구를 산출하지 않습니다.\n"
+        "- 성별·연령·이동 방향·매장 입장·구매 전환·매출은 이번 분석 범위에 포함하지 않습니다.\n"
+        "- 운영 변경 전에는 추가 촬영과 POS·프로모션 반응 데이터를 함께 검토해야 합니다."
+    )
 
 
 def render_video_validation(
@@ -954,11 +1230,10 @@ def main() -> None:
         page_title="Visitor Flow L3 Dashboard",
         layout="wide",
     )
-    st.title("CCTV 매장 앞 보행 관측 대시보드")
+    st.title("BrandMate 상권분석 리포트 스튜디오")
     st.caption(
-        "C0241 · 2021-08-02/2021-08-03 · L2-4 + L3-1 manual ROI + L3-2 privacy media"
+        "내부 운영자용 리포트 미리보기 · 분석 QA · 개발 artifact"
     )
-    render_scope_notice()
 
     with st.sidebar:
         st.header("데이터 경로")
@@ -975,6 +1250,20 @@ def main() -> None:
             value=str(DEFAULT_PRIVACY_MEDIA_DIR.relative_to(REPO_ROOT)),
         )
         st.caption("절대 경로 또는 저장소 루트 기준 상대 경로를 사용할 수 있습니다.")
+        st.divider()
+        st.header("고객 보고서 정보")
+        report_store_name = st.text_input(
+            "매장명",
+            value=DEFAULT_REPORT_STORE_NAME,
+        )
+        report_location = st.text_input(
+            "조사 위치",
+            value=DEFAULT_REPORT_LOCATION,
+        )
+        report_number = st.text_input(
+            "보고서 번호",
+            value=DEFAULT_REPORT_NUMBER,
+        )
 
     results_dir = resolve_results_dir(results_path_text)
     missing_files = validate_results_dir(results_dir)
@@ -1027,31 +1316,16 @@ def main() -> None:
     )
 
     with report_tab:
-        st.subheader("고객 PDF 리포트 미리보기")
-        st.caption(
-            "고객에게 전달할 화면 기준입니다. 원본 영상, 비마스킹 ROI 영상, "
-            "내부 threshold/debug artifact는 이 탭에서 제외합니다. L3-3에서 이 구성을 "
-            "HTML/PDF 산출물로 고정합니다."
-        )
-        render_metric_cards(analysis, show_validation_details=False)
-        st.divider()
-        render_roi_analysis(
+        render_customer_report(
             analysis,
+            dashboard_summary,
             roi_analysis,
-            roi_config,
             roi_summary,
-            roi_frames,
-            roi_events,
-            roi_results_dir,
-            privacy_summary,
             masked_image_path,
-            masked_video_path,
-            show_operator_debug=False,
+            store_name=report_store_name,
+            survey_location=report_location,
+            report_number=report_number,
         )
-        st.divider()
-        render_time_trend(dashboard_summary, show_validation_details=False)
-        st.divider()
-        render_marketing_interpretation(dashboard_summary)
 
     with operator_tab:
         st.subheader("운영 QA")
@@ -1059,6 +1333,7 @@ def main() -> None:
             "내부 담당자가 ROI, 마스킹 미디어, 탐지 품질, grid 해석을 검수하는 화면입니다. "
             "고객에게 직접 공유하지 않습니다."
         )
+        render_scope_notice()
         render_metric_cards(analysis)
         st.divider()
         render_roi_analysis(
