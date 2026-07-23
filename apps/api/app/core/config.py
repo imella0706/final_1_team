@@ -108,6 +108,13 @@ class Settings(BaseSettings):
     product_visual_db_path: str = "product_visual_profiles.sqlite3"
     pexels_api_key: SecretStr | None = None
     unsplash_access_key: SecretStr | None = None
+    # 네이버 블로그는 업로드한 음식 사진의 전경을 유지하고, 프로젝트 내부의
+    # food-image-cleanup-pipeline로 배경만 교체한다. 모델 의존성이 큰 선택 기능이므로
+    # 서버 환경에서 설치·모델 준비를 확인한 뒤에만 활성화한다.
+    naver_image_enhancement_enabled: bool = False
+    naver_image_cleanup_root: str = "food-image-cleanup-pipeline"
+    naver_image_cleanup_python: str | None = None
+    naver_image_cleanup_timeout_seconds: int = 600
 
     @property
     def allowed_web_origins(self) -> list[str]:
