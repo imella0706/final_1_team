@@ -100,6 +100,7 @@ const backToServicesButton = $("#back-to-services");
 let hasGeneratedAd = false;
 let referencePreviewDataUrl = null;
 let generatedVoiceDataUrl = "";
+let generatedVoiceObjectUrl = "";
 let generatedVoiceExtension = "mp3";
 let configuredVoiceProviderLabel = "openai · gpt-4o-mini-tts";
 let latestNaverBlogPasteText = "";
@@ -848,6 +849,10 @@ function updateVoiceScriptCount() {
 function resetVoiceResult() {
   generatedVoiceDataUrl = "";
   generatedVoiceExtension = "mp3";
+  if (generatedVoiceObjectUrl) {
+    URL.revokeObjectURL(generatedVoiceObjectUrl);
+    generatedVoiceObjectUrl = "";
+  }
   if (voicePlayer) {
     voicePlayer.pause();
     voicePlayer.removeAttribute("src");
@@ -861,6 +866,15 @@ function resetVoiceResult() {
   }
   const audioModelLabel = $("#result-audio-model");
   if (audioModelLabel) audioModelLabel.textContent = configuredVoiceProviderLabel;
+}
+
+function audioBlobFromBase64(encodedAudio, mediaType) {
+  const binaryAudio = window.atob(encodedAudio);
+  const bytes = new Uint8Array(binaryAudio.length);
+  for (let index = 0; index < binaryAudio.length; index += 1) {
+    bytes[index] = binaryAudio.charCodeAt(index);
+  }
+  return new Blob([bytes], { type: mediaType });
 }
 
 function normalizeContentResult(result) {
@@ -1698,9 +1712,13 @@ generateVoiceButton?.addEventListener("click", async () => {
       instructions: voiceInstructions.value.trim() || null,
       speed: Number(voiceSpeed.value),
     });
+    const audioBlob = audioBlobFromBase64(result.audio_base64, result.media_type);
     generatedVoiceDataUrl = `data:${result.media_type};base64,${result.audio_base64}`;
+    if (generatedVoiceObjectUrl) URL.revokeObjectURL(generatedVoiceObjectUrl);
+    generatedVoiceObjectUrl = URL.createObjectURL(audioBlob);
     generatedVoiceExtension = result.media_type === "audio/wav" ? "wav" : "mp3";
-    voicePlayer.src = generatedVoiceDataUrl;
+    voicePlayer.src = generatedVoiceObjectUrl;
+    voicePlayer.load();
     voiceOutput.hidden = false;
     voiceState.textContent = result.fallback_used ? "완료 · 대체 모델 사용" : "완료";
     voiceState.className = "voice-state";

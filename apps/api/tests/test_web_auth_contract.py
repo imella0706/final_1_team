@@ -25,3 +25,13 @@ def test_web_exposes_public_mvp_recovery_and_security_controls() -> None:
         'id="change-password-form"',
     ):
         assert element_id in markup
+
+
+def test_web_allows_and_uses_blob_urls_for_generated_audio() -> None:
+    markup = (WEB_ROOT / "index.html").read_text(encoding="utf-8")
+    script = (WEB_ROOT / "app.js").read_text(encoding="utf-8")
+
+    assert "media-src 'self' data: blob:" in markup
+    assert "URL.createObjectURL(audioBlob)" in script
+    assert "voicePlayer.src = generatedVoiceObjectUrl" in script
+    assert "voicePlayer.load()" in script
