@@ -42,3 +42,17 @@ def test_voice_instructions_remain_editable_for_every_provider() -> None:
 
     assert "voiceInstructions.disabled = !cosyvoice.instructions_supported" not in script
     assert "voiceInstructions.disabled = false" in script
+
+
+def test_web_labels_local_gender_and_emotion_voice_presets() -> None:
+    script = (WEB_ROOT / "app.js").read_text(encoding="utf-8")
+
+    for voice, label in (
+        ("man_happy", "남성 · 기쁨"),
+        ("man_serious", "남성 · 진지함"),
+        ("man_whisper", "남성 · 속삭임"),
+        ("woman_happy", "여성 · 기쁨"),
+        ("woman_serious", "여성 · 진지함"),
+        ("woman_whisper", "여성 · 속삭임"),
+    ):
+        assert f'["{voice}", "{label}"]' in script

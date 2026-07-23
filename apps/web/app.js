@@ -70,6 +70,14 @@ const openAiVoiceOptions = [
   ["sage", "Sage · 따뜻하고 신뢰감 있음"],
   ["fable", "Fable · 표현력이 풍부함"],
 ];
+const localVoiceLabels = new Map([
+  ["man_happy", "남성 · 기쁨"],
+  ["man_serious", "남성 · 진지함"],
+  ["man_whisper", "남성 · 속삭임"],
+  ["woman_happy", "여성 · 기쁨"],
+  ["woman_serious", "여성 · 진지함"],
+  ["woman_whisper", "여성 · 속삭임"],
+]);
 const appMain = $("#app-main");
 const authDialog = $("#auth-dialog");
 const authTabs = $("#auth-tabs");
@@ -1502,6 +1510,20 @@ function fillVoiceSelect(voices) {
   });
 }
 
+function localVoiceOptions(voices) {
+  const voiceSet = new Set(voices);
+  const configuredVoices = [...localVoiceLabels]
+    .filter(([voice]) => voiceSet.has(voice))
+    .map(([voice, label]) => [voice, label]);
+  const otherVoices = voices
+    .filter((voice) => !localVoiceLabels.has(voice))
+    .map((voice) => [
+      voice,
+      voice === "default" ? "기본 기준 음성" : `${voice} · 로컬 음성`,
+    ]);
+  return [...configuredVoices, ...otherVoices];
+}
+
 async function loadAudioProviders() {
   fillVoiceSelect(openAiVoiceOptions);
   try {
@@ -1509,12 +1531,7 @@ async function loadAudioProviders() {
     const cosyvoice = providers.find((provider) => provider.provider === "cosyvoice");
     const openai = providers.find((provider) => provider.provider === "openai");
     if (cosyvoice?.available && cosyvoice.voices?.length) {
-      fillVoiceSelect(
-        cosyvoice.voices.map((voice) => [
-          voice,
-          voice === "default" ? "Default · 로컬 기준 음성" : `${voice} · 로컬 음성`,
-        ]),
-      );
+      fillVoiceSelect(localVoiceOptions(cosyvoice.voices));
       configuredVoiceProviderLabel = `cosyvoice · ${cosyvoice.model}`;
       if (voiceInstructions) {
         voiceInstructions.disabled = false;
