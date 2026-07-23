@@ -1,10 +1,8 @@
-import array
 import asyncio
 import io
 import os
 import re
 import sys
-import tempfile
 import threading
 import wave
 from pathlib import Path
@@ -19,12 +17,13 @@ SERVICE_DIR = Path(__file__).resolve().parent
 VOICE_NAME_PATTERN = re.compile(r"^[A-Za-z0-9._-]+$")
 TTS_SEGMENT_MAX_CHARS = 180
 VOICE_OUTPUT_GAINS = {
-    "man_whisper": 0.55,
+    "man_whisper": 0.80,
     "woman_whisper": 0.63,
 }
-VOICE_REFERENCE_CHANNELS = {
-    "man_whisper": 1,
+VOICE_REFERENCE_OVERRIDES = {
+    "man_whisper": "man_whisper2",
 }
+INTERNAL_REFERENCE_VOICES = frozenset(VOICE_REFERENCE_OVERRIDES.values())
 VOICE_STYLE_INSTRUCTIONS = {
     "woman_whisper": (
         "You are a helpful assistant. "
@@ -224,36 +223,11 @@ class CosyVoiceEngine:
         )
 
     def _reference_voice_path(self, voice: str, selected_path: Path) -> Path:
-        channel = VOICE_REFERENCE_CHANNELS.get(voice)
-        if channel is None:
+        reference_voice = VOICE_REFERENCE_OVERRIDES.get(voice)
+        if not reference_voice:
             return selected_path
-        try:
-            with wave.open(str(selected_path), "rb") as source:
-                if source.getnchannels() <= channel or source.getsampwidth() != 2:
-                    return selected_path
-                params = source.getparams()
-                samples = array.array("h")
-                samples.frombytes(source.readframes(source.getnframes()))
-                if sys.byteorder != "little":
-                    samples.byteswap()
-                mono_samples = samples[channel :: params.nchannels]
-
-            source_stat = selected_path.stat()
-            cache_dir = Path(tempfile.gettempdir()) / "brandmate-cosyvoice-references"
-            cache_dir.mkdir(parents=True, exist_ok=True)
-            cached_path = cache_dir / (
-                f"{selected_path.stem}-{source_stat.st_mtime_ns}-"
-                f"{source_stat.st_size}-channel-{channel}.wav"
-            )
-            if not cached_path.is_file():
-                with wave.open(str(cached_path), "wb") as output:
-                    output.setnchannels(1)
-                    output.setsampwidth(params.sampwidth)
-                    output.setframerate(params.framerate)
-                    output.writeframes(mono_samples.tobytes())
-            return cached_path
-        except (OSError, EOFError, wave.Error):
-            return selected_path
+        candidate = self.voice_dir / f"{reference_voice}.wav"
+        return candidate if candidate.is_file() else selected_path
 
     def _ensure_model(self) -> Any:
         if self._model is not None:
@@ -380,7 +354,11 @@ class CosyVoiceEngine:
             "model": self.model_name,
             "inference_mode": self.inference_mode,
             "instructions_supported": self.inference_mode == "instruct",
-            "voices": sorted(path.stem for path in self.voice_dir.glob("*.wav")),
+            "voices": sorted(
+                path.stem
+                for path in self.voice_dir.glob("*.wav")
+                if path.stem not in INTERNAL_REFERENCE_VOICES
+            ),
             "detail": detail,
         }
 

@@ -1,7 +1,5 @@
 import importlib.util
-import struct
 import sys
-import wave
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -228,42 +226,39 @@ def test_cross_lingual_whisper_voice_uses_fixed_style_instruction(
     assert output_gains == [SERVER.VOICE_OUTPUT_GAINS["woman_whisper"]]
 
 
-def test_male_whisper_uses_single_reference_channel(tmp_path) -> None:
+def test_male_whisper_uses_second_reference_recording(tmp_path) -> None:
     whisper_voice = tmp_path / "man_whisper.wav"
-    with wave.open(str(whisper_voice), "wb") as wav_file:
-        wav_file.setnchannels(2)
-        wav_file.setsampwidth(2)
-        wav_file.setframerate(48000)
-        wav_file.writeframes(struct.pack("<8h", 1, 11, 2, 12, 3, 13, 4, 14))
+    replacement_voice = tmp_path / "man_whisper2.wav"
+    whisper_voice.write_bytes(b"original")
+    replacement_voice.write_bytes(b"replacement")
     engine = SERVER.CosyVoiceEngine()
     engine.voice_dir = tmp_path
 
     reference_path = engine._reference_voice_path("man_whisper", whisper_voice)
 
-    assert reference_path != whisper_voice
-    with wave.open(str(reference_path), "rb") as wav_file:
-        assert wav_file.getnchannels() == 1
-        assert struct.unpack("<4h", wav_file.readframes(4)) == (11, 12, 13, 14)
+    assert reference_path == replacement_voice
     assert "man_whisper" not in SERVER.VOICE_STYLE_INSTRUCTIONS
-    assert (
-        SERVER.VOICE_OUTPUT_GAINS["man_whisper"]
-        < SERVER.VOICE_OUTPUT_GAINS["woman_whisper"]
-    )
+    assert SERVER.VOICE_OUTPUT_GAINS["man_whisper"] == 0.80
 
 
-def test_male_whisper_keeps_mono_reference(tmp_path) -> None:
+def test_male_whisper_falls_back_when_second_recording_is_missing(tmp_path) -> None:
     whisper_voice = tmp_path / "man_whisper.wav"
-    with wave.open(str(whisper_voice), "wb") as wav_file:
-        wav_file.setnchannels(1)
-        wav_file.setsampwidth(2)
-        wav_file.setframerate(16000)
-        wav_file.writeframes(struct.pack("<2h", 1, 2))
+    whisper_voice.write_bytes(b"original")
     engine = SERVER.CosyVoiceEngine()
     engine.voice_dir = tmp_path
 
     assert (
         engine._reference_voice_path("man_whisper", whisper_voice) == whisper_voice
     )
+
+
+def test_health_hides_internal_reference_recording(tmp_path) -> None:
+    (tmp_path / "man_whisper.wav").write_bytes(b"original")
+    (tmp_path / "man_whisper2.wav").write_bytes(b"replacement")
+    engine = SERVER.CosyVoiceEngine()
+    engine.voice_dir = tmp_path
+
+    assert engine.health()["voices"] == ["man_whisper"]
 
 
 def test_voice_path_uses_default_voice(tmp_path) -> None:

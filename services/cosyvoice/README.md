@@ -87,11 +87,12 @@ sentence boundaries and generated in order to reduce omitted phrases. The
 selected emotion reference recording and speed control still affect the result.
 The `woman_whisper` preset uses a short, fixed model-native whisper instruction
 because cross-lingual speaker embeddings alone do not reliably preserve
-whispered articulation. The male whisper recording has different left and
-right channels, so BrandMate extracts its cleaner right channel as a mono
-reference instead of averaging both channels. It then uses the regular
-cross-lingual path without a forced acting instruction, avoiding an exaggerated
-hoarse delivery. Custom web instructions remain disabled in this mode.
+whispered articulation. The `man_whisper` preset uses `man_whisper2.wav` as its
+reference recording while keeping the public preset name unchanged. If that
+file is unavailable, it falls back to `man_whisper.wav`. It uses the regular
+cross-lingual path without a forced acting instruction and applies a calibrated
+gain for the quieter replacement recording. Custom web instructions remain
+disabled in this mode.
 
 The experimental `instruct` mode can be enabled explicitly, but may speak parts
 of the instruction:
