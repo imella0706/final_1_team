@@ -192,7 +192,7 @@ def video_format(path: Path) -> str:
     return "video/webm"
 
 
-def format_zone_for_owner(zone_id: str) -> str:
+def format_zone_for_owner(zone_id: str, *, compact: bool = False) -> str:
     """Convert an internal grid id like r0_c3 to owner-facing Korean text."""
     try:
         row_text, col_text = zone_id.split("_")
@@ -202,6 +202,8 @@ def format_zone_for_owner(zone_id: str) -> str:
         return zone_id
 
     row_label = ROW_LABELS.get(row, f"{row + 1}번째 줄")
+    if compact:
+        return f"{row_label} · 좌측 {col + 1}번"
     return f"{row_label} · 왼쪽에서 {col + 1}번째 구역"
 
 
@@ -415,7 +417,11 @@ def render_scope_notice() -> None:
     )
 
 
-def render_metric_cards(analysis: dict[str, Any]) -> None:
+def render_metric_cards(
+    analysis: dict[str, Any],
+    *,
+    show_validation_details: bool = True,
+) -> None:
     first, second, third, fourth = st.columns(4)
     peak_bucket = str(analysis.get("peak_time_bucket", ""))
     peak_date_id = str(analysis.get("peak_date_id", ""))
@@ -428,7 +434,8 @@ def render_metric_cards(analysis: dict[str, Any]) -> None:
         "프레임당 평균 관측",
         f"{float(analysis.get('peak_mean_persons_per_sampled_frame', 0.0)):.3f}",
     )
-    third.metric("화면 기준 최다 관측 구역", format_zone_for_owner(top_zone_id))
+    third.caption("화면 기준 최다 관측 구역")
+    third.markdown(f"### {format_zone_for_owner(top_zone_id, compact=True)}")
     fourth.metric("분석한 CCTV 영상", f"{int(analysis['clip_count'])}개")
 
     st.info(
@@ -436,6 +443,9 @@ def render_metric_cards(analysis: dict[str, Any]) -> None:
         "같은 사람이 여러 장면에 보이면 여러 번 잡힐 수 있으므로, 실제 방문객 수로 해석하면 안 됩니다. "
         "최다 관측 구역은 실제 지면의 가장 붐비는 장소가 아니라 화면 기준으로 사람이 많이 잡힌 칸입니다."
     )
+
+    if not show_validation_details:
+        return
 
     with st.expander("검증용 세부 지표 보기", expanded=False):
         detail = pd.DataFrame(
@@ -493,6 +503,8 @@ def render_roi_analysis(
     privacy_summary: dict[str, Any],
     masked_image_path: Path,
     masked_video_path: Path,
+    *,
+    show_operator_debug: bool = True,
 ) -> None:
     st.subheader("1. 매장 전면 ROI 보행 관측")
     st.caption("수동 normalized polygon · bbox bottom-center 판정 · 10초 sampled frame")
@@ -621,22 +633,27 @@ def render_roi_analysis(
                 for column in overlap_chart.columns
             },
         )
-    render_operator_roi_video(
-        source_analysis=source_analysis,
-        roi_analysis=analysis,
-        config=config,
-        results_dir=results_dir,
-        privacy_summary=privacy_summary,
-        masked_video_path=masked_video_path,
-    )
-    with st.expander("ROI 설정과 판정 artifact", expanded=False):
-        st.json(config)
-        st.dataframe(frames.head(30), hide_index=True, width="stretch")
-        st.dataframe(events.head(30), hide_index=True, width="stretch")
-        st.caption(f"현재 읽는 L3-1 결과 폴더: {results_dir}")
+    if show_operator_debug:
+        render_operator_roi_video(
+            source_analysis=source_analysis,
+            roi_analysis=analysis,
+            config=config,
+            results_dir=results_dir,
+            privacy_summary=privacy_summary,
+            masked_video_path=masked_video_path,
+        )
+        with st.expander("ROI 설정과 판정 artifact", expanded=False):
+            st.json(config)
+            st.dataframe(frames.head(30), hide_index=True, width="stretch")
+            st.dataframe(events.head(30), hide_index=True, width="stretch")
+            st.caption(f"현재 읽는 L3-1 결과 폴더: {results_dir}")
 
 
-def render_time_trend(dashboard_summary: pd.DataFrame) -> None:
+def render_time_trend(
+    dashboard_summary: pd.DataFrame,
+    *,
+    show_validation_details: bool = True,
+) -> None:
     st.subheader("2. 전체 화면 시간대별 프레임 정규화 보행 관측")
     chart = dashboard_summary.copy()
     chart["time_label"] = pd.to_datetime(chart["time_bucket"]).dt.strftime("%H:%M")
@@ -704,6 +721,9 @@ def render_time_trend(dashboard_summary: pd.DataFrame) -> None:
             "marketing_signal_label": "시간대 해석 후보",
         },
     )
+    if not show_validation_details:
+        return
+
     with st.expander("검증용 시간대별 화면 구역 보기", expanded=False):
         st.dataframe(
             display[
@@ -1002,30 +1022,66 @@ def main() -> None:
         st.error(f"L3-2 개인정보 보호 미디어 산출물을 읽지 못했습니다: {error}")
         st.stop()
 
-    render_metric_cards(analysis)
-    st.divider()
-    render_roi_analysis(
-        analysis,
-        roi_analysis,
-        roi_config,
-        roi_summary,
-        roi_frames,
-        roi_events,
-        roi_results_dir,
-        privacy_summary,
-        masked_image_path,
-        masked_video_path,
+    report_tab, operator_tab, artifact_tab = st.tabs(
+        ["고객 PDF 리포트", "운영 QA", "개발 artifact"]
     )
-    st.divider()
-    render_time_trend(dashboard_summary)
-    st.divider()
-    render_video_validation(analysis, results_dir)
-    st.divider()
-    render_grid_heatmap(analysis, summary, dashboard_summary)
-    st.divider()
-    render_marketing_interpretation(dashboard_summary)
-    st.divider()
-    render_raw_tables(analysis, frames, events, summary, results_dir)
+
+    with report_tab:
+        st.subheader("고객 PDF 리포트 미리보기")
+        st.caption(
+            "고객에게 전달할 화면 기준입니다. 원본 영상, 비마스킹 ROI 영상, "
+            "내부 threshold/debug artifact는 이 탭에서 제외합니다. L3-3에서 이 구성을 "
+            "HTML/PDF 산출물로 고정합니다."
+        )
+        render_metric_cards(analysis, show_validation_details=False)
+        st.divider()
+        render_roi_analysis(
+            analysis,
+            roi_analysis,
+            roi_config,
+            roi_summary,
+            roi_frames,
+            roi_events,
+            roi_results_dir,
+            privacy_summary,
+            masked_image_path,
+            masked_video_path,
+            show_operator_debug=False,
+        )
+        st.divider()
+        render_time_trend(dashboard_summary, show_validation_details=False)
+        st.divider()
+        render_marketing_interpretation(dashboard_summary)
+
+    with operator_tab:
+        st.subheader("운영 QA")
+        st.caption(
+            "내부 담당자가 ROI, 마스킹 미디어, 탐지 품질, grid 해석을 검수하는 화면입니다. "
+            "고객에게 직접 공유하지 않습니다."
+        )
+        render_metric_cards(analysis)
+        st.divider()
+        render_roi_analysis(
+            analysis,
+            roi_analysis,
+            roi_config,
+            roi_summary,
+            roi_frames,
+            roi_events,
+            roi_results_dir,
+            privacy_summary,
+            masked_image_path,
+            masked_video_path,
+        )
+        st.divider()
+        render_time_trend(dashboard_summary)
+        st.divider()
+        render_video_validation(analysis, results_dir)
+        st.divider()
+        render_grid_heatmap(analysis, summary, dashboard_summary)
+
+    with artifact_tab:
+        render_raw_tables(analysis, frames, events, summary, results_dir)
 
 
 if __name__ == "__main__":

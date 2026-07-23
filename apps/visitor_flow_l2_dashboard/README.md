@@ -153,6 +153,22 @@ ROI 좌표를 직접 다시 잡을 때는 기준 프레임 이미지에서 꼭�
 
 저장소 루트에서 실행합니다.
 
+## 운영 정책
+
+CCTV 상권분석은 기존 BrandMate 광고 생성 로직에 직접 섞지 않습니다. 현재 MVP에서 BrandMate 웹의 `상권분석` 메뉴는 고객에게 서비스 소개와 측정신청 화면을 제공하는 진입점으로만 둡니다. 분석 결과 화면은 고객에게 직접 공개하지 않고, 내부 운영자가 Streamlit에서 검수한 뒤 PDF 리포트 파일로 전달합니다.
+
+Streamlit 대시보드는 내부 back-office 도구입니다. `고객 PDF 리포트` 탭은 고객이 접속하는 화면이 아니라 L3-3 `customer_report.html`/`customer_report.pdf`로 고정할 리포트 미리보기입니다. `운영 QA`와 `개발 artifact` 탭은 내부 전용이며 고객에게 공유하지 않습니다.
+
+장기간 관측을 요구하는 고객이 늘어나고 분석 job, 파일 권한, 결제/프리미엄 entitlement가 안정화된 뒤에만 고객이 직접 로그인해 결과 현황을 보는 대시보드/포털을 별도 제품 단계로 검토합니다.
+
+| 구분 | 현재 MVP 정책 |
+|---|---|
+| BrandMate 웹 | 상권분석 홍보와 측정신청 진입만 담당 |
+| Streamlit | 내부 운영자 검수와 PDF 리포트 생성 보조 |
+| 고객 제공물 | PDF 리포트 파일 |
+| 금지 | Streamlit 주소를 고객에게 공유하거나 외부 IP에 공개 |
+| 후속 | 장기 관측 고객이 많아진 뒤 고객 포털/로그인 대시보드 검토 |
+
 ### BrandMate 통합 실행 - 상권분석 담당자용
 
 팀원 기본 실행에서는 Streamlit 상권분석 대시보드를 띄우지 않습니다. 상권분석 담당자 또는 관리자만 아래처럼 `START_DASHBOARD=true`를 명시해 BrandMate web, FastAPI, Postgres, Streamlit 대시보드를 함께 실행합니다.
@@ -182,6 +198,14 @@ Visitor-flow dashboard: http://127.0.0.1:8503
 브라우저가 자동으로 열리지 않으면 터미널에 표시되는 `http://localhost:8501` 또는 `http://localhost:8502` 주소로 접속합니다.
 
 ## 현재 화면에서 확인할 수 있는 것
+
+화면은 고객 직접 접속용 SaaS가 아니라 내부 운영자 도구입니다. BrandMate 웹의 상권분석 메뉴는 고객에게 홍보/측정신청 화면을 보여주고, 실제 분석 결과는 운영자가 이 Streamlit 화면에서 검수한 뒤 PDF 파일로 전달하는 구조를 기준으로 합니다.
+
+| 탭 | 용도 | 고객 제공 여부 |
+|---|---|---|
+| 고객 PDF 리포트 | L3-3 `customer_report.html`/`customer_report.pdf`로 고정할 리포트 미리보기 | PDF 산출물로 제공 |
+| 운영 QA | ROI, 마스킹 영상, 탐지 품질, grid 해석 검수 | 내부 전용 |
+| 개발 artifact | `analysis.json`, parquet sample 등 원본 산출물 확인 | 내부 전용 |
 
 - 가장 붐빈 시간대
 - 매장 전면 ROI 내부 sampled observation과 전체 관측 대비 비중
