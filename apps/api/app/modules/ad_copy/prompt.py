@@ -1,9 +1,33 @@
 import json
 
 from app.modules.ad_copy.schemas import AdCopyRequest
-from app.modules.ad_copy.trend_context import TrendCard
+from app.modules.ad_copy.trend_context import (
+    ComebackRevealCopyStructure,
+    ContextDanceCopyStructure,
+    CopyStructure,
+    TrendCard,
+)
 
 PROMPT_VERSION = "channel-split-pipeline-v13-trend-structure"
+
+
+def _copy_structure_prompt_rules(card: TrendCard) -> str:
+    structure = card.copy_structure
+    if structure is None:
+        return (
+            "15. copy_structure가 없으면 text_patterns와 usage_rules를 기준으로 "
+            "문구의 의미와 순서를 보존하세요."
+        )
+    if isinstance(structure, CopyStructure):
+        return """15. reason_source가 input_features이면 marker 뒤에 입력 특징을 근거로 한 서로 다른 이유를 쓰세요. 이유 수는 입력에서 사용할 수 있는 특징 수와 minimum_reason_count 중 작은 값 이상이어야 하며, 각 이유는 reason_ending으로 끝내세요.
+16. 이유를 자연스럽게 변형할 수 있지만 근거가 된 입력 특징을 식별할 수 있어야 합니다. 입력에 없는 맛, 색, 재료, 효능, 혜택을 이유로 추가하지 마세요."""
+    if isinstance(structure, ContextDanceCopyStructure):
+        return """15. context_source에 해당하는 실제 캠페인 맥락 또는 입력 situation을 context_position에 놓고, marker_variants 중 하나를 marker_occurrences만큼 사용하세요. minimum_context_count 이상의 맥락이 marker보다 먼저 보여야 합니다.
+16. optional_call_marker는 호출할 대상이 있을 때만 사용하세요. 사용한다면 optional_call_source에서 가져온 고객·참여자·상품 등 직접 관련된 대상을 marker 뒤에 먼저 제시하고 optional_call_position을 지키세요."""
+    if isinstance(structure, ComebackRevealCopyStructure):
+        return """15. 실제 복귀·재출시·재입고 맥락인 setup_source를 marker_template보다 먼저 제시한 다음, reveal_source의 대표 상품을 marker 뒤에 공개하세요. marker 수는 marker_occurrences와 정확히 맞추세요.
+16. 대표 상품 공개 뒤에는 support_source인 서로 다른 입력 특징을 minimum_support_count 이상 연결하고, 각 support는 reason_ending으로 끝내세요. 입력에 없는 복귀 맥락이나 특징을 만들지 마세요."""
+    raise TypeError(f"지원하지 않는 copy_structure입니다: {type(structure).__name__}")
 
 
 def build_trend_card_prompt_block(
@@ -14,11 +38,14 @@ def build_trend_card_prompt_block(
     if card is None:
         return ""
 
+    structure_prompt_rules = _copy_structure_prompt_rules(card)
+
     channel_post_rule = {
         "instagram": (
             "channel_recommendation.caption의 도입부에 text_patterns와 copy_structure를 "
-            "따르는 완성 표현을 한 번 넣으세요. marker는 첫 문장에 두고 이유 문장은 "
-            "그 직후에 이어 쓰며, channel_recommendation.publish_body에도 그 caption을 "
+            "따르는 완성 표현을 한 번 넣으세요. marker는 첫 문장에 두고 구조가 요구하는 "
+            "context·subject·setup·reveal·reason/support 절을 그 순서대로 이어 쓰며, "
+            "channel_recommendation.publish_body에도 그 caption을 "
             "그대로 포함하세요."
         ),
         "naver_blog": (
@@ -80,9 +107,8 @@ TrendCard 활용 규칙:
 11. 입력에 없는 상품 정보, 특징, 혜택을 만들지 마세요.
 12. copy_markers는 고객 문구에서 그대로 유지해야 하는 짧은 핵심 표현입니다. 상품명이나 특징을 copy_markers로 대체하지 마세요.
 13. Instagram에서는 headlines[0]과 body_copies[0]을 합친 도입부 및 caption의 첫 문장에 copy_markers 중 하나를 정확히 포함하세요.
-14. copy_structure가 있으면 해당 필드를 문구 조립 계약으로 따르세요. subject_source의 대상을 subject_position에 놓고, 한 응용 표현 안의 marker 수를 marker_occurrences와 정확히 맞추세요.
-15. reason_source가 input_features이면 marker 뒤에 입력 특징을 근거로 한 서로 다른 이유를 쓰세요. 이유 수는 입력에서 사용할 수 있는 특징 수와 minimum_reason_count 중 작은 값 이상이어야 하며, 각 이유는 reason_ending으로 끝내세요.
-16. 이유를 자연스럽게 변형할 수 있지만 근거가 된 입력 특징을 식별할 수 있어야 합니다. 입력에 없는 맛, 색, 재료, 효능, 혜택을 이유로 추가하지 마세요.
+14. copy_structure가 있으면 해당 필드를 문구 조립 계약으로 따르세요. 구조가 지정한 절의 출처와 위치를 지키고, 한 응용 표현 안의 핵심 marker 수를 marker_occurrences와 정확히 맞추세요.
+{structure_prompt_rules}
 """
 
 BUSINESS_TYPE_LABELS = {

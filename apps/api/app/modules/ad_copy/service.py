@@ -347,20 +347,32 @@ async def generate_ad_copy(request: AdCopyRequest) -> AdCopyResponse:
             output_repaired = True
 
         if attempt == 1:
-            fallback = normalize_copy_output(
-                build_fallback_copy(request, warnings, trend_card),
-                request,
-            )
-            fallback_validation = validate_copy_output(fallback, request, trend_card)
-            if not fallback_validation.valid:
-                last_error = InvalidModelOutputError(
-                    "fallback validation failed: "
-                    + "; ".join(fallback_validation.warnings)
+            try:
+                fallback = normalize_copy_output(
+                    build_fallback_copy(request, warnings, trend_card),
+                    request,
                 )
-                warnings = fallback_validation.warnings
+                fallback_validation = validate_copy_output(
+                    fallback,
+                    request,
+                    trend_card,
+                )
+            except ValidationError:
+                last_error = InvalidModelOutputError(
+                    "fallback 광고 문구가 출력 스키마를 충족하지 못했습니다."
+                )
+                warnings = [str(last_error)]
                 content = None
             else:
-                content = fallback
+                if not fallback_validation.valid:
+                    last_error = InvalidModelOutputError(
+                        "fallback validation failed: "
+                        + "; ".join(fallback_validation.warnings)
+                    )
+                    warnings = fallback_validation.warnings
+                    content = None
+                else:
+                    content = fallback
             output_repaired = True
 
     if content is None:

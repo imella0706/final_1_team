@@ -1,6 +1,6 @@
 """Schemas used by the text-only meme advertising judge."""
 
-from typing import Annotated, Literal
+from typing import Annotated, Literal, TypeAlias
 
 from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator
 
@@ -56,6 +56,45 @@ class MemeJudgeCopyStructure(BaseModel):
     reason_ending: str
 
 
+class MemeJudgeContextDanceCopyStructure(BaseModel):
+    """Context-first marker contract supplied by a TrendCard."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    context_source: Literal["campaign_context_or_input_situation"]
+    context_position: Literal["before_marker"]
+    marker_occurrences: int = Field(ge=1, le=5)
+    marker_variants: list[NonEmptyText] = Field(min_length=1, max_length=10)
+    minimum_context_count: int = Field(ge=1, le=5)
+    optional_call_source: Literal["target_audience_or_desired_object"]
+    optional_call_position: Literal["after_marker"]
+    optional_call_marker: NonEmptyText
+
+
+class MemeJudgeComebackRevealCopyStructure(BaseModel):
+    """Setup, reveal, and feature-support contract supplied by a TrendCard."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    setup_source: Literal["comeback_context"]
+    setup_position: Literal["before_marker"]
+    marker_template: NonEmptyText
+    marker_occurrences: int = Field(ge=1, le=5)
+    reveal_source: Literal["primary_product"]
+    reveal_position: Literal["after_marker"]
+    support_source: Literal["input_features"]
+    minimum_support_count: int = Field(ge=1, le=5)
+    support_relation: Literal["returned_with"]
+    reason_ending: NonEmptyText
+
+
+MemeJudgeTrendCopyStructure: TypeAlias = (
+    MemeJudgeCopyStructure
+    | MemeJudgeContextDanceCopyStructure
+    | MemeJudgeComebackRevealCopyStructure
+)
+
+
 class MemeJudgeTrendContext(BaseModel):
     """The allow-listed TrendCard fields visible to the judge."""
 
@@ -66,7 +105,7 @@ class MemeJudgeTrendContext(BaseModel):
     usage_rules: list[str]
     prohibited_usage: list[str]
     copy_markers: list[str]
-    copy_structure: MemeJudgeCopyStructure | None = None
+    copy_structure: MemeJudgeTrendCopyStructure | None = None
 
 
 class MemeJudgeVisibleResult(BaseModel):

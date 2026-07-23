@@ -1,14 +1,33 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Literal
+from typing import Literal, TypeAlias
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 from app.core.config import settings
 
-Modality = Literal["text", "audio", "visual", "behavior", "format"]
+Modality = Literal[
+    "text",
+    "audio",
+    "visual",
+    "image",
+    "video",
+    "behavior",
+    "format",
+]
 UsableAsset = Literal["copy", "image", "video_storyboard"]
+AssetNoteKey = Literal[
+    "copy",
+    "image",
+    "video_storyboard",
+    "audio",
+    "video",
+    "text",
+    "visual",
+    "behavior",
+    "format",
+]
 
 
 class TrendCardNotFoundError(ValueError):
@@ -95,6 +114,43 @@ class CopyStructure(BaseModel):
         return self
 
 
+class ContextDanceCopyStructure(BaseModel):
+    """상황을 먼저 제시하고 핵심 marker와 선택 호출을 잇는 구조."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    context_source: Literal["campaign_context_or_input_situation"]
+    context_position: Literal["before_marker"]
+    marker_occurrences: int = Field(default=1, ge=1, le=5)
+    marker_variants: list[str] = Field(min_length=1, max_length=10)
+    minimum_context_count: int = Field(default=1, ge=1, le=5)
+    optional_call_source: Literal["target_audience_or_desired_object"]
+    optional_call_position: Literal["after_marker"]
+    optional_call_marker: str = Field(min_length=1, max_length=30)
+
+
+class ComebackRevealCopyStructure(BaseModel):
+    """복귀 맥락, 질문 marker, 상품 공개와 특징 근거를 잇는 구조."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    setup_source: Literal["comeback_context"]
+    setup_position: Literal["before_marker"]
+    marker_template: str = Field(min_length=1, max_length=100)
+    marker_occurrences: int = Field(default=1, ge=1, le=5)
+    reveal_source: Literal["primary_product"]
+    reveal_position: Literal["after_marker"]
+    support_source: Literal["input_features"]
+    minimum_support_count: int = Field(default=1, ge=1, le=5)
+    support_relation: Literal["returned_with"]
+    reason_ending: str = Field(min_length=1, max_length=30)
+
+
+TrendCopyStructure: TypeAlias = (
+    CopyStructure | ContextDanceCopyStructure | ComebackRevealCopyStructure
+)
+
+
 class TrendCard(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -111,14 +167,14 @@ class TrendCard(BaseModel):
     modalities: list[Modality] = Field(min_length=1, max_length=5)
     core_asset: Modality
     usable_assets: list[UsableAsset] = Field(min_length=1, max_length=3)
-    asset_notes: dict[UsableAsset, str] = Field(default_factory=dict)
+    asset_notes: dict[AssetNoteKey, str] = Field(default_factory=dict)
     text_transferability: TextTransferability
     rights_risk: RightsRisk
 
     # 생성용 필드: LLM 프롬프트에 선별 주입된다.
     text_patterns: list[str] = Field(default_factory=list, max_length=10)
     copy_markers: list[str] = Field(default_factory=list, max_length=10)
-    copy_structure: CopyStructure | None = None
+    copy_structure: TrendCopyStructure | None = None
     suitable_channels: list[str] = Field(default_factory=list, max_length=10)
     suitable_tones: list[str] = Field(default_factory=list, max_length=10)
     target_audiences: list[str] = Field(default_factory=list, max_length=20)

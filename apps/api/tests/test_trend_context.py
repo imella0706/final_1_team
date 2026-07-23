@@ -23,10 +23,17 @@ def test_load_trend_card_from_gather_data() -> None:
     assert card.text_transferability.standalone_test == "pass"
     assert card.rights_risk.level == "low"
     assert card.text_patterns == [
-        "니가 좋아, {메뉴}",
-        "{상황}에도 결국 니가 좋아, {메뉴}",
+        "{대표상품} 니가 좋아~\n{입력특징1}, 그래서 좋아~\n{입력특징2}, 그래서 좋아~",
+        "{대표상품} 니가 좋아~ {입력특징1}, 그래서 좋아~ {입력특징2}, 그래서 좋아~",
     ]
     assert card.copy_markers == ["니가 좋아"]
+    assert card.copy_structure is not None
+    assert card.copy_structure.subject_source == "primary_product"
+    assert card.copy_structure.subject_position == "before_marker"
+    assert card.copy_structure.marker_occurrences == 1
+    assert card.copy_structure.reason_source == "input_features"
+    assert card.copy_structure.minimum_reason_count == 2
+    assert card.copy_structure.reason_ending == "좋아"
     assert card.curation_meta.mode == "manual"
     assert card.curation_meta.status == "reviewed"
     assert card.trend_meta.collected_week == "2026-W28"
@@ -109,6 +116,28 @@ def test_copy_card_requires_explicit_validation_marker() -> None:
                 usable_assets=["copy"],
                 text_transferability={"standalone_test": "pass", "evidence": []},
                 text_patterns=["멍하니 좋아, {메뉴}"],
+            )
+        )
+
+
+def test_copy_structure_rejects_feature_reasons_without_ending() -> None:
+    with pytest.raises(ValidationError, match="reason_ending"):
+        TrendCard.model_validate(
+            _behavior_meme_card(
+                modalities=["text"],
+                core_asset="text",
+                usable_assets=["copy"],
+                text_transferability={"standalone_test": "pass", "evidence": []},
+                text_patterns=["{상품} {marker}"],
+                copy_markers=["좋아"],
+                copy_structure={
+                    "subject_source": "primary_product",
+                    "subject_position": "before_marker",
+                    "marker_occurrences": 1,
+                    "reason_source": "input_features",
+                    "minimum_reason_count": 2,
+                    "reason_ending": "",
+                },
             )
         )
 

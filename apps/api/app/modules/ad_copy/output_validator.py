@@ -13,7 +13,12 @@ from app.modules.ad_copy.schemas import (
     ValidationCheck,
     VisualBrief,
 )
-from app.modules.ad_copy.trend_context import TrendCard
+from app.modules.ad_copy.trend_context import (
+    ComebackRevealCopyStructure,
+    ContextDanceCopyStructure,
+    CopyStructure,
+    TrendCard,
+)
 
 
 @dataclass(frozen=True)
@@ -175,7 +180,39 @@ def _feature_anchors(feature: str) -> set[str]:
 
 
 def _marker_matches(text: str, card: TrendCard) -> list[re.Match[str]]:
-    markers = _trend_markers(card)
+    structure = card.copy_structure
+    if isinstance(structure, ContextDanceCopyStructure):
+        markers = sorted(
+            {
+                marker.strip().casefold()
+                for marker in structure.marker_variants
+                if marker.strip()
+            },
+            key=len,
+            reverse=True,
+        )
+    elif isinstance(structure, ComebackRevealCopyStructure):
+        literal_template = re.sub(r"\{[^{}]+\}", "", structure.marker_template)
+        markers = sorted(
+            {
+                marker.strip().casefold()
+                for marker in card.copy_markers
+                if marker.strip()
+                and marker.casefold() != structure.reason_ending.casefold()
+                and marker.casefold() in literal_template.casefold()
+            },
+            key=len,
+            reverse=True,
+        )
+        if not markers:
+            marker = re.sub(
+                r"^(?:에서|부터|동안)\s*",
+                "",
+                literal_template.strip(),
+            )
+            markers = [marker.casefold()] if marker else []
+    else:
+        markers = _trend_markers(card)
     if not markers:
         return []
     pattern = "|".join(re.escape(marker) for marker in markers)
@@ -256,6 +293,27 @@ def _trend_structure_failures(
         return failures
 
     first_marker = marker_matches[0]
+    if isinstance(structure, ContextDanceCopyStructure):
+        return failures + _context_dance_structure_failures(
+            text,
+            request,
+            card,
+            structure,
+            first_marker=first_marker,
+            scope=scope,
+        )
+    if isinstance(structure, ComebackRevealCopyStructure):
+        return failures + _comeback_reveal_structure_failures(
+            text,
+            request,
+            card,
+            structure,
+            first_marker=first_marker,
+            scope=scope,
+        )
+    if not isinstance(structure, CopyStructure):
+        return failures
+
     if structure.subject_position == "before_marker":
         subject_candidates = {
             "primary_product": request.product_names[:1],
@@ -299,6 +357,170 @@ def _trend_structure_failures(
             (
                 f"trend_reason_not_grounded_in_{scope}",
                 f"TrendCard의 이유 문장은 {scope}에서 서로 다른 입력 특징으로만 "
+                f"근거를 대야 합니다: {card.meme_id}",
+            )
+        )
+    return failures
+
+
+def _meaningful_clause_count(text: str) -> int:
+    clauses = re.split(r"(?:\r?\n)+|[.!?。！？;；]+", text)
+    return sum(
+        1
+        for clause in clauses
+        if len(re.sub(r"[^0-9A-Za-z가-힣]+", "", clause)) >= 2
+    )
+
+
+_TARGET_AUDIENCE_LABELS = {
+    "office_workers": "직장인",
+    "students": "학생",
+    "middle_school_students": "중학생",
+    "high_school_students": "고등학생",
+    "college_students": "대학생",
+    "families": "가족",
+    "couples": "커플",
+    "solo": "혼자",
+}
+
+
+def _context_call_targets(request: AdCopyRequest) -> list[str]:
+    targets = [request.business_name, *request.product_names]
+    for audience in request.target_audiences:
+        value = audience.value
+        targets.append(_TARGET_AUDIENCE_LABELS.get(value, value))
+    targets.extend(["손님", "고객", "참여자"])
+    return [target for target in dict.fromkeys(targets) if target]
+
+
+def _context_dance_structure_failures(
+    text: str,
+    request: AdCopyRequest,
+    card: TrendCard,
+    structure: ContextDanceCopyStructure,
+    *,
+    first_marker: re.Match[str],
+    scope: str,
+) -> list[tuple[str, str]]:
+    failures: list[tuple[str, str]] = []
+    prefix = text[: first_marker.start()]
+    context_prefix = re.sub(
+        re.escape(structure.optional_call_marker),
+        "",
+        prefix,
+        flags=re.IGNORECASE,
+    )
+    if _meaningful_clause_count(context_prefix) < structure.minimum_context_count:
+        failures.append(
+            (
+                f"trend_context_count_insufficient_in_{scope}",
+                f"TrendCard 응용 표현은 {scope}에서 marker 앞에 실제 상황 맥락이 "
+                f"최소 {structure.minimum_context_count}개 필요합니다: {card.meme_id}",
+            )
+        )
+
+    call_pattern = re.compile(re.escape(structure.optional_call_marker), re.IGNORECASE)
+    call_matches = list(call_pattern.finditer(text))
+    if len(call_matches) > 1:
+        failures.append(
+            (
+                f"trend_optional_call_count_invalid_in_{scope}",
+                f"TrendCard의 선택 호출 marker는 {scope}에서 최대 한 번만 사용할 수 "
+                f"있습니다: {card.meme_id}",
+            )
+        )
+    for call_match in call_matches:
+        if call_match.start() <= first_marker.end():
+            failures.append(
+                (
+                    f"trend_optional_call_not_after_marker_in_{scope}",
+                    f"TrendCard의 선택 호출은 {scope}에서 핵심 marker 뒤에 나와야 "
+                    f"합니다: {card.meme_id}",
+                )
+            )
+            continue
+        call_prefix = text[first_marker.end() : call_match.start()]
+        normalized_call_prefix = call_prefix.casefold()
+        if not any(
+            target.casefold() in normalized_call_prefix
+            for target in _context_call_targets(request)
+        ):
+            failures.append(
+                (
+                    f"trend_optional_call_target_missing_in_{scope}",
+                    f"TrendCard의 선택 호출은 {scope}에서 입력과 관련된 호출 대상을 "
+                    f"먼저 제시해야 합니다: {card.meme_id}",
+                )
+            )
+    return failures
+
+
+def _comeback_reveal_structure_failures(
+    text: str,
+    request: AdCopyRequest,
+    card: TrendCard,
+    structure: ComebackRevealCopyStructure,
+    *,
+    first_marker: re.Match[str],
+    scope: str,
+) -> list[tuple[str, str]]:
+    failures: list[tuple[str, str]] = []
+    setup_prefix = text[: first_marker.start()]
+    if not re.search(r"[0-9A-Za-z가-힣]+에서\s*[~～,]*\s*$", setup_prefix):
+        failures.append(
+            (
+                f"trend_setup_not_before_marker_in_{scope}",
+                f"TrendCard 응용 표현은 {scope}에서 comeback setup을 질문 marker보다 "
+                f"먼저 제시하고 marker_template의 연결을 지켜야 합니다: {card.meme_id}",
+            )
+        )
+
+    primary_product = request.product_names[0] if request.product_names else ""
+    reveal_match = None
+    if primary_product:
+        reveal_match = re.search(
+            re.escape(primary_product),
+            text[first_marker.end() :],
+            re.IGNORECASE,
+        )
+    if reveal_match is None:
+        failures.append(
+            (
+                f"trend_reveal_missing_after_marker_in_{scope}",
+                f"TrendCard의 대표 상품 reveal은 {scope}에서 질문 marker 뒤에 나와야 "
+                f"합니다: {card.meme_id}",
+            )
+        )
+        return failures
+
+    reveal_end = first_marker.end() + reveal_match.end()
+    feature_units = _atomic_sales_features(request.features)
+    required_supports = min(structure.minimum_support_count, len(feature_units))
+    if required_supports == 0:
+        return failures
+    supports = _reason_segments_after_marker(
+        text,
+        marker_end=reveal_end,
+        ending=structure.reason_ending,
+    )
+    grounded_count, ungrounded_count = _grounded_reason_count(
+        supports,
+        feature_units,
+    )
+    if len(supports) < required_supports:
+        failures.append(
+            (
+                f"trend_support_count_insufficient_in_{scope}",
+                f"TrendCard 응용 표현은 {scope}에서 대표 상품 공개 뒤 입력 특징 기반 "
+                f"support가 최소 {required_supports}개 필요하고 각 support는 "
+                f"'{structure.reason_ending}'로 끝나야 합니다: {card.meme_id}",
+            )
+        )
+    if grounded_count < required_supports or ungrounded_count:
+        failures.append(
+            (
+                f"trend_support_not_grounded_in_{scope}",
+                f"TrendCard의 support는 {scope}에서 서로 다른 입력 특징으로만 "
                 f"근거를 대야 합니다: {card.meme_id}",
             )
         )
@@ -771,22 +993,84 @@ def _feature_value(features: list[str], label: str) -> str:
     return ""
 
 
+_INTERNAL_PROMOTION_PREFIXES = (
+    "성별 타겟:",
+    "직업군:",
+    "타겟:",
+    "제품가격:",
+    "관심사:",
+    "지역:",
+    "상권:",
+    "세부 타겟:",
+)
+_OVERLAY_HEADLINE_MAX_LENGTH = 100
+
+
 def _sales_features(features: list[str]) -> list[str]:
-    internal_prefixes = (
-        "성별 타겟:",
-        "직업군:",
-        "타겟:",
-        "제품가격:",
-        "관심사:",
-        "지역:",
-        "상권:",
-        "세부 타겟:",
-    )
     return [
         feature.strip()
         for feature in features
-        if feature.strip() and not feature.startswith(internal_prefixes)
+        if feature.strip() and not feature.startswith(_INTERNAL_PROMOTION_PREFIXES)
     ]
+
+
+def _campaign_context_or_default(promotion: str | None, default: str) -> str:
+    """Return customer-facing campaign context, never internal audience labels.
+
+    The web client currently sends its slash-separated audience summary through
+    ``promotion``. That summary remains useful elsewhere in the request, but it
+    must not become the context placed immediately before a TrendCard marker.
+    A genuine promotion supplied by another client is still accepted.
+    """
+
+    normalized = " ".join((promotion or "").split())
+    if not normalized or normalized.startswith(_INTERNAL_PROMOTION_PREFIXES):
+        return default
+
+    first_context = re.split(r"\s*(?:/|\r?\n)\s*", normalized, maxsplit=1)[0]
+    if not first_context or first_context.startswith(_INTERNAL_PROMOTION_PREFIXES):
+        return default
+    return first_context
+
+
+def _shorten_context(value: str, max_length: int) -> str:
+    """Shorten a context without consuming the marker's character budget."""
+
+    normalized = " ".join(value.split())
+    if len(normalized) <= max_length:
+        return normalized
+    if max_length <= 0:
+        return ""
+
+    candidate = normalized[:max_length].rstrip(" ,/;:·-")
+    if len(normalized) > max_length and " " in candidate:
+        word_boundary = candidate.rsplit(" ", 1)[0].rstrip(" ,/;:·-")
+        if word_boundary:
+            candidate = word_boundary
+    return candidate or normalized[:max_length]
+
+
+def _render_context_marker_headline(context: str, marker: str) -> str:
+    """Fit a context-dance headline while preserving its complete marker."""
+
+    normalized_marker = marker.strip().rstrip("~～")
+    suffix = f"인데 {normalized_marker}~"
+    context_budget = _OVERLAY_HEADLINE_MAX_LENGTH - len(suffix)
+    if context_budget <= 0:
+        return suffix[:_OVERLAY_HEADLINE_MAX_LENGTH]
+    return f"{_shorten_context(context, context_budget)}{suffix}"
+
+
+def _limit_overlay_headline(value: str) -> str:
+    """Apply the schema bound as a final guard for every TrendCard shape."""
+
+    if len(value) <= _OVERLAY_HEADLINE_MAX_LENGTH:
+        return value
+    first_line = next((line.strip() for line in value.splitlines() if line.strip()), value)
+    if len(first_line) <= _OVERLAY_HEADLINE_MAX_LENGTH:
+        return first_line
+    shortened = _shorten_context(first_line, _OVERLAY_HEADLINE_MAX_LENGTH - 1)
+    return f"{shortened}…"
 
 
 def _clean_hashtag(value: str) -> str:
@@ -812,6 +1096,32 @@ def _render_trend_pattern(
         "visit": "카페에 들르고 싶은 순간",
     }.get(request.situation.value, "메뉴가 생각나는 순간")
     feature_units = _atomic_sales_features(request.features)
+    structure = card.copy_structure
+    if isinstance(structure, ContextDanceCopyStructure):
+        context = _campaign_context_or_default(request.promotion, situation)
+        marker = structure.marker_variants[0]
+        return _render_context_marker_headline(context, marker)
+    if isinstance(structure, ComebackRevealCopyStructure):
+        default_comeback_setup = {
+            "new_menu": "신메뉴 소식",
+            "discount": "할인 소식",
+            "event": "이벤트 소식",
+            "delivery": "배달 메뉴",
+            "takeout": "포장 메뉴",
+            "visit": "매장 소식",
+        }.get(request.situation.value, "새 소식")
+        comeback_setup = _campaign_context_or_default(
+            request.promotion,
+            default_comeback_setup,
+        )
+        marker = structure.marker_template.replace("{setup}", comeback_setup)
+        lines = [
+            f"{marker}~?",
+            f"그래, {primary_product} {structure.reason_ending}~",
+        ]
+        for feature in feature_units[: max(structure.minimum_support_count, 2)]:
+            lines.append(f"{feature}, 갖추고 {structure.reason_ending}~")
+        return "\n".join(lines)
     pattern = card.text_patterns[0] if card.text_patterns else card.display_name
     replacements = {
         "{대표상품}": primary_product,
@@ -852,8 +1162,10 @@ def _build_instagram_package(
     ]
 
     trend_headline = _render_trend_pattern(trend_card, request)
-    overlay_headline = remove_prohibited_terms(
-        trend_headline or "오늘은 달콤하게, 특별하게", prohibited_terms
+    overlay_headline = _limit_overlay_headline(
+        remove_prohibited_terms(
+            trend_headline or "오늘은 달콤하게, 특별하게", prohibited_terms
+        )
     )
     opening = f"{request.business_name}의 {product_phrase}를 소개합니다."
     if sales_features:

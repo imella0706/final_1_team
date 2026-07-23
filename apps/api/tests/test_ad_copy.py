@@ -23,6 +23,13 @@ from app.modules.ad_copy.trend_context import load_trend_card
 from tests.api_client import get, post
 
 
+VALID_TREND_COPY = (
+    "수제 딸기 티라미수 니가 좋아~\n"
+    "매일 손질한 생딸기라서 좋아~\n"
+    "직접 만든 딸기청이라서 좋아~"
+)
+
+
 def sample_request() -> dict[str, object]:
     return {
         "model": "Qwen/Qwen2.5-7B-Instruct",
@@ -147,7 +154,7 @@ def valid_ad_copy_json(
 def test_build_prompt_uses_business_facts_and_safety_terms() -> None:
     prompt = build_prompt(AdCopyRequest.model_validate(sample_request()))
 
-    assert PROMPT_VERSION == "channel-split-pipeline-v12-production-repair"
+    assert PROMPT_VERSION == "channel-split-pipeline-v13-trend-structure"
     assert "동네봄 카페" in prompt
     assert "수제 딸기 티라미수, 런치세트" in prompt
     assert "매일 손질한 생딸기" in prompt
@@ -193,8 +200,11 @@ def test_trend_prompt_block_separates_generic_rules_from_card_data() -> None:
     assert "여러 상품을 하나의 플레이스홀더에 기계적으로 나열하지 마세요" in block
     assert '"display_name": "니가 좋아💖"' in block
     assert '"copy_markers": [' in block
-    assert "고백 대상은 대표 메뉴 또는 상품 조합으로 바꾼다" in block
-    assert "'니가 좋아' 뒤에 모든 메뉴명을 쉼표로 나열하는 단순 치환" in block
+    assert '"copy_structure": {' in block
+    assert '"subject_position": "before_marker"' in block
+    assert '"minimum_reason_count": 2' in block
+    assert "대표 상품을 먼저 말한 다음 핵심 표현" in block
+    assert "핵심 표현 뒤에 모든 메뉴명을 쉼표로 나열하는 단순 치환" in block
     assert "밈 반영 규칙" not in block
     assert "\\ub2c8" not in block
 
@@ -205,8 +215,10 @@ def test_trend_prompt_requires_trendcard_in_instagram_post_fields() -> None:
 
     prompt = build_prompt(request, trend_card)
 
-    assert "channel_recommendation.caption의 첫 문장" in prompt
+    assert "channel_recommendation.caption의 도입부" in prompt
     assert "channel_recommendation.publish_body에도 그 caption" in prompt
+    assert "서로 다른 이유" in prompt
+    assert "각 이유는 reason_ending으로 끝내세요" in prompt
 
 
 def test_trend_validation_rejects_copy_without_selected_meme() -> None:
@@ -226,7 +238,7 @@ def test_trend_validation_rejects_instagram_post_without_meme() -> None:
     body = "수제 딸기 티라미수와 런치세트로 매일 손질한 생딸기, 직접 만든 딸기청을 만나보세요."
     content = _parse_content(
         valid_ad_copy_json(
-            headline="딸기빛 오후엔 역시 니가 좋아, 수제 딸기 티라미수",
+            headline=VALID_TREND_COPY,
             caption=body,
             publish_body=f"{body}\n오늘 매장에서 만나보세요.",
         )
@@ -260,10 +272,10 @@ def test_trend_validation_requires_marker_in_instagram_caption_opening() -> None
     request = AdCopyRequest.model_validate(sample_request())
     trend_card = load_trend_card()
     body = "수제 딸기 티라미수와 런치세트를 소개합니다."
-    caption = f"{body}\n니가 좋아, 수제 딸기 티라미수"
+    caption = f"{body}\n{VALID_TREND_COPY}"
     content = _parse_content(
         valid_ad_copy_json(
-            headline="니가 좋아, 수제 딸기 티라미수",
+            headline=VALID_TREND_COPY,
             caption=caption,
         )
     )
@@ -277,12 +289,12 @@ def test_trend_validation_requires_marker_in_instagram_caption_opening() -> None
 def test_trend_validation_requires_caption_text_in_publish_body() -> None:
     request = AdCopyRequest.model_validate(sample_request())
     trend_card = load_trend_card()
-    caption = "니가 좋아, 수제 딸기 티라미수\n오늘의 메뉴를 소개합니다."
+    caption = f"{VALID_TREND_COPY}\n오늘의 메뉴를 소개합니다."
     content = _parse_content(
         valid_ad_copy_json(
-            headline="니가 좋아, 수제 딸기 티라미수",
+            headline=VALID_TREND_COPY,
             caption=caption,
-            publish_body="니가 좋아, 수제 딸기 티라미수\n서로 다른 게시물 본문입니다.",
+            publish_body=f"{VALID_TREND_COPY}\n서로 다른 게시물 본문입니다.",
         )
     )
 
@@ -296,7 +308,7 @@ def test_trend_validation_accepts_instagram_copy_and_post_with_meme() -> None:
     request = AdCopyRequest.model_validate(sample_request())
     trend_card = load_trend_card(request.trend_card_id)
     content = _parse_content(
-        valid_ad_copy_json(headline="딸기빛 오후엔 역시 니가 좋아, 수제 딸기 티라미수")
+        valid_ad_copy_json(headline=VALID_TREND_COPY)
     )
 
     result = validate_copy_output(content, request, trend_card)
@@ -304,6 +316,101 @@ def test_trend_validation_accepts_instagram_copy_and_post_with_meme() -> None:
     assert result.valid is True
     assert result.warnings == []
     assert result.failure_codes == []
+
+
+def test_trend_validation_requires_subject_before_marker() -> None:
+    request = AdCopyRequest.model_validate(sample_request())
+    trend_card = load_trend_card()
+    reversed_copy = (
+        "니가 좋아, 수제 딸기 티라미수~\n"
+        "매일 손질한 생딸기라서 좋아~\n"
+        "직접 만든 딸기청이라서 좋아~"
+    )
+    content = _parse_content(valid_ad_copy_json(headline=reversed_copy))
+
+    result = validate_copy_output(content, request, trend_card)
+
+    assert "trend_subject_not_before_marker_in_primary_copy" in result.failure_codes
+    assert "trend_subject_not_before_marker_in_instagram_caption" in result.failure_codes
+
+
+def test_trend_validation_requires_marker_once_per_application() -> None:
+    request = AdCopyRequest.model_validate(sample_request())
+    trend_card = load_trend_card()
+    repeated_marker = f"{VALID_TREND_COPY}\n그래도 니가 좋아~"
+    content = _parse_content(valid_ad_copy_json(headline=repeated_marker))
+
+    result = validate_copy_output(content, request, trend_card)
+
+    assert "trend_marker_count_invalid_in_primary_copy" in result.failure_codes
+    assert "trend_marker_count_invalid_in_instagram_caption" in result.failure_codes
+
+
+def test_trend_validation_requires_two_distinct_grounded_reasons() -> None:
+    request = AdCopyRequest.model_validate(sample_request())
+    trend_card = load_trend_card()
+    one_reason = (
+        "수제 딸기 티라미수 니가 좋아~\n"
+        "매일 손질한 생딸기라서 좋아~"
+    )
+    content = _parse_content(valid_ad_copy_json(headline=one_reason))
+
+    result = validate_copy_output(content, request, trend_card)
+
+    assert "trend_reason_count_insufficient_in_primary_copy" in result.failure_codes
+    assert "trend_reason_not_grounded_in_primary_copy" in result.failure_codes
+
+
+def test_trend_validation_rejects_reason_not_grounded_in_input_features() -> None:
+    request = AdCopyRequest.model_validate(sample_request())
+    trend_card = load_trend_card()
+    invented_reason = (
+        "수제 딸기 티라미수 니가 좋아~\n"
+        "매일 손질한 생딸기라서 좋아~\n"
+        "초록빛 포장이라서 좋아~"
+    )
+    content = _parse_content(valid_ad_copy_json(headline=invented_reason))
+
+    result = validate_copy_output(content, request, trend_card)
+
+    assert "trend_reason_not_grounded_in_primary_copy" in result.failure_codes
+    assert "trend_reason_not_grounded_in_instagram_caption" in result.failure_codes
+
+
+def test_trend_validation_uses_available_feature_count_as_reason_minimum() -> None:
+    request_data = sample_request()
+    request_data["features"] = ["매일 손질한 생딸기"]
+    request = AdCopyRequest.model_validate(request_data)
+    trend_card = load_trend_card()
+    one_available_reason = (
+        "수제 딸기 티라미수 니가 좋아~\n"
+        "매일 손질한 생딸기라서 좋아~"
+    )
+    body = "수제 딸기 티라미수와 런치세트에 매일 손질한 생딸기를 담았습니다."
+    content = _parse_content(
+        valid_ad_copy_json(headline=one_available_reason, body=body)
+    )
+
+    result = validate_copy_output(content, request, trend_card)
+
+    assert result.valid is True
+
+
+def test_fallback_splits_comma_joined_input_into_two_grounded_reasons() -> None:
+    request_data = sample_request()
+    request_data["product_names"] = ["청포도 요거트 스무디"]
+    request_data["features"] = ["청포도 과육 사용, 요거트 베이스"]
+    request_data["required_terms"] = ["청포도 과육"]
+    request = AdCopyRequest.model_validate(request_data)
+    trend_card = load_trend_card()
+
+    content = build_fallback_copy(request, ["test fallback"], trend_card)
+    result = validate_copy_output(content, request, trend_card)
+
+    assert content.headlines[0].startswith("청포도 요거트 스무디 니가 좋아~")
+    assert "청포도 과육 사용, 그래서 좋아~" in content.headlines[0]
+    assert "요거트 베이스, 그래서 좋아~" in content.headlines[0]
+    assert result.valid is True
 
 
 def test_instagram_output_is_normalized_from_source_fields() -> None:
@@ -334,7 +441,7 @@ def test_instagram_output_is_normalized_from_source_fields() -> None:
     )
 
 
-def test_validator_returns_structured_codes_for_operational_failures() -> None:
+def test_validator_returns_structured_codes_for_validation_failures() -> None:
     request = AdCopyRequest.model_validate(sample_request())
     trend_card = load_trend_card()
     content = _parse_content(
@@ -387,6 +494,11 @@ def test_fallback_copy_uses_selected_trend_card() -> None:
     content = build_fallback_copy(request, ["test fallback"], trend_card)
 
     assert "니가 좋아" in content.headlines[0]
+    assert content.headlines[0].startswith(request.product_names[0])
+    assert content.headlines[0].count("니가 좋아") == 1
+    assert content.headlines[0].count("좋아") == 3
+    assert "매일 손질한 생딸기" in content.headlines[0]
+    assert "직접 만든 딸기청" in content.headlines[0]
     assert ", ".join(request.product_names) not in content.headlines[0]
     assert request.product_names[0] in content.headlines[0]
     assert "니가 좋아" in content.channel_recommendation.caption
@@ -432,7 +544,7 @@ def test_naver_blog_post_and_fallback_use_selected_trend_card() -> None:
     trend_card = load_trend_card(request.trend_card_id)
     content = _parse_content(
         valid_ad_copy_json(
-            headline="딸기빛 오후엔 역시 니가 좋아, 수제 딸기 티라미수",
+            headline=VALID_TREND_COPY,
             publish_body="수제 딸기 티라미수와 런치세트를 소개합니다.",
         )
     )
@@ -443,8 +555,8 @@ def test_naver_blog_post_and_fallback_use_selected_trend_card() -> None:
     assert any("channel_recommendation.publish_body" in warning for warning in invalid_result.warnings)
 
     content.channel_recommendation.publish_body = (
-        "수제 딸기 티라미수와 런치세트가 생각나는 오후에도 "
-        "결국 니가 좋아."
+        f"{VALID_TREND_COPY}\n"
+        "수제 딸기 티라미수와 런치세트를 소개합니다."
     )
     valid_result = validate_copy_output(content, request, trend_card)
     fallback = build_fallback_copy(request, ["test fallback"], trend_card)
@@ -545,7 +657,7 @@ def test_openai_model_uses_its_own_endpoint_and_api_key(monkeypatch) -> None:
                         {
                             "message": {
                                 "content": valid_ad_copy_json(
-                                    headline="OpenAI 문구, 오늘도 니가 좋아"
+                                    headline=VALID_TREND_COPY
                                 )
                             }
                         }
@@ -602,7 +714,7 @@ def test_generate_uses_selected_model_and_returns_structured_copy(monkeypatch) -
                         {
                             "message": {
                                 "content": valid_ad_copy_json(
-                                    headline="딸기빛 오후엔 역시 니가 좋아, 수제 딸기 티라미수"
+                                    headline=VALID_TREND_COPY
                                 )
                             }
                         }
@@ -627,7 +739,7 @@ def test_generate_uses_selected_model_and_returns_structured_copy(monkeypatch) -
     assert response.json()["provider"] == "openai"
     assert response.json()["routed_model"] == "gpt-5.4-mini"
     assert response.json()["trend_card_id"] == "gogumafarm:1bf390d89536004b"
-    assert response.json()["headlines"] == ["딸기빛 오후엔 역시 니가 좋아, 수제 딸기 티라미수"]
+    assert response.json()["headlines"] == [VALID_TREND_COPY]
     assert captured_payloads[0]["model"] == "gpt-5.4-mini-test"
     assert captured_payloads[0]["max_completion_tokens"] == 2000
     assert "max_tokens" not in captured_payloads[0]
@@ -730,7 +842,7 @@ def test_generate_retries_once_when_required_json_key_is_missing(monkeypatch) ->
     responses = iter(
         [
             '{"headlines":["첫 문구"],"body_copies":["첫 본문"]}',
-            valid_ad_copy_json(headline="수정 문구, 오늘도 니가 좋아"),
+            valid_ad_copy_json(headline=VALID_TREND_COPY),
         ]
     )
     captured_invalid_content: list[str | None] = []
@@ -757,7 +869,7 @@ def test_generate_retries_once_when_required_json_key_is_missing(monkeypatch) ->
 
     result = asyncio.run(generate_ad_copy(AdCopyRequest.model_validate(sample_request())))
 
-    assert result.headlines == ["수정 문구, 오늘도 니가 좋아"]
+    assert result.headlines == [VALID_TREND_COPY]
     assert result.attempts == 2
     assert result.output_repaired is True
     assert captured_invalid_content == [
@@ -771,12 +883,12 @@ def test_generate_retries_when_instagram_post_misses_trend(monkeypatch) -> None:
     responses = iter(
         [
             valid_ad_copy_json(
-                headline="딸기빛 오후엔 역시 니가 좋아, 수제 딸기 티라미수",
+                headline=VALID_TREND_COPY,
                 caption=body,
                 publish_body=f"{body}\n오늘 매장에서 만나보세요.",
             ),
             valid_ad_copy_json(
-                headline="딸기빛 오후엔 역시 니가 좋아, 수제 딸기 티라미수",
+                headline=VALID_TREND_COPY,
             ),
         ]
     )

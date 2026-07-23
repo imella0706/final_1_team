@@ -46,15 +46,24 @@ def test_judge_input_is_blind_and_allow_listed() -> None:
         "usage_rules",
         "prohibited_usage",
         "copy_markers",
+        "copy_structure",
+    }
+    assert payload["trend_context"]["copy_structure"] == {
+        "subject_source": "primary_product",
+        "subject_position": "before_marker",
+        "marker_occurrences": 1,
+        "reason_source": "input_features",
+        "minimum_reason_count": 2,
+        "reason_ending": "좋아",
     }
     assert set(payload) == {
         "request_facts",
         "trend_context",
-        "operational_requirements",
+        "deterministic_validation_requirements",
         "customer_visible_result",
     }
-    requirements = "\n".join(payload["operational_requirements"])
-    assert "caption의 첫 문장" in requirements
+    requirements = "\n".join(payload["deterministic_validation_requirements"])
+    assert "copy_structure" in requirements
     assert "publish_body" in requirements
     assert "publish_cta" in requirements
     serialized = "\n".join(
@@ -63,9 +72,9 @@ def test_judge_input_is_blind_and_allow_listed() -> None:
     assert "few_shot_good" not in serialized
     assert "structured_cot" not in serialized
     assert loaded.config.base_model not in serialized
-    assert "operational_requirements" in serialized
     assert "deterministic validator가 판정한다" in serialized
     assert "hard_failures에도 기록하지 않는다" in serialized
+    assert "deterministic_validation_requirements는 유지되는" in serialized
     assert "hard_failures는 advisory" in serialized
 
 
@@ -77,9 +86,13 @@ def test_judge_prompt_limits_llm_to_qualitative_assessment() -> None:
     )
 
     assert "정확 문자열 포함 여부" in serialized
-    assert "창의적으로 응용" in serialized
+    assert "대상 제시 → 선호 표현 → 입력 특징에 근거한 이유 절 → 종결 표현 반복" in serialized
+    assert "marker 하나만 등장한 결과는 높은 점수를 주지 않는다" in serialized
+    assert "copy_structure가 있으면" in serialized
+    assert "text_patterns가 요구하는 이유 개수와 반복 리듬" in serialized
     assert "CTA·해시태그·publish_body 조립 여부" in serialized
-    assert "운영 통과 여부를 결정하지 않는 advisory" in serialized
+    assert "순위에서 후보를 자동 제외하지 않는 advisory" in serialized
+    assert "운영 통과" not in serialized
     assert "required_terms 누락 또는 prohibited_terms 포함도 hard_failures" not in serialized
 
 

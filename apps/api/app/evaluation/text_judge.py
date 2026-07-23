@@ -27,7 +27,7 @@ from app.modules.model_runtime.llm.registry import (
 
 
 JUDGE_MODEL_KEY = "openai/gpt-4.1-mini"
-JUDGE_PROMPT_VERSION = "meme-judge-v4-trend-structure-aware"
+JUDGE_PROMPT_VERSION = "meme-judge-v5-polymorphic-trend-structure"
 
 
 class MemeJudgeNotConfiguredError(RuntimeError):
@@ -73,7 +73,8 @@ def _deterministic_validation_requirements(request: AdCopyRequest) -> list[str]:
         "request_facts.prohibited_terms의 금지어는 고객 노출 문구에 포함되면 안 된다.",
         (
             "고객 노출 도입 문구는 trend_context.copy_markers와 copy_structure의 "
-            "대상 위치, marker 횟수, 이유 개수 및 종결 표현을 따라야 한다."
+            "절 순서와 marker 횟수를 따라야 한다. 구조에 따라 대상·이유, "
+            "context·optional_call 또는 setup·reveal·support 요구사항도 따라야 한다."
         ),
         (
             "TrendCard 표현이 있는 한 문장에 여러 상품명을 쉼표로 기계적으로 "
@@ -199,10 +200,16 @@ def build_meme_judge_messages(judge_input: MemeJudgeInput) -> list[dict[str, str
   구조와 리듬을 창의적으로 응용했으며 기계적인 복사처럼 보이지 않는가. 특히 해당
   TrendCard가 '대상 제시 → 선호 표현 → 입력 특징에 근거한 이유 절 → 종결 표현 반복'처럼
   단계가 있는 패턴을 정의한다면, marker 하나만 등장한 결과는 높은 점수를 주지 않는다.
-  copy_structure가 있으면 subject_source, subject_position, marker_occurrences,
-  reason_source, minimum_reason_count, reason_ending을 명시적인 패턴 계약으로 평가한다.
-  이유 절은 request_facts.features·required_terms 등 입력 사실에서 가져와야 하며,
-  text_patterns가 요구하는 이유 개수와 반복 리듬까지 얼마나 살렸는지 평가한다.
+  copy_structure가 있으면 필드 조합에 맞춰 다음 중 하나의 명시적인 패턴 계약으로 평가한다.
+  · subject_source/subject_position/reason_source 구조: 대상 → marker → 입력 특징 기반 이유와
+    reason_ending의 순서 및 반복 리듬을 평가한다.
+  · context_source/context_position/marker_variants 구조: 실제 캠페인 상황 → 핵심 marker의
+    순서를 평가하고, optional_call_marker가 있으면 관련 호출 대상이 marker 뒤에 있는지 본다.
+  · setup_source/marker_template/reveal_source/support_source 구조: 실제 복귀 setup → 질문 marker
+    → 대표 상품 reveal → 입력 특징 기반 support와 reason_ending의 순서를 평가한다.
+  reason 또는 support 절은 request_facts.features·required_terms 등 입력 사실에서 가져와야 하며,
+  context/setup도 request_facts.situation·promotion·additional_request로 뒷받침되어야 한다.
+  기존 reason 구조에서는 text_patterns가 요구하는 이유 개수와 반복 리듬도 함께 평가한다.
 - product_relevance: 실제 상품, 특징, 혜택과 밈 응용 표현이 설득력 있게 연결되는가
 - factuality: 문맥상 요청으로 뒷받침되지 않는 효능·가격·판매 방식 등의 주장을 만들지 않았는가
 - channel_readiness: 정확 문자열 검사와 조립 검사를 제외하고, 지정 채널에 어울리는 문체와 흐름을 갖췄는가

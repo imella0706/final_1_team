@@ -31,11 +31,10 @@ from scripts.evaluate_meme_arms import (
     evaluate_trial,
     enforce_execution_safety,
     markdown_report,
-    operational_failure_reasons,
-    record_operationally_valid,
     rebuild_saved_report,
     summarize_arm,
     trial_generation_seed,
+    validation_failure_reasons,
     write_candidate_artifacts,
 )
 from app.modules.ad_copy.output_validator import build_fallback_copy
@@ -97,13 +96,16 @@ def test_arm_prompts_change_only_the_declared_strategy_block() -> None:
     assert all(loaded.trend_card.meme_id in prompt for prompt in prompts.values())
     assert "흑임자 크림라떼" not in prompts["trendcard"]
     assert "흑임자 크림라떼" in prompts["few_shot_good"]
-    assert "니가 좋아, 흑임자 크림라떼, 아이스, 흑임자 크림." not in (
+    assert "니가 좋아, 흑임자 크림라떼." not in (
         prompts["few_shot_good"]
     )
-    assert "니가 좋아, 흑임자 크림라떼, 아이스, 흑임자 크림." in (
+    assert "니가 좋아, 흑임자 크림라떼." in (
         prompts["few_shot_good_bad"]
     )
     assert "내부 작성 절차" in prompts["structured_cot"]
+    assert "copy_structure에서 대상의 출처와 위치" in prompts["structured_cot"]
+    assert "서로 다른 입력 특징" in prompts["structured_cot"]
+    assert "reason_ending으로 끝내 반복 리듬" in prompts["structured_cot"]
     assert "흑임자 크림라떼" not in prompts["structured_cot"]
 
 
@@ -166,7 +168,7 @@ def test_few_shot_prompt_explains_annotation_fields_are_not_output_fields() -> N
         build_arm_messages(request, loaded.trend_card, arm, loaded.examples)
     )
 
-    assert "channel_recommendation.caption의 첫 문장" in prompt
+    assert "channel_recommendation.caption의 도입부" in prompt
     assert "상품명을 원문 그대로 유지" in prompt
     assert "required_terms" in prompt
     assert "자연스러운 한국어" in prompt
@@ -302,7 +304,7 @@ def _paired_record(
     arm_id: str,
     *,
     judge_score: float,
-    operational_valid: bool,
+    rule_valid: bool,
 ) -> dict:
     return {
         "case_id": "case-1",
@@ -311,8 +313,7 @@ def _paired_record(
         "arm_id": arm_id,
         "generation_success": True,
         "judge_success": True,
-        "rule_valid": operational_valid,
-        "operational_valid": operational_valid,
+        "rule_valid": rule_valid,
         "required_term_compliance_rate": 1.0,
         "hashtag_compliance_rate": 1.0,
         "example_leakage_terms": [],
@@ -322,33 +323,12 @@ def _paired_record(
     }
 
 
-def test_paired_analysis_never_ranks_rule_invalid_arms() -> None:
+def test_paired_analysis_ranks_by_judge_even_when_validator_fails() -> None:
     loaded = load_meme_experiment(EXPERIMENT_PATH)
     arms = [arm for arm in loaded.config.arms if arm.enabled][:2]
     records = [
-        _paired_record(arms[0].id, judge_score=5.0, operational_valid=False),
-        _paired_record(arms[1].id, judge_score=4.0, operational_valid=False),
-    ]
-
-    analysis = build_paired_analysis(
-        arms,
-        records,
-        judge_enabled=True,
-        fixtures_reviewed=True,
-        decision_eligible=True,
-    )
-
-    assert analysis["status"] == "no_operationally_eligible_arm"
-    assert analysis["ranking"] == []
-    assert analysis["winner_arm_id"] is None
-
-
-def test_paired_analysis_ranks_only_operationally_eligible_arms() -> None:
-    loaded = load_meme_experiment(EXPERIMENT_PATH)
-    arms = [arm for arm in loaded.config.arms if arm.enabled][:2]
-    records = [
-        _paired_record(arms[0].id, judge_score=5.0, operational_valid=False),
-        _paired_record(arms[1].id, judge_score=4.0, operational_valid=True),
+        _paired_record(arms[0].id, judge_score=5.0, rule_valid=False),
+        _paired_record(arms[1].id, judge_score=4.0, rule_valid=False),
     ]
 
     analysis = build_paired_analysis(
@@ -360,16 +340,47 @@ def test_paired_analysis_ranks_only_operationally_eligible_arms() -> None:
     )
 
     assert analysis["status"] == "complete"
-    assert [item["arm_id"] for item in analysis["ranking"]] == [arms[1].id]
-    assert analysis["winner_arm_id"] == arms[1].id
+    assert [item["arm_id"] for item in analysis["ranking"]] == [
+        arms[0].id,
+        arms[1].id,
+    ]
+    assert analysis["winner_arm_id"] == arms[0].id
+    assert "operational_status" not in analysis
+    assert "operationally_eligible_arm_ids" not in analysis
+
+
+def test_paired_analysis_keeps_validator_result_as_nonblocking_diagnostic() -> None:
+    loaded = load_meme_experiment(EXPERIMENT_PATH)
+    arms = [arm for arm in loaded.config.arms if arm.enabled][:2]
+    records = [
+        _paired_record(arms[0].id, judge_score=5.0, rule_valid=False),
+        _paired_record(arms[1].id, judge_score=4.0, rule_valid=True),
+    ]
+
+    analysis = build_paired_analysis(
+        arms,
+        records,
+        judge_enabled=True,
+        fixtures_reviewed=True,
+        decision_eligible=True,
+    )
+
+    assert analysis["status"] == "complete"
+    assert [item["arm_id"] for item in analysis["ranking"]] == [
+        arms[0].id,
+        arms[1].id,
+    ]
+    assert analysis["winner_arm_id"] == arms[0].id
+    assert analysis["arm_scores_on_paired_blocks"][0]["rule_pass_rate_percent"] == 0.0
+    assert analysis["arm_scores_on_paired_blocks"][1]["rule_pass_rate_percent"] == 100.0
 
 
 def test_paired_analysis_does_not_treat_judge_advice_as_release_gate() -> None:
     loaded = load_meme_experiment(EXPERIMENT_PATH)
     arms = [arm for arm in loaded.config.arms if arm.enabled][:2]
     records = [
-        _paired_record(arms[0].id, judge_score=5.0, operational_valid=True),
-        _paired_record(arms[1].id, judge_score=4.0, operational_valid=True),
+        _paired_record(arms[0].id, judge_score=5.0, rule_valid=True),
+        _paired_record(arms[1].id, judge_score=4.0, rule_valid=True),
     ]
     # Historical Judge output may contain an incorrect exact-match finding.
     records[0]["judge"]["hard_failures"] = ["필수어가 누락되었다고 추정"]
@@ -417,7 +428,7 @@ def test_deterministic_validation_codes_are_authoritative() -> None:
     assert evidence["failure_details"] == ["caption 첫 문장에 마커가 없습니다."]
 
 
-def test_historical_record_operational_validity_is_derived_conservatively() -> None:
+def test_validation_failure_reasons_preserve_deterministic_diagnostics() -> None:
     valid = {
         "generation_success": True,
         "rule_valid": True,
@@ -429,12 +440,11 @@ def test_historical_record_operational_validity_is_derived_conservatively() -> N
     }
     invalid = {**valid, "required_term_compliance_rate": 0.5}
 
-    assert record_operationally_valid(valid)
-    assert not record_operationally_valid(invalid)
-    assert operational_failure_reasons(invalid) == ["required_terms_missing"]
+    assert validation_failure_reasons(valid) == []
+    assert validation_failure_reasons(invalid) == ["required_terms_missing"]
 
 
-def test_instagram_publish_package_is_part_of_operational_gate() -> None:
+def test_instagram_publish_package_is_part_of_validation_diagnostics() -> None:
     base = {
         "generation_success": True,
         "rule_valid": True,
@@ -459,11 +469,10 @@ def test_instagram_publish_package_is_part_of_operational_gate() -> None:
         },
     }
 
-    reasons = operational_failure_reasons(base)
+    reasons = validation_failure_reasons(base)
 
     assert "instagram_caption_contains_hashtags" in reasons
     assert "instagram_publish_body_missing_cta" in reasons
-    assert not record_operationally_valid(base)
 
 
 def test_single_case_smoke_is_not_decision_eligible() -> None:
@@ -486,8 +495,8 @@ def test_reviewed_but_incomplete_scope_is_still_engineering_smoke() -> None:
     loaded = load_meme_experiment(EXPERIMENT_PATH)
     arms = [arm for arm in loaded.config.arms if arm.enabled][:2]
     records = [
-        _paired_record(arms[0].id, judge_score=5.0, operational_valid=True),
-        _paired_record(arms[1].id, judge_score=4.0, operational_valid=True),
+        _paired_record(arms[0].id, judge_score=5.0, rule_valid=True),
+        _paired_record(arms[1].id, judge_score=4.0, rule_valid=True),
     ]
 
     analysis = build_paired_analysis(
@@ -932,6 +941,9 @@ def test_arm_summary_and_markdown_handle_missing_judge_results(
     rendered = markdown_report(report)
     assert "TrendCard only" in rendered
     assert "## Paired 순위" in rendered
+    assert "Judge 점수 범위: 1~5점 (종합 최고 5.0점)" in rendered
+    assert "Judge 종합(5점)" in rendered
+    assert "최종 운영 통과" not in rendered
 
 
 def test_arm_summary_separates_initial_repair_and_final_rates() -> None:
@@ -958,14 +970,18 @@ def test_arm_summary_separates_initial_repair_and_final_rates() -> None:
 
 def test_saved_report_rebuild_replaces_null_summaries_without_calls() -> None:
     loaded = load_meme_experiment(EXPERIMENT_PATH)
+    historical_trial = _summary_record(
+        generation_success=False,
+        judge_success=None,
+    )
+    historical_trial["operational_valid"] = False
+    historical_trial["operational_failure_reasons"] = ["generation_failed"]
     report = {
         "metadata": {"judge_model": loaded.config.judge.model},
         "experiment_config_snapshot": loaded.config.model_dump(mode="json"),
         "fixture_review": {"decision_ready": False},
         "arm_summaries": [None],
-        "trials": [
-            _summary_record(generation_success=False, judge_success=None)
-        ],
+        "trials": [historical_trial],
     }
 
     repaired = rebuild_saved_report(report)
@@ -973,6 +989,8 @@ def test_saved_report_rebuild_replaces_null_summaries_without_calls() -> None:
     assert repaired["arm_summaries"][0]["arm_id"] == "trendcard"
     assert repaired["arm_summaries"][0]["judge_scores"]["overall_score"] is None
     assert repaired["paired_analysis"]["status"] == "fixture_not_reviewed"
+    assert "operational_valid" not in repaired["trials"][0]
+    assert "operational_failure_reasons" not in repaired["trials"][0]
 
 
 def test_markdown_contains_each_candidate_output_and_artifact_link(tmp_path) -> None:
@@ -1032,6 +1050,13 @@ def test_markdown_contains_each_candidate_output_and_artifact_link(tmp_path) -> 
     assert "## 후보별 생성 출력" in rendered
     assert "니가 좋아, 청포도 스무디" in rendered
     assert "최종 output JSON" in rendered
+    assert "자연스러움(5점): `4`" in rendered
+    assert "패턴 충실도(5점): `3`" in rendered
+    assert "상품 관련성(5점): `4`" in rendered
+    assert "사실성(5점): `5`" in rendered
+    assert "채널 게시 준비도(5점): `4`" in rendered
+    assert "Judge 종합(5점): `4.0`" in rendered
+    assert "운영 통과" not in rendered
     assert "candidate_outputs/candidate-test.json" in rendered
     artifact = json.loads(
         (candidate_dir / "candidate-test.json").read_text(encoding="utf-8")
