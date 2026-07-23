@@ -223,7 +223,19 @@ def test_cross_lingual_whisper_voice_uses_fixed_style_instruction(
         )
     ]
     assert "사용자 지시" not in calls[0][1]
-    assert output_gains == [SERVER.WHISPER_OUTPUT_GAIN]
+    assert output_gains == [SERVER.VOICE_OUTPUT_GAINS["woman_whisper"]]
+
+
+def test_male_whisper_uses_clearer_instruction_and_lower_gain() -> None:
+    male_instruction = SERVER.VOICE_STYLE_INSTRUCTIONS["man_whisper"]
+
+    assert male_instruction != SERVER.VOICE_STYLE_INSTRUCTIONS["woman_whisper"]
+    assert "不要沙哑" in male_instruction
+    assert "不要使用过重的气声" in male_instruction
+    assert (
+        SERVER.VOICE_OUTPUT_GAINS["man_whisper"]
+        < SERVER.VOICE_OUTPUT_GAINS["woman_whisper"]
+    )
 
 
 def test_voice_path_uses_default_voice(tmp_path) -> None:

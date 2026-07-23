@@ -16,11 +16,15 @@ from pydantic import BaseModel, Field
 SERVICE_DIR = Path(__file__).resolve().parent
 VOICE_NAME_PATTERN = re.compile(r"^[A-Za-z0-9._-]+$")
 TTS_SEGMENT_MAX_CHARS = 180
-WHISPER_OUTPUT_GAIN = 0.63
+VOICE_OUTPUT_GAINS = {
+    "man_whisper": 0.35,
+    "woman_whisper": 0.63,
+}
 VOICE_STYLE_INSTRUCTIONS = {
     "man_whisper": (
         "You are a helpful assistant. "
-        "请用轻声耳语、贴近听众且自然的方式说这句话。<|endofprompt|>"
+        "请用轻柔、低声、清晰且自然的方式说这句话，"
+        "不要沙哑，也不要使用过重的气声。<|endofprompt|>"
     ),
     "woman_whisper": (
         "You are a helpful assistant. "
@@ -319,9 +323,7 @@ class CosyVoiceEngine:
             speech = torch.cat(chunks, dim=-1)
         else:
             speech = chunks[0]
-        output_gain = (
-            WHISPER_OUTPUT_GAIN if resolved_voice.endswith("_whisper") else 1.0
-        )
+        output_gain = VOICE_OUTPUT_GAINS.get(resolved_voice, 1.0)
         return self._wav_bytes(speech, model.sample_rate, output_gain), resolved_voice
 
     def health(self) -> dict[str, object]:
