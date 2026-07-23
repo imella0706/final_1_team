@@ -43,6 +43,7 @@ def test_generate_uses_cross_lingual_mode_without_instructions(
             yield {"tts_speech": object()}
 
     engine = SERVER.CosyVoiceEngine()
+    engine.inference_mode = "cross_lingual"
     engine.voice_dir = tmp_path
     (tmp_path / "default.wav").write_bytes(b"wav")
     engine._model = FakeModel()
@@ -64,6 +65,54 @@ def test_generate_uses_cross_lingual_mode_without_instructions(
             str(tmp_path / "default.wav"),
             False,
             1.1,
+        )
+    ]
+
+
+def test_generate_uses_instruct_mode_with_separate_acting_direction(
+    tmp_path, monkeypatch
+) -> None:
+    calls: list[tuple[str, str, str, bool, float]] = []
+
+    class FakeModel:
+        sample_rate = 24000
+
+        def inference_instruct2(
+            self,
+            text: str,
+            instruction: str,
+            voice_path: str,
+            stream: bool,
+            speed: float,
+        ):
+            calls.append((text, instruction, voice_path, stream, speed))
+            yield {"tts_speech": object()}
+
+    engine = SERVER.CosyVoiceEngine()
+    engine.inference_mode = "instruct"
+    engine.voice_dir = tmp_path
+    (tmp_path / "man_happy.wav").write_bytes(b"wav")
+    engine._model = FakeModel()
+    monkeypatch.setattr(engine, "_wav_bytes", lambda speech, sample_rate: b"audio")
+
+    audio, voice = engine.generate(
+        SERVER.TTSRequest(
+            input="오늘 신메뉴를 만나보세요.",
+            voice="man_happy",
+            instructions="기쁜 목소리로 말하세요.",
+            speed=1.05,
+        )
+    )
+
+    assert audio == b"audio"
+    assert voice == "man_happy"
+    assert calls == [
+        (
+            "오늘 신메뉴를 만나보세요.",
+            SERVER.CosyVoiceEngine._instruction("기쁜 목소리로 말하세요.", 1.05),
+            str(tmp_path / "man_happy.wav"),
+            False,
+            1.05,
         )
     ]
 

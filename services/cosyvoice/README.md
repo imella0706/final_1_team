@@ -80,11 +80,15 @@ Invoke-WebRequest http://127.0.0.1:50000/v1/tts `
 
 The first generation loads the model and is slower than later requests.
 
-BrandMate defaults to `COSYVOICE_INFERENCE_MODE=cross_lingual`. This sends only
-the narration script after CosyVoice's system marker, preventing acting
-instructions from leaking into generated speech. The reference recording and
-speed control still affect the result. The experimental `instruct` mode can be
-enabled with an environment variable, but may speak parts of the instruction.
+BrandMate defaults to `COSYVOICE_INFERENCE_MODE=instruct`, so the acting
+instructions entered in the web UI are passed separately from the narration
+script to CosyVoice. The reference recording and speed control also affect the
+result. If the model starts speaking parts of an instruction, switch back to
+the safer `cross_lingual` mode:
+
+```bash
+COSYVOICE_INFERENCE_MODE=cross_lingual bash start.sh
+```
 
 ## Troubleshooting
 

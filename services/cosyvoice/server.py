@@ -146,7 +146,7 @@ class CosyVoiceEngine:
             "COSYVOICE_MODEL_NAME", "Fun-CosyVoice3-0.5B-2512"
         )
         configured_mode = os.getenv(
-            "COSYVOICE_INFERENCE_MODE", "cross_lingual"
+            "COSYVOICE_INFERENCE_MODE", "instruct"
         ).strip().lower()
         self.inference_mode = (
             configured_mode
