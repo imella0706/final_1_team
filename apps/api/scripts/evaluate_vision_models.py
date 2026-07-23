@@ -168,12 +168,15 @@ async def preflight_environment(
 
     image_provider = settings.image_provider.lower()
     if image_provider == "comfyui":
-        unsupported_models = [
-            model.value for model in image_models if model != ImageModel.FLUX_SCHNELL
-        ]
+        supported_models = {
+            ImageModel.FLUX_SCHNELL,
+            ImageModel.SDXL_BASE,
+            ImageModel.SDXL_TURBO,
+        }
+        unsupported_models = [model.value for model in image_models if model not in supported_models]
         if unsupported_models:
             errors.append(
-                "ComfyUI 로컬 provider는 현재 FLUX.1 Schnell만 지원합니다: "
+                "ComfyUI 로컬 provider에서 지원하지 않는 모델입니다: "
                 + ", ".join(unsupported_models)
             )
         try:

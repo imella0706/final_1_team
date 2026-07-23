@@ -63,6 +63,8 @@ cp .env.gcp.example .env
 # [Design Intent] 이미지 생성은 자체 GPU VM의 ComfyUI를 기본 경로로 고정한다.
 BRANDMATE_IMAGE_PROVIDER=comfyui
 BRANDMATE_COMFYUI_BASE_URL=http://127.0.0.1:8188
+BRANDMATE_COMFYUI_SDXL_CHECKPOINT=sd_xl_base_1.0.safetensors
+BRANDMATE_COMFYUI_IMG2IMG_DENOISE=0.58
 ```
 
 LM Studio를 사용할 경우:
