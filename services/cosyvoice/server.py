@@ -17,13 +17,9 @@ SERVICE_DIR = Path(__file__).resolve().parent
 VOICE_NAME_PATTERN = re.compile(r"^[A-Za-z0-9._-]+$")
 TTS_SEGMENT_MAX_CHARS = 180
 VOICE_OUTPUT_GAINS = {
-    "man_whisper": 0.80,
     "woman_whisper": 0.63,
 }
-VOICE_REFERENCE_OVERRIDES = {
-    "man_whisper": "man_whisper2",
-}
-INTERNAL_REFERENCE_VOICES = frozenset(VOICE_REFERENCE_OVERRIDES.values())
+DISABLED_VOICES = frozenset({"man_whisper", "man_whisper2"})
 VOICE_STYLE_INSTRUCTIONS = {
     "woman_whisper": (
         "You are a helpful assistant. "
@@ -212,6 +208,8 @@ class CosyVoiceEngine:
 
     def _voice_path(self, voice: str) -> tuple[str, Path]:
         safe_voice = voice if VOICE_NAME_PATTERN.fullmatch(voice) else "default"
+        if safe_voice in DISABLED_VOICES:
+            raise RuntimeError(f"지원하지 않는 참조 음성입니다: {safe_voice}")
         candidate = self.voice_dir / f"{safe_voice}.wav"
         if candidate.is_file():
             return safe_voice, candidate
@@ -221,13 +219,6 @@ class CosyVoiceEngine:
         raise RuntimeError(
             f"참조 음성이 없습니다. {self.voice_dir / 'default.wav'} 파일을 추가해주세요."
         )
-
-    def _reference_voice_path(self, voice: str, selected_path: Path) -> Path:
-        reference_voice = VOICE_REFERENCE_OVERRIDES.get(voice)
-        if not reference_voice:
-            return selected_path
-        candidate = self.voice_dir / f"{reference_voice}.wav"
-        return candidate if candidate.is_file() else selected_path
 
     def _ensure_model(self) -> Any:
         if self._model is not None:
@@ -295,7 +286,6 @@ class CosyVoiceEngine:
         preset_instruction = VOICE_STYLE_INSTRUCTIONS.get(resolved_voice)
 
         with self._generation_lock:
-            voice_path = self._reference_voice_path(resolved_voice, voice_path)
             try:
                 chunks = []
                 for segment in tts_segments:
@@ -335,9 +325,12 @@ class CosyVoiceEngine:
 
     def health(self) -> dict[str, object]:
         model_present = self.model_dir.is_dir()
-        voice_present = (self.voice_dir / "default.wav").is_file() or any(
-            self.voice_dir.glob("*.wav")
-        )
+        available_voices = [
+            path
+            for path in self.voice_dir.glob("*.wav")
+            if path.stem not in DISABLED_VOICES
+        ]
+        voice_present = bool(available_voices)
         ready = self.repo_dir.is_dir() and model_present and voice_present and not self._load_error
         missing: list[str] = []
         if not self.repo_dir.is_dir():
@@ -354,11 +347,7 @@ class CosyVoiceEngine:
             "model": self.model_name,
             "inference_mode": self.inference_mode,
             "instructions_supported": self.inference_mode == "instruct",
-            "voices": sorted(
-                path.stem
-                for path in self.voice_dir.glob("*.wav")
-                if path.stem not in INTERNAL_REFERENCE_VOICES
-            ),
+            "voices": sorted(path.stem for path in available_voices),
             "detail": detail,
         }
 

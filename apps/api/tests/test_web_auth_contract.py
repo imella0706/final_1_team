@@ -37,11 +37,13 @@ def test_web_allows_and_uses_blob_urls_for_generated_audio() -> None:
     assert "voicePlayer.load()" in script
 
 
-def test_voice_instructions_remain_editable_for_every_provider() -> None:
+def test_web_omits_acting_instruction_input_and_payload() -> None:
+    markup = (WEB_ROOT / "index.html").read_text(encoding="utf-8")
     script = (WEB_ROOT / "app.js").read_text(encoding="utf-8")
 
-    assert "voiceInstructions.disabled = !cosyvoice.instructions_supported" not in script
-    assert "voiceInstructions.disabled = false" in script
+    assert 'id="voice-instructions"' not in markup
+    assert "연기 지시" not in markup
+    assert "voiceInstructions" not in script
 
 
 def test_web_labels_local_gender_and_emotion_voice_presets() -> None:
@@ -50,9 +52,10 @@ def test_web_labels_local_gender_and_emotion_voice_presets() -> None:
     for voice, label in (
         ("man_happy", "남성 · 기쁨"),
         ("man_serious", "남성 · 진지함"),
-        ("man_whisper", "남성 · 속삭임"),
         ("woman_happy", "여성 · 기쁨"),
         ("woman_serious", "여성 · 진지함"),
         ("woman_whisper", "여성 · 속삭임"),
     ):
         assert f'["{voice}", "{label}"]' in script
+    assert '["man_whisper", "남성 · 속삭임"]' not in script
+    assert 'new Set(["man_whisper", "man_whisper2"])' in script

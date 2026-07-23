@@ -3,6 +3,8 @@ import sys
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 
 SERVICE_FILE = (
     Path(__file__).resolve().parents[3] / "services" / "cosyvoice" / "server.py"
@@ -226,39 +228,24 @@ def test_cross_lingual_whisper_voice_uses_fixed_style_instruction(
     assert output_gains == [SERVER.VOICE_OUTPUT_GAINS["woman_whisper"]]
 
 
-def test_male_whisper_uses_second_reference_recording(tmp_path) -> None:
-    whisper_voice = tmp_path / "man_whisper.wav"
-    replacement_voice = tmp_path / "man_whisper2.wav"
-    whisper_voice.write_bytes(b"original")
-    replacement_voice.write_bytes(b"replacement")
+@pytest.mark.parametrize("voice", ["man_whisper", "man_whisper2"])
+def test_male_whisper_voices_are_disabled(tmp_path, voice) -> None:
+    (tmp_path / f"{voice}.wav").write_bytes(b"disabled")
     engine = SERVER.CosyVoiceEngine()
     engine.voice_dir = tmp_path
 
-    reference_path = engine._reference_voice_path("man_whisper", whisper_voice)
-
-    assert reference_path == replacement_voice
-    assert "man_whisper" not in SERVER.VOICE_STYLE_INSTRUCTIONS
-    assert SERVER.VOICE_OUTPUT_GAINS["man_whisper"] == 0.80
+    with pytest.raises(RuntimeError, match="지원하지 않는 참조 음성"):
+        engine._voice_path(voice)
 
 
-def test_male_whisper_falls_back_when_second_recording_is_missing(tmp_path) -> None:
-    whisper_voice = tmp_path / "man_whisper.wav"
-    whisper_voice.write_bytes(b"original")
-    engine = SERVER.CosyVoiceEngine()
-    engine.voice_dir = tmp_path
-
-    assert (
-        engine._reference_voice_path("man_whisper", whisper_voice) == whisper_voice
-    )
-
-
-def test_health_hides_internal_reference_recording(tmp_path) -> None:
+def test_health_hides_disabled_male_whisper_recordings(tmp_path) -> None:
     (tmp_path / "man_whisper.wav").write_bytes(b"original")
     (tmp_path / "man_whisper2.wav").write_bytes(b"replacement")
+    (tmp_path / "man_happy.wav").write_bytes(b"available")
     engine = SERVER.CosyVoiceEngine()
     engine.voice_dir = tmp_path
 
-    assert engine.health()["voices"] == ["man_whisper"]
+    assert engine.health()["voices"] == ["man_happy"]
 
 
 def test_voice_path_uses_default_voice(tmp_path) -> None:

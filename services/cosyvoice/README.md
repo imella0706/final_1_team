@@ -70,7 +70,6 @@ Example request:
 $body = @{
   input = "새로운 하루를 더 맛있게 시작하세요."
   voice = "default"
-  instructions = "밝고 자연스러운 한국어 광고 성우 톤"
   speed = 1.0
 } | ConvertTo-Json
 
@@ -87,12 +86,9 @@ sentence boundaries and generated in order to reduce omitted phrases. The
 selected emotion reference recording and speed control still affect the result.
 The `woman_whisper` preset uses a short, fixed model-native whisper instruction
 because cross-lingual speaker embeddings alone do not reliably preserve
-whispered articulation. The `man_whisper` preset uses `man_whisper2.wav` as its
-reference recording while keeping the public preset name unchanged. If that
-file is unavailable, it falls back to `man_whisper.wav`. It uses the regular
-cross-lingual path without a forced acting instruction and applies a calibrated
-gain for the quieter replacement recording. Custom web instructions remain
-disabled in this mode.
+whispered articulation. The male whisper recordings are excluded because they
+produce an unreliable hoarse delivery. Custom web instructions are not sent in
+this mode.
 
 The experimental `instruct` mode can be enabled explicitly, but may speak parts
 of the instruction:

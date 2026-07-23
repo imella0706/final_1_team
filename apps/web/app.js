@@ -49,7 +49,6 @@ const addProductButton = $("#add-product-button");
 const voiceScript = $("#voice-script");
 const voiceScriptCount = $("#voice-script-count");
 const voiceSelect = $("#voice-select");
-const voiceInstructions = $("#voice-instructions");
 const voiceSpeed = $("#voice-speed");
 const voiceSpeedValue = $("#voice-speed-value");
 const generateVoiceButton = $("#generate-voice-button");
@@ -73,11 +72,11 @@ const openAiVoiceOptions = [
 const localVoiceLabels = new Map([
   ["man_happy", "남성 · 기쁨"],
   ["man_serious", "남성 · 진지함"],
-  ["man_whisper", "남성 · 속삭임"],
   ["woman_happy", "여성 · 기쁨"],
   ["woman_serious", "여성 · 진지함"],
   ["woman_whisper", "여성 · 속삭임"],
 ]);
+const disabledLocalVoices = new Set(["man_whisper", "man_whisper2"]);
 const appMain = $("#app-main");
 const authDialog = $("#auth-dialog");
 const authTabs = $("#auth-tabs");
@@ -1511,11 +1510,12 @@ function fillVoiceSelect(voices) {
 }
 
 function localVoiceOptions(voices) {
-  const voiceSet = new Set(voices);
+  const visibleVoices = voices.filter((voice) => !disabledLocalVoices.has(voice));
+  const voiceSet = new Set(visibleVoices);
   const configuredVoices = [...localVoiceLabels]
     .filter(([voice]) => voiceSet.has(voice))
     .map(([voice, label]) => [voice, label]);
-  const otherVoices = voices
+  const otherVoices = visibleVoices
     .filter((voice) => !localVoiceLabels.has(voice))
     .map((voice) => [
       voice,
@@ -1533,18 +1533,8 @@ async function loadAudioProviders() {
     if (cosyvoice?.available && cosyvoice.voices?.length) {
       fillVoiceSelect(localVoiceOptions(cosyvoice.voices));
       configuredVoiceProviderLabel = `cosyvoice · ${cosyvoice.model}`;
-      if (voiceInstructions) {
-        voiceInstructions.disabled = false;
-        voiceInstructions.title = cosyvoice.instructions_supported
-          ? ""
-          : "현재 로컬 안전 모드에서는 기준 음성의 말투와 속도 설정을 사용하며, 연기 지시는 OpenAI 폴백 또는 instruct 모드에서 적용됩니다.";
-      }
     } else if (openai) {
       configuredVoiceProviderLabel = `openai · ${openai.model}`;
-      if (voiceInstructions) {
-        voiceInstructions.disabled = false;
-        voiceInstructions.title = "";
-      }
     }
     setText("#result-audio-model", configuredVoiceProviderLabel);
   } catch {
@@ -1791,7 +1781,6 @@ generateVoiceButton?.addEventListener("click", async () => {
     const result = await generateAudio({
       input,
       voice: voiceSelect.value,
-      instructions: voiceInstructions.value.trim() || null,
       speed: Number(voiceSpeed.value),
     });
     const audioBlob = audioBlobFromBase64(result.audio_base64, result.media_type);
