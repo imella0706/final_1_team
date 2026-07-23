@@ -35,3 +35,10 @@ def test_web_allows_and_uses_blob_urls_for_generated_audio() -> None:
     assert "URL.createObjectURL(audioBlob)" in script
     assert "voicePlayer.src = generatedVoiceObjectUrl" in script
     assert "voicePlayer.load()" in script
+
+
+def test_voice_instructions_remain_editable_for_every_provider() -> None:
+    script = (WEB_ROOT / "app.js").read_text(encoding="utf-8")
+
+    assert "voiceInstructions.disabled = !cosyvoice.instructions_supported" not in script
+    assert "voiceInstructions.disabled = false" in script

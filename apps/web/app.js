@@ -1517,10 +1517,10 @@ async function loadAudioProviders() {
       );
       configuredVoiceProviderLabel = `cosyvoice · ${cosyvoice.model}`;
       if (voiceInstructions) {
-        voiceInstructions.disabled = !cosyvoice.instructions_supported;
+        voiceInstructions.disabled = false;
         voiceInstructions.title = cosyvoice.instructions_supported
           ? ""
-          : "로컬 안전 모드에서는 기준 음성의 말투와 속도 설정을 사용합니다.";
+          : "현재 로컬 안전 모드에서는 기준 음성의 말투와 속도 설정을 사용하며, 연기 지시는 OpenAI 폴백 또는 instruct 모드에서 적용됩니다.";
       }
     } else if (openai) {
       configuredVoiceProviderLabel = `openai · ${openai.model}`;
