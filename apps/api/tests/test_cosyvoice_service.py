@@ -49,7 +49,9 @@ def test_generate_uses_cross_lingual_mode_without_instructions(
     engine.voice_dir = tmp_path
     (tmp_path / "default.wav").write_bytes(b"wav")
     engine._model = FakeModel()
-    monkeypatch.setattr(engine, "_wav_bytes", lambda speech, sample_rate: b"audio")
+    monkeypatch.setattr(
+        engine, "_wav_bytes", lambda speech, sample_rate, gain=1.0: b"audio"
+    )
 
     audio, voice = engine.generate(
         SERVER.TTSRequest(
@@ -95,7 +97,9 @@ def test_generate_uses_instruct_mode_with_separate_acting_direction(
     engine.voice_dir = tmp_path
     (tmp_path / "man_happy.wav").write_bytes(b"wav")
     engine._model = FakeModel()
-    monkeypatch.setattr(engine, "_wav_bytes", lambda speech, sample_rate: b"audio")
+    monkeypatch.setattr(
+        engine, "_wav_bytes", lambda speech, sample_rate, gain=1.0: b"audio"
+    )
 
     audio, voice = engine.generate(
         SERVER.TTSRequest(
@@ -148,7 +152,9 @@ def test_generate_cross_lingual_processes_every_narration_segment(
         "torch",
         SimpleNamespace(cat=lambda chunks, dim: chunks),
     )
-    monkeypatch.setattr(engine, "_wav_bytes", lambda speech, sample_rate: b"audio")
+    monkeypatch.setattr(
+        engine, "_wav_bytes", lambda speech, sample_rate, gain=1.0: b"audio"
+    )
 
     audio, voice = engine.generate(
         SERVER.TTSRequest(
@@ -164,6 +170,60 @@ def test_generate_cross_lingual_processes_every_narration_segment(
         SERVER.CosyVoiceEngine._cross_lingual_text("첫 번째 구간입니다."),
         SERVER.CosyVoiceEngine._cross_lingual_text("두 번째 구간입니다."),
     ]
+
+
+def test_cross_lingual_whisper_voice_uses_fixed_style_instruction(
+    tmp_path, monkeypatch
+) -> None:
+    calls: list[tuple[str, str, str, bool, float]] = []
+
+    class FakeModel:
+        sample_rate = 24000
+
+        def inference_instruct2(
+            self,
+            text: str,
+            instruction: str,
+            voice_path: str,
+            stream: bool,
+            speed: float,
+        ):
+            calls.append((text, instruction, voice_path, stream, speed))
+            yield {"tts_speech": object()}
+
+    engine = SERVER.CosyVoiceEngine()
+    engine.inference_mode = "cross_lingual"
+    engine.voice_dir = tmp_path
+    (tmp_path / "woman_whisper.wav").write_bytes(b"wav")
+    engine._model = FakeModel()
+    output_gains: list[float] = []
+    monkeypatch.setattr(
+        engine,
+        "_wav_bytes",
+        lambda speech, sample_rate, gain=1.0: output_gains.append(gain) or b"audio",
+    )
+
+    audio, voice = engine.generate(
+        SERVER.TTSRequest(
+            input="조용히 특별한 혜택을 소개합니다.",
+            voice="woman_whisper",
+            instructions="이 사용자 지시는 모델에 전달하지 않습니다.",
+        )
+    )
+
+    assert audio == b"audio"
+    assert voice == "woman_whisper"
+    assert calls == [
+        (
+            "조용히 특별한 혜택을 소개합니다.",
+            SERVER.VOICE_STYLE_INSTRUCTIONS["woman_whisper"],
+            str(tmp_path / "woman_whisper.wav"),
+            False,
+            1.0,
+        )
+    ]
+    assert "사용자 지시" not in calls[0][1]
+    assert output_gains == [SERVER.WHISPER_OUTPUT_GAIN]
 
 
 def test_voice_path_uses_default_voice(tmp_path) -> None:

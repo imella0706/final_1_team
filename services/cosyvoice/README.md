@@ -85,6 +85,10 @@ the narration script after CosyVoice's system marker, preventing acting
 instructions from leaking into generated speech. Long narration is split at
 sentence boundaries and generated in order to reduce omitted phrases. The
 selected emotion reference recording and speed control still affect the result.
+The `man_whisper` and `woman_whisper` presets use a short, fixed model-native
+whisper instruction because cross-lingual speaker embeddings alone do not
+reliably preserve whispered articulation. Custom web instructions remain
+disabled in this mode.
 
 The experimental `instruct` mode can be enabled explicitly, but may speak parts
 of the instruction:

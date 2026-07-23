@@ -16,6 +16,17 @@ from pydantic import BaseModel, Field
 SERVICE_DIR = Path(__file__).resolve().parent
 VOICE_NAME_PATTERN = re.compile(r"^[A-Za-z0-9._-]+$")
 TTS_SEGMENT_MAX_CHARS = 180
+WHISPER_OUTPUT_GAIN = 0.63
+VOICE_STYLE_INSTRUCTIONS = {
+    "man_whisper": (
+        "You are a helpful assistant. "
+        "请用轻声耳语、贴近听众且自然的方式说这句话。<|endofprompt|>"
+    ),
+    "woman_whisper": (
+        "You are a helpful assistant. "
+        "请用轻声耳语、贴近听众且自然的方式说这句话。<|endofprompt|>"
+    ),
+}
 SINO_DIGITS = ("영", "일", "이", "삼", "사", "오", "육", "칠", "팔", "구")
 NATIVE_ONES = ("", "한", "두", "세", "네", "다섯", "여섯", "일곱", "여덟", "아홉")
 NATIVE_TENS = {
@@ -253,10 +264,10 @@ class CosyVoiceEngine:
         return f"You are a helpful assistant.<|endofprompt|>{tts_text}"
 
     @staticmethod
-    def _wav_bytes(speech: Any, sample_rate: int) -> bytes:
+    def _wav_bytes(speech: Any, sample_rate: int, gain: float = 1.0) -> bytes:
         import torch
 
-        samples = speech.detach().float().cpu().squeeze().clamp(-1, 1)
+        samples = (speech.detach().float().cpu().squeeze() * gain).clamp(-1, 1)
         pcm = (samples * 32767).to(torch.int16).numpy().tobytes()
         output = io.BytesIO()
         with wave.open(output, "wb") as wav_file:
@@ -271,15 +282,17 @@ class CosyVoiceEngine:
         resolved_voice, voice_path = self._voice_path(request.voice)
         tts_text = normalize_korean_tts_text(request.input)
         tts_segments = split_tts_text(tts_text)
+        preset_instruction = VOICE_STYLE_INSTRUCTIONS.get(resolved_voice)
 
         with self._generation_lock:
             try:
                 chunks = []
                 for segment in tts_segments:
-                    if self.inference_mode == "instruct":
+                    if self.inference_mode == "instruct" or preset_instruction:
                         generator = model.inference_instruct2(
                             segment,
-                            self._instruction(request.instructions, request.speed),
+                            preset_instruction
+                            or self._instruction(request.instructions, request.speed),
                             str(voice_path),
                             stream=False,
                             speed=request.speed,
@@ -306,7 +319,10 @@ class CosyVoiceEngine:
             speech = torch.cat(chunks, dim=-1)
         else:
             speech = chunks[0]
-        return self._wav_bytes(speech, model.sample_rate), resolved_voice
+        output_gain = (
+            WHISPER_OUTPUT_GAIN if resolved_voice.endswith("_whisper") else 1.0
+        )
+        return self._wav_bytes(speech, model.sample_rate, output_gain), resolved_voice
 
     def health(self) -> dict[str, object]:
         model_present = self.model_dir.is_dir()
