@@ -39,7 +39,11 @@ outputs/
 Thumbs.db
 
 outputs
+/runtime/
 
 # Airflow local runtime artifacts
 airflow/logs/
 airflow/mock_gcs/logs/
+# Added by code-review-graph
+.code-review-graph/
+.kiro

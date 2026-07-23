@@ -1,6 +1,5 @@
 import json
 from datetime import datetime
-from pathlib import Path
 from types import SimpleNamespace
 
 from app.extensions.ad_content import artifact_store

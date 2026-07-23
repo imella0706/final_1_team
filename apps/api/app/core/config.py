@@ -70,6 +70,13 @@ class Settings(BaseSettings):
     local_llm_base_url: str | None = None
     local_llm_api_key: SecretStr | None = None
     local_llm_model: str | None = None
+    local_qwen_1_5b_model: str = "qwen2.5:1.5b"
+    local_qwen_7b_model: str = "qwen2.5:7b"
+    local_mistral_7b_model: str = "mistral:7b"
+    local_qwen_2_5_vl_7b_model: str = "qwen2.5vl:7b"
+    local_qwen_3_vl_2b_model: str = "qwen3-vl:2b-instruct"
+    local_qwen_3_vl_4b_model: str = "qwen3-vl:4b-instruct"
+    local_qwen_3_vl_8b_model: str = "qwen3-vl:8b-instruct"
     mistral_base_url: str | None = None
     mistral_model: str | None = None
     mistral_api_key: SecretStr | None = None
@@ -97,6 +104,9 @@ class Settings(BaseSettings):
     image_prompt_template: str = "generic"
     comfyui_base_url: str = "http://127.0.0.1:8188"
     comfyui_workflow_path: str | None = None
+    comfyui_sdxl_checkpoint: str = "sd_xl_base_1.0.safetensors"
+    comfyui_sdxl_turbo_checkpoint: str = "sd_xl_turbo_1.0_fp16.safetensors"
+    comfyui_img2img_denoise: float = 0.58
     comfyui_timeout_seconds: float = 300
     comfyui_poll_interval_seconds: float = 1
     image_validation_enabled: bool = False
@@ -109,6 +119,13 @@ class Settings(BaseSettings):
     trend_card_path: Path | None = None
     pexels_api_key: SecretStr | None = None
     unsplash_access_key: SecretStr | None = None
+    # 네이버 블로그는 업로드한 음식 사진의 전경을 유지하고, 프로젝트 내부의
+    # food-image-cleanup-pipeline로 배경만 교체한다. 모델 의존성이 큰 선택 기능이므로
+    # 서버 환경에서 설치·모델 준비를 확인한 뒤에만 활성화한다.
+    naver_image_enhancement_enabled: bool = False
+    naver_image_cleanup_root: str = "food-image-cleanup-pipeline"
+    naver_image_cleanup_python: str | None = None
+    naver_image_cleanup_timeout_seconds: int = 600
 
     @property
     def allowed_web_origins(self) -> list[str]:

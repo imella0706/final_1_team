@@ -1,0 +1,149 @@
+project:
+  name: food-image-cleanup-pipeline
+  version: 0.2.0
+paths:
+  input_dir: data/input
+  mask_dir: data/masks
+  intermediate_dir: data/intermediate
+  output_dir: data/output
+  report_dir: data/reports
+  model_dir: models
+  log_dir: logs
+image:
+  allowed_extensions:
+  - .jpg
+  - .jpeg
+  - .png
+  - .webp
+  max_file_size_mb: 25
+  max_long_side: 1536
+  jpeg_quality: 95
+quality:
+  blur_threshold: 80.0
+  dark_mean_threshold: 55.0
+  bright_mean_threshold: 210.0
+  low_contrast_std_threshold: 28.0
+  clipping_ratio_threshold: 0.08
+models:
+  foreground_detector:
+    enabled: true
+    provider: yolo
+    # 기본값은 학습한 음식 전용 YOLO11n 가중치다.
+    # 기본 COCO YOLO11n을 쓰려면 active_profile을 coco_yolo11n으로 바꾼다.
+    active_profile: food_specialized
+    confidence_threshold: 0.25
+    iou_threshold: 0.45
+    image_size: 960
+    max_detections: 100
+    # 운영에서는 탐지 실패를 결과 생성으로 감추지 않는다. 연결 테스트에서만 true로 둔다.
+    allow_center_fallback_for_diagnostics: false
+    profiles:
+      food_specialized:
+        weights: models/best.pt
+        target_classes: [food]
+        food_classes: [food]
+        container_classes: []
+      coco_yolo11n:
+        weights: models/yolo11n.pt
+        target_classes: [banana, apple, orange, broccoli, carrot, sandwich, pizza, donut, cake, bowl, cup]
+        food_classes: [banana, apple, orange, broccoli, carrot, sandwich, pizza, donut, cake]
+        container_classes: [bowl, cup]
+  segmenter:
+    enabled: true
+    provider: sam2
+    weights: models/sam2.1_t.pt
+    device: auto
+  removal_detector:
+    enabled: true
+    provider: yolo
+    weights: models/yolo11n.pt
+    target_classes:
+    - fork
+    - knife
+    - spoon
+  inpainter:
+    enabled: true
+    provider: big-lama
+    weights: models/big-lama.pt
+    device: auto
+    mask_dilation: 9
+  semantic_validator:
+    enabled: true
+    provider: openclip
+    model_name: ViT-B-32
+    pretrained: laion2b_s34b_b79k
+    cache_dir: models/openclip
+    device: auto
+    minimum_similarity: 0.8
+  matting:
+    enabled: true
+    provider: birefnet
+    model_id: ZhengPeng7/BiRefNet_HR
+    cache_dir: models/birefnet
+    device: auto
+    input_size: 1024
+    # BiRefNet은 SAM 구조 마스크의 미세 보정만 담당하며 품질 검사 실패 시 SAM으로 되돌린다.
+    threshold: 0.50
+    # 전경 경계는 7~9px 수준으로 부드럽게 전환한다.
+    feather_kernel: 9
+    allowed_dilation: 11
+    minimum_iou: 0.55
+    minimum_area_ratio: 0.60
+    maximum_area_ratio: 1.40
+    maximum_extra_components: 2
+    # BiRefNet이 거부돼도 SAM 마스크의 작은 잡음과 내부 투명 구멍은 보정한다.
+    sam_closing_kernel: 15
+    sam_min_component_area: 256
+    sam_fill_holes: true
+  foreground_protection:
+    dilation: 11
+  camera_angle_classifier:
+    # 학습된 EfficientNet-B0가 원본 음식 사진을 top 또는 45로 분류한다.
+    # 네이버 채널·로컬·코랩의 배경 프롬프트 선택에서 동일하게 사용된다.
+    enabled: true
+    provider: torchvision-efficientnet-b0
+    weights: models/efficientnet_best.pt
+    device: auto
+    minimum_confidence: 0.60
+    # 낮은 확률에서도 모델의 최고 확률 클래스를 사용하되 보고서에 low_confidence를 남긴다.
+    fallback_on_low_confidence: false
+    fallback_angle: 45
+  background_generator:
+    enabled: true
+    provider: sana-1.6b
+    device: auto
+    seed: 42
+    candidate_count: 3
+    # 생성 후보 중 음식이 없고, 중앙이 비어 있으며 원본과 색온도가 가까운 후보를 선택한다.
+    candidate_selection_enabled: true
+  foreground_placement:
+    # 접시/음식 전경을 결과 캔버스 너비의 55~70% 범위로 조절한다.
+    top_width_ratio: 0.62
+    angle_45_width_ratio: 0.64
+    providers:
+      sana-1.6b:
+        model_id: Efficient-Large-Model/Sana_1600M_1024px_BF16_diffusers
+        cache_dir: models/sana-1.6b
+        steps: 20
+        guidance_scale: 5.0
+      flux-schnell:
+        model_id: black-forest-labs/FLUX.1-schnell
+        cache_dir: models/flux-schnell
+        steps: 4
+        guidance_scale: 0.0
+  contact_shadow:
+    enabled: true
+    vertical_offset: 8
+    horizontal_offset: 3
+    blur_radius: 19
+    opacity: 0.22
+  harmonization:
+    enabled: true
+    max_brightness_delta: 12
+    max_contrast_delta: 0.1
+    max_saturation_delta: 0.08
+    max_hue_shift_degree: 3
+validation:
+  max_brightness_delta: 35.0
+  max_contrast_delta: 35.0
+  max_blur_score_drop_ratio: 0.2
