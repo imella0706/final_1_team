@@ -51,8 +51,21 @@ models:
   segmenter:
     enabled: true
     provider: sam2
-    weights: models/sam2.1_t.pt
+    # Tiny보다 경계 품질이 높은 SAM 2.1 Small을 기본 사용한다.
+    weights: models/sam2.1_s.pt
     device: auto
+  grounding_dino_detector:
+    # 음식·접시의 1차 개방형 어휘 탐지기. YOLO는 이 단계의 무검출만 보완한다.
+    enabled: true
+    provider: grounding-dino
+    model_id: IDEA-Research/grounding-dino-tiny
+    # `scripts.download_models --models grounding-dino`가 만든 모델 스냅샷 경로.
+    # 코랩에서는 Drive의 이 폴더를 직접 읽어 매 실행마다 다시 받지 않는다.
+    cache_dir: models/grounding-dino
+    device: auto
+    box_threshold: 0.28
+    text_threshold: 0.22
+    prompts: [plate, dish, bowl, food, meal, bread, cake, dessert]
   removal_detector:
     enabled: true
     provider: yolo
@@ -76,7 +89,7 @@ models:
     device: auto
     minimum_similarity: 0.8
   matting:
-    enabled: true
+    enabled: false
     provider: birefnet
     model_id: ZhengPeng7/BiRefNet_HR
     cache_dir: models/birefnet
@@ -92,11 +105,52 @@ models:
     maximum_area_ratio: 1.40
     maximum_extra_components: 2
     # BiRefNet이 거부돼도 SAM 마스크의 작은 잡음과 내부 투명 구멍은 보정한다.
-    sam_closing_kernel: 15
-    sam_min_component_area: 256
+    sam_closing_kernel: 9
+    sam_min_component_area: 64
     sam_fill_holes: true
   foreground_protection:
     dilation: 11
+  plate_mask:
+    # 원본 접시 외곽을 별도 레이어로 보존한다. 허용 범위 안의 원형·타원형 윤곽만 보완한다.
+    enabled: true
+    minimum_area_ratio: 0.08
+    maximum_aspect_ratio: 1.65
+    minimum_ellipse_iou: 0.65
+    maximum_ellipse_area_ratio: 1.35
+    # 접시 외곽의 작은 결손은 원본 RGB를 유지한 채 알파만 제한적으로 복구한다.
+    edge_repair_kernel: 7
+  plate_preservation:
+    # 접시 레이어는 원본 픽셀을 그대로 보존한다. BiRefNet의 일반 feathering을
+    # 접시 외곽에 적용하지 않아 접시 테두리가 투명해지는 현상을 막는다.
+    feather_kernel: 5
+    minimum_coverage: 0.995
+    maximum_internal_gap_ratio: 0.002
+    validation_erosion_px: 2
+  generated_plate_composition:
+    # 기본 모드(generated_plate): 원본 접시·식탁보는 제거하고 음식만 생성 배경의 빈 접시에 배치한다.
+    # 기존 원본 접시를 유지해야 하면 mode를 preserve_original_plate로 바꾼다.
+    enabled: true
+    mode: preserve_original_plate
+    # 생성 배경에서 중앙 접시를 찾지 못한 후보는 사용하지 않는다.
+    # food_visible 분할 결과가 없으면 원본 접시가 다시 전경에 섞일 수 있으므로 저장하지 않는다.
+    require_food_visible_mask: true
+    minimum_plate_score: 0.45
+    # 음식 전경의 짧은 변을 생성 접시 짧은 변의 56%로 배치한다.
+    food_width_ratio_of_plate: 0.56
+    minimum_food_width_ratio: 0.12
+    maximum_food_width_ratio: 0.42
+  plate_segmenter:
+    # CVAT 라벨로 학습한 YOLO11-seg 접시 전용 모델이다. 가중치를 만든 뒤에만
+    # enabled를 true로 바꾼다. 그 전에는 기존 SAM + 기하학 보완을 사용한다.
+    enabled: false
+    provider: yolo-seg
+    weights: models/yolo11n_plate_seg.pt
+    confidence_threshold: 0.25
+    iou_threshold: 0.45
+    image_size: 1024
+    device: auto
+    plate_class: plate_full
+    food_class: food_visible
   camera_angle_classifier:
     # 학습된 EfficientNet-B0가 원본 음식 사진을 top 또는 45로 분류한다.
     # 네이버 채널·로컬·코랩의 배경 프롬프트 선택에서 동일하게 사용된다.
@@ -114,12 +168,9 @@ models:
     device: auto
     seed: 42
     candidate_count: 3
+    max_candidate_attempts: 12
     # 생성 후보 중 음식이 없고, 중앙이 비어 있으며 원본과 색온도가 가까운 후보를 선택한다.
     candidate_selection_enabled: true
-  foreground_placement:
-    # 접시/음식 전경을 결과 캔버스 너비의 55~70% 범위로 조절한다.
-    top_width_ratio: 0.62
-    angle_45_width_ratio: 0.64
     providers:
       sana-1.6b:
         model_id: Efficient-Large-Model/Sana_1600M_1024px_BF16_diffusers
@@ -131,6 +182,22 @@ models:
         cache_dir: models/flux-schnell
         steps: 4
         guidance_scale: 0.0
+  background_audit_detector:
+    enabled: true
+    provider: yolo
+    weights: models/yolo11n.pt
+    confidence_threshold: 0.20
+    iou_threshold: 0.45
+    image_size: 960
+    max_detections: 100
+    target_classes: [banana, apple, orange, broccoli, carrot, sandwich, pizza, donut, cake, bowl, cup, fork, knife, spoon]
+  foreground_placement:
+    # 접시/음식 전경을 결과 캔버스 너비의 55~70% 범위로 조절한다.
+    top_width_ratio: 0.40
+    angle_45_width_ratio: 0.48
+    safe_padding_px: 28
+    canvas_margin_px: 42
+    alpha_crop_threshold: 1
   contact_shadow:
     enabled: true
     vertical_offset: 8
