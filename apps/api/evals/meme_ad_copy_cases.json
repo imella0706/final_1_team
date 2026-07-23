@@ -1,0 +1,154 @@
+[
+  {
+    "id": "meme_like_single_grape_yogurt_smoothie",
+    "case_type": "single_product",
+    "request": {
+      "business_name": "모퉁이온도",
+      "business_type": "cafe",
+      "situation": "new_menu",
+      "age_groups": ["twenties"],
+      "target_audiences": ["students"],
+      "tone": "playful",
+      "product_names": ["청포도 요거트 스무디"],
+      "features": ["청포도 과육 사용", "요거트 베이스"],
+      "channel": "instagram",
+      "promotion": null,
+      "required_terms": ["청포도 과육"],
+      "prohibited_terms": ["무조건", "인생 음료"],
+      "trend_card_id": "gogumafarm:1bf390d89536004b"
+    }
+  },
+  {
+    "id": "meme_like_single_pistachio_chocolate_tart",
+    "case_type": "single_product",
+    "request": {
+      "business_name": "마루초코",
+      "business_type": "dessert",
+      "situation": "visit",
+      "age_groups": ["twenties", "thirties"],
+      "target_audiences": ["couples"],
+      "tone": "emotional",
+      "product_names": ["피스타치오 초코 타르트"],
+      "features": ["피스타치오 프랄린 사용", "조각 포장 가능"],
+      "channel": "instagram",
+      "promotion": null,
+      "required_terms": ["피스타치오 프랄린"],
+      "prohibited_terms": ["완벽", "명품"],
+      "trend_card_id": "gogumafarm:1bf390d89536004b"
+    }
+  },
+  {
+    "id": "meme_like_multi_corn_ciabatta_tomato_soup",
+    "case_type": "multi_product",
+    "request": {
+      "business_name": "아침결빵집",
+      "business_type": "bakery",
+      "situation": "new_menu",
+      "age_groups": ["thirties"],
+      "target_audiences": ["office_workers"],
+      "tone": "warm",
+      "product_names": ["옥수수 치아바타", "토마토 수프"],
+      "features": ["두 메뉴를 한 접시에 함께 제공", "치아바타는 매일 아침 구움"],
+      "channel": "instagram",
+      "promotion": null,
+      "required_terms": ["함께 제공"],
+      "prohibited_terms": ["전국 1위", "최고"],
+      "trend_card_id": "gogumafarm:1bf390d89536004b"
+    }
+  },
+  {
+    "id": "meme_like_multi_yuzu_highball_gyoza",
+    "case_type": "multi_product",
+    "request": {
+      "business_name": "잔잔한밤",
+      "business_type": "pub",
+      "situation": "event",
+      "age_groups": ["twenties", "thirties"],
+      "target_audiences": ["couples"],
+      "tone": "playful",
+      "product_names": ["유자 하이볼", "닭껍질 교자"],
+      "features": ["두 메뉴를 짝지어 제공", "금요일 저녁에 주문 가능"],
+      "channel": "instagram",
+      "promotion": null,
+      "required_terms": ["짝지어"],
+      "prohibited_terms": ["취한다", "무제한"],
+      "trend_card_id": "gogumafarm:1bf390d89536004b"
+    }
+  },
+  {
+    "id": "meme_like_promotion_spicy_chicken_rice_bowl",
+    "case_type": "promotion",
+    "request": {
+      "business_name": "한상온",
+      "business_type": "restaurant",
+      "situation": "discount",
+      "age_groups": ["twenties", "thirties"],
+      "target_audiences": ["solo"],
+      "tone": "friendly",
+      "product_names": ["매콤 닭갈비 덮밥"],
+      "features": ["닭갈비와 양배추로 구성", "덮밥 한 그릇 포장 가능"],
+      "channel": "instagram",
+      "promotion": "첫 주문 시 2,000원 할인",
+      "required_terms": ["2,000원 할인"],
+      "prohibited_terms": ["최저가", "건강식"],
+      "trend_card_id": "gogumafarm:1bf390d89536004b"
+    }
+  },
+  {
+    "id": "meme_like_promotion_salted_caramel_cold_brew",
+    "case_type": "promotion",
+    "request": {
+      "business_name": "해질녘커피",
+      "business_type": "cafe",
+      "situation": "takeout",
+      "age_groups": ["thirties"],
+      "target_audiences": ["office_workers"],
+      "tone": "witty",
+      "product_names": ["솔티드 캐러멜 콜드브루"],
+      "features": ["솔티드 캐러멜 폼을 올림", "테이크아웃 가능"],
+      "channel": "instagram",
+      "promotion": "오후 5시 이후 500원 할인",
+      "required_terms": ["오후 5시 이후"],
+      "prohibited_terms": ["중독", "무조건"],
+      "trend_card_id": "gogumafarm:1bf390d89536004b"
+    }
+  },
+  {
+    "id": "meme_like_transfer_grilled_mackerel_set",
+    "case_type": "far_transfer",
+    "request": {
+      "business_name": "바다찬방",
+      "business_type": "restaurant",
+      "situation": "takeout",
+      "age_groups": ["forties"],
+      "target_audiences": ["families"],
+      "tone": "professional",
+      "product_names": ["고등어구이 정식"],
+      "features": ["고등어구이와 된장국으로 구성", "포장 주문 가능"],
+      "channel": "instagram",
+      "promotion": null,
+      "required_terms": ["포장 주문"],
+      "prohibited_terms": ["완벽한 한 끼", "보약"],
+      "trend_card_id": "gogumafarm:1bf390d89536004b"
+    }
+  },
+  {
+    "id": "meme_like_transfer_potato_pancake_omija_ade",
+    "case_type": "far_transfer",
+    "request": {
+      "business_name": "들판주막",
+      "business_type": "pub",
+      "situation": "visit",
+      "age_groups": ["twenties"],
+      "target_audiences": ["students"],
+      "tone": "friendly",
+      "product_names": ["감자전", "오미자 에이드"],
+      "features": ["감자전과 오미자 에이드를 함께 내는 구성", "감자전은 주문 후 조리"],
+      "channel": "instagram",
+      "promotion": null,
+      "required_terms": ["주문 후 조리"],
+      "prohibited_terms": ["전통의 맛", "전국 최고"],
+      "trend_card_id": "gogumafarm:1bf390d89536004b"
+    }
+  }
+]

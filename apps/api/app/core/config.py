@@ -127,6 +127,7 @@ class Settings(BaseSettings):
     reference_source: str = "wikimedia"
     reference_max_results: int = 3
     product_visual_db_path: str = "product_visual_profiles.sqlite3"
+    trend_card_path: Path | None = None
     pexels_api_key: SecretStr | None = None
     unsplash_access_key: SecretStr | None = None
     # 네이버 블로그는 업로드한 음식 사진의 전경을 유지하고, 프로젝트 내부의
