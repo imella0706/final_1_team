@@ -63,7 +63,7 @@ MARKETING_SIGNAL_LABELS = {
     "evening_takeout_or_signage_candidate": "저녁 테이크아웃 후보",
 }
 DEFAULT_REPORT_STORE_NAME = "탐앤탐스 C0241 분석 사례"
-DEFAULT_REPORT_LOCATION = "매장 전면 보행로 및 계단 진입 동선"
+DEFAULT_REPORT_LOCATION = "매장 앞 보행로와 계단 진입로"
 DEFAULT_REPORT_NUMBER = "BM-C0241-20210802-01"
 
 
@@ -324,7 +324,7 @@ def render_customer_report(
     date_labels = [format_report_date(date_id) for date_id in facts["dates"]]
     period_label = " ~ ".join(date_labels)
 
-    st.header("CCTV 보행 관측 기반 상권분석 보고서")
+    st.header("CCTV 관측량 기반 상권분석 보고서")
     st.markdown(f"**{store_name}**")
     st.caption(f"조사 기간 {period_label} · 보고서 번호 {report_number}")
 
@@ -348,7 +348,7 @@ def render_customer_report(
                     f"분석 장면 {facts['analysis_scene_count']}개"
                 ),
             },
-            {"항목": "분석 목적", "내용": "시간대별 보행 관측 변화와 매장 전면 노출 기회 파악"},
+            {"항목": "분석 목적", "내용": "시간대별 관측량 변화와 매장 앞 노출 기회 파악"},
         ]
     )
     st.table(overview)
@@ -361,11 +361,11 @@ def render_customer_report(
         f"{format_report_date(facts['peak_date_id'])} {facts['peak_hour']}",
     )
     second.metric(
-        "해당 시간대 장면당 평균",
+        "해당 시간대 평균 인원",
         f"{facts['peak_scene_average']:.2f}명",
     )
     third.metric(
-        "매장 전면 관심구역 비중",
+        "매장 앞 관측 비중",
         f"{facts['storefront_share'] * 100:.1f}%",
     )
     fourth.metric(
@@ -374,43 +374,44 @@ def render_customer_report(
     )
     st.markdown(
         f"분석한 영상 표본에서는 **{format_report_date(facts['peak_date_id'])} "
-        f"{facts['peak_hour']}**의 보행 관측 수준이 가장 높았습니다. 해당 시간대에는 "
+        f"{facts['peak_hour']}**의 관측량이 가장 높았습니다. 해당 시간대에는 "
         f"분석 장면마다 평균 **{facts['peak_scene_average']:.2f}명**이 보였으며, "
         f"같은 날짜 평균의 **{facts['peak_to_date_average']:.2f}배**였습니다."
     )
     st.caption(
-        "장면당 평균은 일정 간격으로 확인한 화면에서 동시에 보인 사람 수의 평균입니다. "
-        "방문객 총수나 고유 방문자 수를 뜻하지 않습니다."
+        "관측량은 CCTV 화면에서 사람으로 탐지된 횟수이며, 방문자 수나 통행량을 의미하지 않습니다. "
+        "해당 시간대 평균 인원은 일정 간격으로 확인한 화면에서 동시에 보인 사람 수의 평균입니다."
     )
 
     st.divider()
-    st.subheader("3. 시간대별 보행 관측 추이")
+    st.subheader("3. 시간대별 관측량 추이")
     st.bar_chart(
         customer_time_chart(
             dashboard_summary,
             "mean_persons_per_sampled_frame",
         ),
         x_label="시간대",
-        y_label="장면당 평균 관측(명)",
+        y_label="분석 장면당 평균 인원(명)",
         stack=False,
         height=380,
     )
     st.markdown(
         f"가장 강한 신호는 **{facts['peak_hour']}**에 나타났습니다. "
-        "이 시간대는 매장 전면 메시지와 단기 프로모션의 노출 효과를 시험할 "
+        "이 시간대는 매장 입구의 메뉴 안내, 입간판, 테이크아웃 혜택처럼 "
+        "지나가는 사람이 바로 볼 수 있는 안내 요소의 반응을 시험할 "
         "우선 후보입니다. 영상이 제공되지 않은 시간대는 추정하지 않았습니다."
     )
 
     st.divider()
-    st.subheader("4. 매장 전면 관심구역 분석")
+    st.subheader("4. 매장 앞 관측구역 분석")
     image_column, chart_column = st.columns([1.15, 1])
     with image_column:
         if masked_image_path.is_file():
             st.image(
                 str(masked_image_path),
                 caption=(
-                    "개인정보 보호 처리된 분석 예시 · 노란 선은 매장 전면과 "
-                    "계단 진입 동선을 포함한 관심구역"
+                    "매장 앞 보행로와 계단 진입로를 포함한 관측구역을 "
+                    "노란 박스로 표시했습니다."
                 ),
                 width="stretch",
             )
@@ -423,18 +424,18 @@ def render_customer_report(
                 "mean_roi_observations_per_sampled_frame",
             ),
             x_label="시간대",
-            y_label="장면당 평균 관측(명)",
+            y_label="분석 장면당 평균 인원(명)",
             stack=False,
             height=360,
         )
-        st.caption("시간대별 매장 전면 관심구역의 장면당 평균 관측 수준")
+        st.caption("시간대별로 매장 앞 관측구역에서 동시에 보인 평균 인원")
     st.markdown(
-        "전체 보행 관측 중 매장 전면과 계단 진입 동선을 포함한 관심구역에서 "
+        "전체 관측량 중 매장 앞 보행로와 계단 진입로에서 "
         f"나타난 비중은 {facts['storefront_share'] * 100:.1f}%입니다. "
-        "매장 전면 관심구역의 "
+        "매장 앞 관측구역의 "
         f"관측 수준은 **{format_report_date(facts['storefront_peak_date_id'])} "
         f"{facts['storefront_peak_hour']}**에 가장 높았습니다. 이 비중은 매장 입장률이나 "
-        "구매 전환율이 아니라, 분석 화면에서 매장 접근 가능 구역에 보인 관측의 비율입니다."
+        "구매 전환율이 아니라, 분석 화면의 매장 앞 관측구역에 등장한 사람의 비율입니다."
     )
 
     st.divider()
@@ -448,7 +449,7 @@ def render_customer_report(
         st.bar_chart(
             comparison_chart,
             x_label="공통 관측 시간대",
-            y_label="장면당 평균 관측(명)",
+            y_label="분석 장면당 평균 인원(명)",
             stack=False,
             height=320,
         )
@@ -464,15 +465,21 @@ def render_customer_report(
     st.divider()
     st.subheader("6. 운영·마케팅 실행 제안")
     st.markdown(
-        f"**1순위 · {facts['peak_hour']} 전후 매장 전면 노출 테스트**  \n"
-        "입간판이나 쇼윈도 메시지는 한 번에 이해되는 짧은 문구로 구성하고, "
-        "테이크아웃·세트 메뉴처럼 즉시 행동으로 이어질 제안을 1~2주간 시험합니다.\n\n"
-        "**2순위 · 날짜 편차를 확인한 뒤 운영 변경**  \n"
-        "현재 결과만으로 인력이나 영업시간을 바로 바꾸지 않습니다. 같은 요일과 시간대를 "
-        "추가 관측해 반복되는 패턴인지 먼저 확인합니다.\n\n"
-        "**성과 확인 · 매출 데이터와 연결**  \n"
-        "프로모션 전후의 POS 주문 수, 쿠폰 사용, 시간대별 객단가를 함께 비교해야 "
-        "보행 관측이 실제 매출 행동으로 이어졌는지 판단할 수 있습니다."
+        f"**피크 시간 활용 · {facts['peak_hour']} 전후 프로모션 메시지 추천**  \n"
+        "분석 범위에서 이 시간대의 매장 앞 관측량이 가장 높았습니다. 지나가는 "
+        "고객의 시선을 빠르게 사로잡을 수 있도록 '점심 특가'나 '테이크아웃 할인'처럼 "
+        "짧고 명확한 문구로 구성하는 것을 추천합니다.\n\n"
+        "**매장 앞 관측구역 · 보행로와 계단 진입로 동시 고려**  \n"
+        "노란 관측구역은 매장 앞 보행로와 계단 진입로를 함께 포함합니다. 안내물은 "
+        "두 동선에서 모두 확인하기 쉬운 위치에 배치하고, 문구는 짧게 줄이되 글자 크기는 "
+        "멀리서도 읽힐 만큼 크게 구성하는 것이 좋습니다.\n\n"
+        "**성과 연결 · POS 데이터와 함께 판단**  \n"
+        "이번 관측만으로 매출 효과를 단정할 수는 없습니다. 실제 적용 시에는 POS 주문 수, "
+        "쿠폰 사용량, 시간대별 객단가를 함께 비교해 관측량과 매출 반응의 관계를 "
+        "확인해야 합니다.\n\n"
+        "**향후 실제 적용 · 연속 촬영과 반복 날짜 확인**  \n"
+        "실제 고객 매장에서는 영업시간 전체에 가까운 연속 촬영과 여러 날짜의 반복 측정이 "
+        "확보된 뒤에 운영 변경 여부를 판단하는 것이 적절합니다."
     )
 
     st.divider()
@@ -483,7 +490,7 @@ def render_customer_report(
         "- 같은 사람이 여러 분석 장면에 반복해서 보일 수 있어 고유 방문자 수가 아닙니다.\n"
         "- 하루 전체 연속 촬영이 아니므로 일일 총 통행량이나 일평균 유동인구를 산출하지 않습니다.\n"
         "- 성별·연령·이동 방향·매장 입장·구매 전환·매출은 이번 분석 범위에 포함하지 않습니다.\n"
-        "- 운영 변경 전에는 추가 촬영과 POS·프로모션 반응 데이터를 함께 검토해야 합니다."
+        "- 실제 고객 매장에 적용할 경우 영업시간 연속 촬영, 반복 날짜 측정, POS·프로모션 반응 데이터가 함께 필요합니다."
     )
 
 
@@ -688,7 +695,7 @@ def render_operator_roi_video(
 def render_scope_notice() -> None:
     st.warning(
         "이 화면은 CCTV 화면에서 사람이 얼마나 자주 보였는지 비교하는 POC입니다. "
-        "표시 값은 정확한 방문객 수가 아니라, 시간대별 붐빔 정도를 보는 보행 관측량입니다. "
+        "표시 값은 정확한 방문객 수가 아니라, 시간대별 붐빔 정도를 보는 관측량입니다. "
         "ROI와 화면 구역 정보는 원근 보정 전의 화면 좌표 기준 관측 분포입니다."
     )
 
@@ -715,7 +722,7 @@ def render_metric_cards(
     fourth.metric("분석한 CCTV 영상", f"{int(analysis['clip_count'])}개")
 
     st.info(
-        "보행 관측은 CCTV 화면에서 사람으로 탐지된 횟수입니다. "
+        "관측량은 CCTV 화면에서 사람으로 탐지된 횟수이며, 방문자 수나 통행량을 의미하지 않습니다. "
         "같은 사람이 여러 장면에 보이면 여러 번 잡힐 수 있으므로, 실제 방문객 수로 해석하면 안 됩니다. "
         "최다 관측 구역은 실제 지면의 가장 붐비는 장소가 아니라 화면 기준으로 사람이 많이 잡힌 칸입니다."
     )
@@ -782,7 +789,7 @@ def render_roi_analysis(
     *,
     show_operator_debug: bool = True,
 ) -> None:
-    st.subheader("1. 매장 전면 ROI 보행 관측")
+    st.subheader("1. 매장 전면 ROI 관측량")
     st.caption("수동 normalized polygon · bbox bottom-center 판정 · 10초 sampled frame")
 
     peak_bucket = str(analysis.get("peak_time_bucket", ""))
@@ -930,7 +937,7 @@ def render_time_trend(
     *,
     show_validation_details: bool = True,
 ) -> None:
-    st.subheader("2. 전체 화면 시간대별 프레임 정규화 보행 관측")
+    st.subheader("2. 전체 화면 시간대별 프레임 정규화 관측량")
     chart = dashboard_summary.copy()
     chart["time_label"] = pd.to_datetime(chart["time_bucket"]).dt.strftime("%H:%M")
     if "date_id" in chart.columns:
@@ -1070,7 +1077,7 @@ def render_grid_heatmap(
     summary: pd.DataFrame,
     dashboard_summary: pd.DataFrame,
 ) -> None:
-    st.subheader("4. 화면 구역별 보행 관측 분포")
+    st.subheader("4. 화면 구역별 관측량 분포")
     st.caption("화면 기준 · 원근 미보정 · 실제 지면 밀집도 아님")
     st.info(
         "아래 24칸은 검증 영상에 보이는 노란 6x4 grid와 같은 기준입니다. "
@@ -1174,7 +1181,7 @@ def render_grid_heatmap(
             width="stretch",
             column_config={
                 "zone_label": "화면 구역",
-                "person_detection_observations": "보행 관측량",
+                "person_detection_observations": "관측량",
                 "density_score": st.column_config.NumberColumn(
                     "상대 관측 강도",
                     format="%.3f",
