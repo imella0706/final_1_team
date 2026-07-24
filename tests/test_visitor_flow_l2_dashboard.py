@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+import json
+
 import pandas as pd
 
 from apps.visitor_flow_l2_dashboard.app import (
     build_customer_report_facts,
     customer_time_chart,
+    load_tracking_qa,
+    validate_tracking_qa_dir,
 )
 
 
@@ -94,3 +98,32 @@ def test_customer_time_chart_uses_customer_facing_date_and_hour_labels() -> None
     assert chart.index.tolist() == ["09시"]
     assert chart.columns.tolist() == ["08월 02일", "08월 03일"]
     assert chart.loc["09시", "08월 03일"] == 2.0
+
+
+def test_validate_and_load_tracking_qa_artifacts(tmp_path) -> None:
+    qa_dir = tmp_path / "tracking_qa"
+    summary_path = qa_dir / "qa" / "tracking_qa_summary.json"
+    events_path = qa_dir / "tracks" / "track_events.csv"
+    video_path = qa_dir / "media" / "tracking_id_qa.webm"
+    summary_path.parent.mkdir(parents=True)
+    events_path.parent.mkdir(parents=True)
+    video_path.parent.mkdir(parents=True)
+    summary_path.write_text(
+        json.dumps(
+            {
+                "stage": "L3-4_tracking_id_qa",
+                "results": {"processed_frames": 180},
+            }
+        ),
+        encoding="utf-8",
+    )
+    events_path.write_text("track_id,source_frame_index\n1,180\n", encoding="utf-8")
+    video_path.write_bytes(b"webm")
+
+    missing = validate_tracking_qa_dir(qa_dir)
+    summary, loaded_video_path, loaded_events_path = load_tracking_qa(qa_dir)
+
+    assert missing == []
+    assert summary["stage"] == "L3-4_tracking_id_qa"
+    assert loaded_video_path == video_path
+    assert loaded_events_path == events_path

@@ -26,6 +26,12 @@ DEFAULT_PRIVACY_MEDIA_DIR = (
     / "visitor_flow_mvp"
     / "c0241_20210802_20210803_l3_2_privacy_media"
 )
+DEFAULT_TRACKING_QA_DIR = (
+    REPO_ROOT
+    / "outputs"
+    / "visitor_flow_mvp"
+    / "c0241_20210802_20210803_l3_4_tracking_qa"
+)
 
 REQUIRED_FILES = {
     "analysis": "analysis.json",
@@ -48,6 +54,11 @@ REQUIRED_PRIVACY_MEDIA_FILES = {
     "image": Path("images") / "roi_overlay_preview_masked.jpg",
 }
 PRIVACY_VIDEO_PATH = Path("media") / "roi_preview_masked.webm"
+REQUIRED_TRACKING_QA_FILES = {
+    "summary": Path("qa") / "tracking_qa_summary.json",
+    "events": Path("tracks") / "track_events.csv",
+}
+TRACKING_VIDEO_PATH = Path("media") / "tracking_id_qa.webm"
 
 PREVIEW_EXTENSIONS = {".webm", ".mp4"}
 ALL_TIME_BUCKET = "__all_time_buckets__"
@@ -105,6 +116,18 @@ def validate_privacy_media_dir(results_dir: Path) -> list[Path]:
     return missing
 
 
+def validate_tracking_qa_dir(results_dir: Path) -> list[Path]:
+    """Return required L3-4 tracking QA artifacts that are missing."""
+    missing = [
+        results_dir / filename
+        for filename in REQUIRED_TRACKING_QA_FILES.values()
+        if not (results_dir / filename).is_file()
+    ]
+    if not (results_dir / TRACKING_VIDEO_PATH).is_file():
+        missing.append(results_dir / TRACKING_VIDEO_PATH)
+    return missing
+
+
 def load_l2_artifacts(
     results_dir: Path,
 ) -> tuple[dict[str, Any], pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
@@ -144,12 +167,29 @@ def load_privacy_media(results_dir: Path) -> tuple[dict[str, Any], Path, Path]:
     return summary, image_path, video_path
 
 
+def load_tracking_qa(results_dir: Path) -> tuple[dict[str, Any], Path, Path]:
+    """Load L3-4 tracking QA metadata and artifact paths."""
+    summary_path = results_dir / REQUIRED_TRACKING_QA_FILES["summary"]
+    summary = json.loads(summary_path.read_text(encoding="utf-8"))
+    events_path = results_dir / REQUIRED_TRACKING_QA_FILES["events"]
+    video_path = results_dir / TRACKING_VIDEO_PATH
+    return summary, video_path, events_path
+
+
 def resolve_repo_path(path_text: str) -> Path:
     """Resolve an artifact metadata path relative to the repository root."""
     path = Path(path_text).expanduser()
     if not path.is_absolute():
         path = REPO_ROOT / path
     return path.resolve()
+
+
+def display_path_for_command(path: Path) -> str:
+    """Return a repo-relative path when possible for copyable CLI examples."""
+    try:
+        return str(path.relative_to(REPO_ROOT))
+    except ValueError:
+        return str(path)
 
 
 def source_video_paths(analysis: dict[str, Any]) -> list[Path]:
@@ -690,6 +730,92 @@ def render_operator_roi_video(
         "비마스킹 ROI WebM과 원본 frame은 내부 디버깅 경로로만 관리하고, "
         "고객 PDF에는 L3-2 마스킹 대표 이미지만 허용합니다."
     )
+
+
+def render_operator_tracking_qa(
+    tracking_summary: dict[str, Any] | None,
+    tracking_video_path: Path | None,
+    track_events_path: Path | None,
+    tracking_qa_dir: Path,
+    missing_files: list[Path],
+) -> None:
+    st.markdown("#### 운영자용 ROI·마스킹·Tracking ID 통합 QA")
+    st.caption(
+        "L3-4는 같은 사람이 연속 프레임에서 같은 track ID로 유지되는지 확인하는 "
+        "내부 QA입니다. ROI와 마스킹 위에 clip-local track ID와 이동 궤적을 함께 "
+        "표시하지만, 고유 방문자 수나 통행량을 뜻하지 않습니다."
+    )
+
+    if missing_files or tracking_summary is None or tracking_video_path is None:
+        st.warning(
+            "L3-4 tracking QA 산출물이 아직 없거나 일부 파일이 누락됐습니다. "
+            "아래 명령으로 GPU 산출물을 만든 뒤 새로고침하세요."
+        )
+        if missing_files:
+            st.code("\n".join(str(path) for path in missing_files), language="text")
+        command = (
+            "python scripts/visitor_flow_l3_tracking_qa.py \\\n"
+            "  --video data/curated/aihub_cctv_visitor_flow/v1/c0241_20210802/videos/"
+            "2021-08-02_12-51-00_mon_sunny_out_ju-ja_C0241.mp4 \\\n"
+            "  --model /home/imella0707/yolo11s.pt \\\n"
+            "  --roi-config configs/visitor_flow/c0241_roi_config.json \\\n"
+            f"  --output-dir {display_path_for_command(tracking_qa_dir)} \\\n"
+            "  --device 0 \\\n"
+            "  --imgsz 960 \\\n"
+            "  --conf 0.50 \\\n"
+            "  --tracker bytetrack.yaml \\\n"
+            "  --start-sec 60 \\\n"
+            "  --max-seconds 60 \\\n"
+            "  --trail-length 30 \\\n"
+            "  --max-gap-frames 3"
+        )
+        with st.expander("L3-4 tracking QA 생성 명령", expanded=False):
+            st.code(command, language="bash")
+        return
+
+    if tracking_video_path.is_file():
+        st.video(str(tracking_video_path), format=video_format(tracking_video_path))
+    else:
+        st.error(f"L3-4 tracking QA 영상을 찾지 못했습니다: {tracking_video_path}")
+        return
+
+    results = tracking_summary.get("results", {})
+    settings = tracking_summary.get("settings", {})
+    first, second, third, fourth = st.columns(4)
+    first.metric("처리 frame", f"{int(results.get('processed_frames', 0))}장")
+    second.metric(
+        "활성 track 최대",
+        f"{int(results.get('max_active_tracks_per_frame', 0))}",
+    )
+    third.metric(
+        "clip-local track ID",
+        f"{int(results.get('unique_clip_track_ids', 0))}개",
+    )
+    fourth.metric(
+        "fragment 후보",
+        f"{int(results.get('fragmentation_gap_count', 0))}건",
+    )
+    st.caption(
+        "tracking 영상: "
+        f"{float(results.get('source_fps', 0.0)):.1f} FPS · "
+        f"{float(results.get('processing_fps', 0.0)):.3f} processing FPS · "
+        f"tracker {settings.get('tracker', '-')} · "
+        f"privacy mask {'on' if settings.get('privacy_mask_enabled') else 'off'}"
+    )
+    st.info(
+        "긴 이동 궤적은 track ID 유지 여부를 확인하기 위한 내부 QA 표현입니다. "
+        "고객 PDF와 발표 화면에는 기본 노출하지 않고, L3-5에서는 기준선 통과 이벤트만 "
+        "별도로 검증합니다."
+    )
+
+    if track_events_path is not None and track_events_path.is_file():
+        with st.expander("track event 로그 샘플", expanded=False):
+            track_events = pd.read_csv(track_events_path)
+            st.dataframe(track_events.head(50), hide_index=True, width="stretch")
+            st.caption(f"현재 읽는 L3-4 track events: {track_events_path}")
+    with st.expander("tracking QA summary", expanded=False):
+        st.json(tracking_summary)
+        st.caption(f"현재 읽는 L3-4 결과 폴더: {tracking_qa_dir}")
 
 
 def render_scope_notice() -> None:
@@ -1256,6 +1382,10 @@ def main() -> None:
             "L3-2 개인정보 보호 미디어 폴더",
             value=str(DEFAULT_PRIVACY_MEDIA_DIR.relative_to(REPO_ROOT)),
         )
+        tracking_qa_path_text = st.text_input(
+            "L3-4 tracking QA 폴더",
+            value=str(DEFAULT_TRACKING_QA_DIR.relative_to(REPO_ROOT)),
+        )
         st.caption("절대 경로 또는 저장소 루트 기준 상대 경로를 사용할 수 있습니다.")
         st.divider()
         st.header("고객 보고서 정보")
@@ -1318,6 +1448,20 @@ def main() -> None:
         st.error(f"L3-2 개인정보 보호 미디어 산출물을 읽지 못했습니다: {error}")
         st.stop()
 
+    tracking_qa_dir = resolve_results_dir(tracking_qa_path_text)
+    missing_tracking_files = validate_tracking_qa_dir(tracking_qa_dir)
+    tracking_summary: dict[str, Any] | None = None
+    tracking_video_path: Path | None = None
+    track_events_path: Path | None = None
+    if not missing_tracking_files:
+        try:
+            tracking_summary, tracking_video_path, track_events_path = load_tracking_qa(
+                tracking_qa_dir
+            )
+        except (json.JSONDecodeError, OSError, KeyError) as error:
+            st.warning(f"L3-4 tracking QA 산출물을 읽지 못했습니다: {error}")
+            missing_tracking_files = [tracking_qa_dir / "qa" / "tracking_qa_summary.json"]
+
     report_tab, operator_tab, artifact_tab = st.tabs(
         ["고객 PDF 리포트", "운영 QA", "개발 artifact"]
     )
@@ -1354,6 +1498,15 @@ def main() -> None:
             privacy_summary,
             masked_image_path,
             masked_video_path,
+            show_operator_debug=False,
+        )
+        st.divider()
+        render_operator_tracking_qa(
+            tracking_summary=tracking_summary,
+            tracking_video_path=tracking_video_path,
+            track_events_path=track_events_path,
+            tracking_qa_dir=tracking_qa_dir,
+            missing_files=missing_tracking_files,
         )
         st.divider()
         render_time_trend(dashboard_summary)

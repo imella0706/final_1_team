@@ -235,7 +235,7 @@ Visitor-flow dashboard: http://127.0.0.1:8503
 | 탭 | 용도 | 고객 제공 여부 |
 |---|---|---|
 | 고객 PDF 리포트 | 운영자가 브라우저 인쇄로 PDF를 저장하기 전에 검수하는 리포트 미리보기 | PDF 산출물로 제공 |
-| 운영 QA | ROI, 마스킹 영상, 탐지 품질, grid 해석 검수 | 내부 전용 |
+| 운영 QA | ROI, 마스킹, tracking ID 통합 QA와 탐지 품질, grid 해석 검수 | 내부 전용 |
 | 개발 artifact | `analysis.json`, parquet sample 등 원본 산출물 확인 | 내부 전용 |
 
 고객 PDF 리포트 미리보기:
@@ -266,10 +266,11 @@ Visitor-flow dashboard: http://127.0.0.1:8503
 운영 QA와 개발 artifact:
 
 - ROI 내부 관측의 시간대별 프레임당 평균/p95/max
-- 마스킹 처리된 운영자용 ROI 연속 검증 영상
+- ROI, 마스킹, clip-local tracking ID가 함께 표시된 L3-4 통합 QA 영상
 - 화면 기준 최다 관측 구역과 `6x4` grid 분포
 - 시간대별 p95/max 관측량
 - 검증용 YOLO bbox/grid 영상
+- L3-2 마스킹 단독 WebM은 고객 리포트 대표 이미지 입력과 개발 artifact 검수용으로 관리
 - 수동 ROI polygon이 연속 frame에 표시된 비마스킹 내부 debug artifact 경로
 - 개발/검증용 `analysis.json`, `frames.parquet`, `summary.parquet`, `events.parquet` 원본 확인
 
