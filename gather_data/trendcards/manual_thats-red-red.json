@@ -1,0 +1,125 @@
+{
+  "schema_version": "2.0",
+  "meme_id": "manual:thats-red-red",
+  "display_name": "그건 RED RED",
+  "meaning": "마음에 들지 않거나 피하고 싶은 행동·상황·선택에 'that's red-red' 또는 '그건 RED RED'를 붙여 빨간불처럼 부정 판정을 내리는 밈. 반대로 마음에 드는 선택이나 권장하는 대안에는 'green green'을 붙인다. CORTIS의 곡 'REDRED'에서 팀이 경계하는 태도를 RED, 지향하는 태도를 GREEN으로 표현한 후렴구와 챌린지에서 파생됐다. 광고에서는 소비자가 겪는 불편이나 피하고 싶은 선택을 RED RED로 제시한 뒤, 대표 상품과 입력된 장점을 GREEN GREEN 대안으로 연결한다.",
+  "modalities": [
+    "audio",
+    "text",
+    "image",
+    "video"
+  ],
+  "core_asset": "audio",
+  "usable_assets": [
+    "copy",
+    "image",
+    "video_storyboard"
+  ],
+  "asset_notes": {
+    "copy": "짧은 행동·상황 뒤에 '(that's red-red)' 또는 '그건 RED RED'를 붙인다. 부정적인 항목을 한두 번 반복한 뒤 대표 상품이나 바람직한 대안을 'green green'으로 전환하면 의미가 가장 명확하다.",
+    "video_storyboard": "불편한 상황이 등장할 때 빨간 정지 표시나 X 그래픽과 함께 RED RED를 제시하고, 대표 상품이 문제를 해결하는 장면에서 화면을 전환해 GREEN GREEN을 보여준다. 원곡 음원·멜로디·가사 배열·공식 포인트 안무·뮤직비디오 장면은 복제하지 않는다.",
+    "image": "문제 상황에는 빨간색 X·정지 신호, 대표 상품과 장점에는 초록색 체크·진행 신호를 배치한 비교형 이미지를 사용할 수 있다. 공식 앨범 아트, 뮤직비디오 캡처, 멤버 사진이나 공식 안무 동작을 그대로 사용하지 않는다."
+  },
+  "text_transferability": {
+    "standalone_test": "pass",
+    "evidence": [
+      "CORTIS 공식 숏폼에서 특정 행동 뒤에 'that's red-red'를 반복해 각각의 행동을 부정적으로 판정하는 구조가 확인됨",
+      "공식 챌린지 홍보에서 '챌린지를 참는다? that's red-red / 같이 즐기고 참여한다! green green'처럼 원곡에 없는 상황을 넣은 대조형 변형이 확인됨",
+      "국토교통부의 '불법하도급? 그건 RED RED'와 해양수산부의 물놀이 안전수칙처럼 공공기관 콘텐츠에서도 독립적인 텍스트 문형으로 사용됨",
+      "브랜드와 마케팅 콘텐츠에서 제품 관련 불편은 RED RED, 선호 요소나 해결책은 GREEN GREEN으로 분류하는 변형이 확인됨"
+    ]
+  },
+  "rights_risk": {
+    "level": "high",
+    "notes": "핵심 문구를 짧은 텍스트로 변형하는 경우보다 원곡의 음원·멜로디·후렴구 전체·포인트 안무·뮤직비디오·앨범 아트·멤버 초상을 사용하는 경우 권리 위험이 크게 높아진다. 상업 광고에서는 플랫폼에 등록된 챌린지 음원이라도 광고 이용 권한이 별도로 필요할 수 있으므로 원곡 음원을 사용하지 않거나 필요한 라이선스를 확인한다. 자체 제작 음성과 독립적인 동작·그래픽을 사용하고 CORTIS 또는 소속사가 광고에 참여하거나 보증한 것처럼 표현하지 않는다."
+  },
+  "text_patterns": [
+    "{불편상황1} (that's red-red)\n{불편상황2} (that's red-red)\n{대표상품}의 {입력특징1}? green green",
+    "{문제키워드}? 그건 RED RED\n{대표상품}으로 바꾸면? GREEN GREEN\n{입력특징1}까지 green green",
+    "{피하고싶은선택}은 RED RED\n{대표상품}의 {입력특징1}은 GREEN GREEN\n오늘의 선택은 {대표상품}",
+    "{불편상황1}, {불편상황2}? that's red-red\n{대표상품}과 {입력특징1}? that's green-green"
+  ],
+  "copy_markers": [
+    "that's red-red",
+    "그건 RED RED",
+    "RED RED",
+    "green green",
+    "GREEN GREEN"
+  ],
+  "copy_structure": {
+    "setup_source": "pain_points",
+    "setup_position": "before_marker",
+    "marker_template": "{setup} (that's red-red)",
+    "marker_occurrences": 1,
+    "reveal_source": "primary_product",
+    "reveal_position": "after_marker",
+    "support_source": "input_features",
+    "minimum_support_count": 1,
+    "support_relation": "green_alternative",
+    "reason_ending": "green green"
+  },
+  "suitable_channels": [
+    "instagram",
+    "youtube_shorts",
+    "tiktok",
+    "x",
+    "threads"
+  ],
+  "suitable_tones": [
+    "playful",
+    "bold",
+    "witty",
+    "youthful",
+    "rhythmic"
+  ],
+  "target_audiences": [
+    "teens",
+    "twenties",
+    "college_students",
+    "kpop_fandoms",
+    "shortform_users"
+  ],
+  "usage_rules": [
+    "소비자가 피하고 싶어 하는 실제 불편·문제·행동을 먼저 제시하고 바로 뒤에 RED RED를 붙인다",
+    "대표 상품이나 사용자가 입력한 긍정적인 특징은 RED RED가 아니라 GREEN GREEN 대안으로 연결한다",
+    "RED RED로 분류할 항목은 한 문장보다 짧은 명사구나 행동 표현으로 작성한다",
+    "RED RED 항목을 한두 번 반복한 뒤 GREEN GREEN으로 전환해 신호등처럼 대비되는 구조를 만든다",
+    "대표 상품은 한 가지를 중심 대상으로 삼고 입력 특징은 상품을 선택해야 하는 GREEN GREEN 근거로 사용한다",
+    "괄호, 줄바꿈, 대문자 표기와 반복을 활용해 원곡의 반응형 리듬을 텍스트로 재구성한다",
+    "RED RED는 단순히 빨간색이라는 의미가 아니라 불호·비권장·피하고 싶은 선택이라는 의미로 사용한다",
+    "상품의 맛·성능·효능·가격·혜택은 사용자가 입력했거나 확인된 정보만 사용한다",
+    "RED와 GREEN의 시각적 대비를 사용하되 공식 뮤직비디오나 안무와 다른 독립적인 그래픽을 제작한다"
+  ],
+  "prohibited_usage": [
+    "불편 상황 없이 대표 상품 자체에 RED RED를 붙여 상품이 부정적으로 보이게 만드는 방식",
+    "RED RED와 GREEN GREEN의 대상이 무엇인지 밝히지 않고 색상 표현만 나열하는 방식",
+    "대표 상품과 입력 특징을 모두 RED RED로 분류해 광고의 긍정적인 결론이 사라지는 방식",
+    "입력되지 않은 효능·성능·할인·인증·환경 효과를 GREEN GREEN 근거로 만들어내는 사용",
+    "경쟁사나 경쟁 상품의 실명을 RED RED로 지목해 비방하거나 열등하다고 단정하는 사용",
+    "실제 인물의 외모·신체·성격·출신·질병 등을 RED RED로 판정해 조롱하는 사용",
+    "사고 피해자·범죄 피해자·재난·질병과 같은 민감한 사안을 가볍게 RED RED로 소비하는 방식",
+    "심각한 불법행위나 안전사고를 제품 홍보를 위한 장난스러운 소재로 축소하는 사용",
+    "원곡 음원·멜로디·긴 가사 구간·보컬·포인트 안무를 허가 없이 복제하거나 유사하게 재현하는 사용",
+    "공식 뮤직비디오 캡처·앨범 아트·멤버 초상·공식 로고를 허가 없이 광고 소재에 사용하는 방식",
+    "CORTIS나 소속사가 해당 상품을 공식적으로 광고·추천·협업한 것처럼 오인시키는 사용"
+  ],
+  "curation_meta": {
+    "mode": "manual",
+    "status": "reviewed",
+    "notes": "광고용 텍스트 전환 가능성을 확인하기 위해 사람이 직접 작성·검수한 mock 카드다. 공식 발매 자료, 공식 숏폼 챌린지, 밈 소개 자료, 공공기관 및 브랜드의 변형 사례를 참고했다. 원곡 음원·안무·영상·초상 등 개별 자산의 실제 상업 이용 권리까지 확인한 것은 아니다."
+  },
+  "trend_meta": {
+    "status": "active",
+    "collected_week": "2026-W30",
+    "sources": [
+      "weverse",
+      "youtube_shorts",
+      "instagram",
+      "threads",
+      "eopla",
+      "public_agency_sns",
+      "brand_sns"
+    ]
+  },
+  "is_mock": true
+}
