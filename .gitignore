@@ -41,10 +41,11 @@ Thumbs.db
 outputs
 /runtime/
 
-# Local CosyVoice runtime and licensed voice references
+# Local CosyVoice runtime and disabled voice references
 /services/cosyvoice/.runtime/
 /services/cosyvoice/.venv/
-/services/cosyvoice/voices/*.wav
+/services/cosyvoice/voices/man_whisper.wav
+/services/cosyvoice/voices/man_whisper2.wav
 
 # Airflow local runtime artifacts
 airflow/logs/
