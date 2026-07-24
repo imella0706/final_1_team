@@ -33,6 +33,14 @@ outputs/visitor_flow_mvp/c0241_20210802_20210803_l3_2_privacy_media/
 │  └─ roi_preview_masked.webm
 └─ qa/
    └─ masking_qa_summary.json
+
+outputs/visitor_flow_mvp/c0241_20210802_20210803_l3_4_tracking_qa/
+├─ media/
+│  └─ tracking_id_qa.webm
+├─ tracks/
+│  └─ track_events.csv
+└─ qa/
+   └─ tracking_qa_summary.json
 ```
 
 ## L2-4 artifact 생성
@@ -149,6 +157,29 @@ ROI 좌표를 직접 다시 잡을 때는 기준 프레임 이미지에서 꼭�
 
 `roi_preview_masked.webm`과 `roi_overlay_preview_masked.jpg`는 운영자 대시보드 기본 표시와 L3-3 고객 PDF 입력으로 사용합니다. L3-2는 용량과 재생 계약을 단순하게 유지하기 위해 WebM만 생성합니다. 비마스킹 `roi_overlay_preview.jpg`와 `*_roi_*.webm`은 내부 디버깅 경로로만 관리합니다.
 
+## L3-4 tracking ID QA 영상 생성
+
+L3-4는 통행량이나 방문자 수를 세는 단계가 아닙니다. 같은 사람이 연속 frame에서 같은 `track_id`로 유지되는지, ID switch나 track fragmentation 후보가 보이는지 운영자가 확인하기 위한 QA 산출물을 만듭니다. 공식 실험 산출물은 사용자 `ssakda` CUDA 환경에서 `--device 0`로 생성합니다.
+
+```bash
+# [Design Intent] 연속 frame에서 clip-local track_id가 안정적으로 유지되는지 검수하고, L3-5 line crossing 전에 tracker 품질을 확인한다.
+/home/imella0707/miniconda3/envs/ssakda/bin/python scripts/visitor_flow_l3_tracking_qa.py \
+  --video data/curated/aihub_cctv_visitor_flow/v1/c0241_20210802/videos/2021-08-02_12-51-00_mon_sunny_out_ju-ja_C0241.mp4 \
+  --model /home/imella0707/yolo11s.pt \
+  --roi-config configs/visitor_flow/c0241_roi_config.json \
+  --output-dir outputs/visitor_flow_mvp/c0241_20210802_20210803_l3_4_tracking_qa \
+  --device 0 \
+  --imgsz 960 \
+  --conf 0.50 \
+  --tracker bytetrack.yaml \
+  --start-sec 60 \
+  --max-seconds 60 \
+  --trail-length 30 \
+  --max-gap-frames 3
+```
+
+`tracking_id_qa.webm`은 내부 운영자 QA 전용입니다. 영상에는 clip-local track ID와 최근 bottom-center trajectory가 표시되며, 사람 bbox 상단부에는 기본적으로 mosaic가 적용됩니다. `track_events.csv`와 `tracking_qa_summary.json`은 후속 L3-5 line crossing 기준선 검증에 사용할 후보 입력입니다. 이 결과를 고유 방문자 수, 하루 통행량, 매장 입장객 수로 해석하면 안 됩니다.
+
 ## 실행
 
 저장소 루트에서 실행합니다.
@@ -157,7 +188,7 @@ ROI 좌표를 직접 다시 잡을 때는 기준 프레임 이미지에서 꼭�
 
 CCTV 상권분석은 기존 BrandMate 광고 생성 로직에 직접 섞지 않습니다. 현재 MVP에서 BrandMate 웹의 `상권분석` 메뉴는 고객에게 서비스 소개와 측정신청 화면을 제공하는 진입점으로만 둡니다. 분석 결과 화면은 고객에게 직접 공개하지 않고, 내부 운영자가 Streamlit에서 검수한 뒤 PDF 리포트 파일로 전달합니다.
 
-Streamlit 대시보드는 내부 back-office 도구입니다. `고객 PDF 리포트` 탭은 고객이 접속하는 화면이 아니라 L3-3 `customer_report.html`/`customer_report.pdf`로 고정할 리포트 미리보기입니다. `운영 QA`와 `개발 artifact` 탭은 내부 전용이며 고객에게 공유하지 않습니다.
+Streamlit 대시보드는 내부 back-office 도구입니다. `고객 PDF 리포트` 탭은 고객이 접속하는 화면이 아니라 운영자가 브라우저 인쇄로 PDF를 저장하기 전에 검수하는 리포트 미리보기입니다. `운영 QA`와 `개발 artifact` 탭은 내부 전용이며 고객에게 공유하지 않습니다. PDF 자동 저장 스크립트는 반복 발행이 필요해지는 후속 단계에서 도입합니다.
 
 장기간 관측을 요구하는 고객이 늘어나고 분석 job, 파일 권한, 결제/프리미엄 entitlement가 안정화된 뒤에만 고객이 직접 로그인해 결과 현황을 보는 대시보드/포털을 별도 제품 단계로 검토합니다.
 
@@ -203,7 +234,7 @@ Visitor-flow dashboard: http://127.0.0.1:8503
 
 | 탭 | 용도 | 고객 제공 여부 |
 |---|---|---|
-| 고객 PDF 리포트 | L3-3 `customer_report.html`/`customer_report.pdf`로 고정할 리포트 미리보기 | PDF 산출물로 제공 |
+| 고객 PDF 리포트 | 운영자가 브라우저 인쇄로 PDF를 저장하기 전에 검수하는 리포트 미리보기 | PDF 산출물로 제공 |
 | 운영 QA | ROI, 마스킹 영상, 탐지 품질, grid 해석 검수 | 내부 전용 |
 | 개발 artifact | `analysis.json`, parquet sample 등 원본 산출물 확인 | 내부 전용 |
 
@@ -262,3 +293,20 @@ Visitor-flow dashboard: http://127.0.0.1:8503
 - 운영자 대시보드 기본 화면에는 L3-2 마스킹 이미지와 WebM만 표시합니다.
 - 비마스킹 ROI 검증 영상은 내부 debug artifact이며 기본 화면에서 직접 재생하지 않습니다.
 - ROI overlay 정지 이미지는 얼굴 마스킹 후 고객 PDF의 `분석화면 예시`로 포함할 수 있습니다.
+
+## 테스트
+
+저장소 루트에서 실행합니다. `pytest` 콘솔 entrypoint가 repo root를 `sys.path`에 넣지 못하는 환경 차이를 피하려면 `python -m pytest`를 기본 검증 명령으로 사용합니다.
+
+```bash
+# [Design Intent] 테스트 import path를 안정화하기 위해 conda env의 Python module 실행 방식을 기본 검증 명령으로 둔다.
+/home/imella0707/miniconda3/envs/ssakda/bin/python -m py_compile \
+  scripts/visitor_flow_l3_tracking_qa.py \
+  scripts/visitor_flow_l3_privacy_media.py \
+  scripts/visitor_flow_l3_roi_aggregate.py
+
+/home/imella0707/miniconda3/envs/ssakda/bin/python -m pytest -q \
+  tests/test_visitor_flow_l3_tracking_qa.py \
+  tests/test_visitor_flow_l3_privacy_media.py \
+  tests/test_visitor_flow_l3_roi_aggregate.py
+```
