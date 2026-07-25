@@ -208,6 +208,10 @@ def wav_duration_seconds(audio_bytes: bytes) -> float:
         raise RuntimeError(f"응답 WAV 길이를 읽지 못했습니다: {error}") from error
 
 
+def rounded_voice_time_seconds(voice_time: float) -> int:
+    return int(voice_time + 0.5)
+
+
 def check_service(base_url: str, required_voice: str, timeout: float) -> None:
     request = urllib.request.Request(f"{base_url.rstrip('/')}/health")
     try:
@@ -283,7 +287,7 @@ def append_result(
                 "num": case.num,
                 "voice": case.voice,
                 "tone": case.tone,
-                "voice_time(s)": f"{voice_time:.3f}",
+                "voice_time(s)": rounded_voice_time_seconds(voice_time),
                 "create_time(s)": f"{create_time:.3f}",
                 "text_type": case.text_type,
             }

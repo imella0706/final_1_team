@@ -68,6 +68,11 @@ def test_wav_duration_uses_frame_count_and_sample_rate() -> None:
     assert AUTOMATION.wav_duration_seconds(output.getvalue()) == 1.25
 
 
+def test_voice_time_uses_conventional_whole_second_rounding() -> None:
+    assert AUTOMATION.rounded_voice_time_seconds(6.480) == 6
+    assert AUTOMATION.rounded_voice_time_seconds(6.500) == 7
+
+
 def test_append_result_preserves_expected_csv_columns(tmp_path) -> None:
     csv_path = tmp_path / "voice-test.csv"
     case = AUTOMATION.build_test_plan()[54]
@@ -81,7 +86,7 @@ def test_append_result_preserves_expected_csv_columns(tmp_path) -> None:
             "num": "55",
             "voice": "woman",
             "tone": "serious",
-            "voice_time(s)": "6.125",
+            "voice_time(s)": "6",
             "create_time(s)": "5.432",
             "text_type": "med1",
         }

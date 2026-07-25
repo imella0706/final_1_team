@@ -100,8 +100,9 @@ COSYVOICE_INFERENCE_MODE=instruct bash start.sh
 ## Voice benchmark automation
 
 The Windows-side benchmark script resumes from `voice test.csv`, generates the
-next planned case, measures WAV duration from its frame count, records request
-latency, and saves the audio under `test voices`.
+next planned case, measures WAV duration from its frame count, records the
+duration as a conventionally rounded whole second, records request latency,
+and saves the audio under `test voices`.
 
 Preview the next test without generating audio:
 
