@@ -97,6 +97,36 @@ of the instruction:
 COSYVOICE_INFERENCE_MODE=instruct bash start.sh
 ```
 
+## Voice benchmark automation
+
+The Windows-side benchmark script resumes from `voice test.csv`, generates the
+next planned case, measures WAV duration from its frame count, records request
+latency, and saves the audio under `test voices`.
+
+Preview the next test without generating audio:
+
+```powershell
+.\apps\api\.venv\Scripts\python.exe .\scripts\run_cosyvoice_test.py --dry-run
+```
+
+Generate and record the next test:
+
+```powershell
+.\apps\api\.venv\Scripts\python.exe .\scripts\run_cosyvoice_test.py
+```
+
+Use `--count 3` for the next three cases or `--all` for every remaining case.
+The defaults are:
+
+```text
+CSV:       ../voice test.csv
+WAV files: ../test voices/
+```
+
+Close the CSV in Excel before running the script. The script checks that the
+CSV is writable before starting generation and removes a newly generated WAV
+if appending its measurement fails.
+
 ## Troubleshooting
 
 If installation previously stopped while building `openai-whisper` with
