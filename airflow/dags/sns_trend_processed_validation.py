@@ -32,6 +32,12 @@ GCS_LOGS_PREFIX = os.getenv(
     "BRANDMATE_AIRFLOW_GCS_LOGS_PREFIX",
     "gs://ssakda/projects/brandmate/logs/data_pipeline/airflow",
 ).rstrip("/")
+SNS_TREND_PROCESSED_GCS_ROOT = os.getenv(
+    "BRANDMATE_SNS_TREND_PROCESSED_GCS_ROOT", ""
+).strip()
+SNS_TREND_VALIDATION_SCHEDULE = (
+    os.getenv("BRANDMATE_SNS_TREND_VALIDATION_SCHEDULE", "").strip() or None
+)
 
 for import_path in (INCLUDE_DIR,):
     import_path_value = str(import_path)
@@ -44,6 +50,7 @@ from airflow.operators.python import get_current_context  # noqa: E402
 
 from sns_trend.storage import (  # noqa: E402
     StorageError,
+    discover_latest_gcs_processed_version,
     sync_gcs_prefix_to_local,
     upload_json_to_gcs,
 )
@@ -94,10 +101,101 @@ def _safe_path_fragment(value: str) -> str:
     return safe_value or "unknown"
 
 
+def _optional_conf_str(conf: dict[str, Any], key: str) -> str | None:
+    value = conf.get(key)
+    if value is None:
+        return None
+    normalized = str(value).strip()
+    return normalized or None
+
+
+def _version_from_path(value: str) -> str | None:
+    match = re.search(r"(?:^|/)v([1-9]\d*)(?:/|$)", value.strip("/"))
+    if not match:
+        return None
+    return f"v{match.group(1)}"
+
+
+def _gcs_processed_prefix(*, gcs_root: str, version: str) -> str:
+    return f"{gcs_root.rstrip('/')}/{version}/{DEFAULT_ARTIFACT_NAME}/"
+
+
+def _resolve_processed_config(
+    *,
+    conf: dict[str, Any],
+    run_id: str,
+    processed_gcs_root: str = SNS_TREND_PROCESSED_GCS_ROOT,
+) -> dict[str, Any]:
+    requested_version = _optional_conf_str(conf, "version")
+    processed_prefix = _optional_conf_str(conf, "processed_prefix")
+    source_gcs_prefix = _optional_conf_str(conf, "source_gcs_prefix") or _optional_conf_str(
+        conf, "processed_gcs_prefix"
+    )
+    discovery_summary = None
+
+    if processed_prefix and processed_prefix.startswith("gs://") and not source_gcs_prefix:
+        source_gcs_prefix = processed_prefix
+        processed_prefix = None
+
+    if source_gcs_prefix:
+        version = requested_version or _version_from_path(source_gcs_prefix) or DEFAULT_VERSION
+        source_gcs_prefix = source_gcs_prefix.rstrip("/") + "/"
+        processed_dir = _cache_processed_dir(version=version, run_id=run_id)
+        source_type = "gcs"
+    elif requested_version and processed_gcs_root:
+        version = requested_version
+        source_gcs_prefix = _gcs_processed_prefix(
+            gcs_root=processed_gcs_root,
+            version=version,
+        )
+        processed_dir = _cache_processed_dir(version=version, run_id=run_id)
+        source_type = "gcs"
+    elif processed_gcs_root:
+        try:
+            discovery_summary = discover_latest_gcs_processed_version(
+                gcs_root=processed_gcs_root,
+                artifact_name=DEFAULT_ARTIFACT_NAME,
+            )
+        except StorageError as error:
+            raise AirflowException(str(error)) from error
+        version = str(discovery_summary["version"])
+        source_gcs_prefix = str(discovery_summary["source_gcs_prefix"])
+        processed_dir = _cache_processed_dir(version=version, run_id=run_id)
+        source_type = "gcs"
+    else:
+        version = requested_version or _version_from_path(processed_prefix or "") or DEFAULT_VERSION
+        processed_prefix = processed_prefix or (
+            "data/processed/sns_trend/"
+            f"{version}/{DEFAULT_ARTIFACT_NAME}/"
+        )
+        processed_dir = _repo_path(processed_prefix)
+        source_type = "local"
+
+    return {
+        "version": version,
+        "source_type": source_type,
+        "source_gcs_prefix": source_gcs_prefix,
+        "gcs_version_discovery": discovery_summary,
+        "processed_dir": str(processed_dir),
+        "json_path": str(processed_dir / f"{DEFAULT_ARTIFACT_NAME}.json"),
+        "csv_path": str(processed_dir / f"{DEFAULT_ARTIFACT_NAME}.csv"),
+        "expected_card_count": _int_conf(conf.get("expected_card_count"), default=20),
+        "expected_schema_version": conf.get("expected_schema_version", "2.0"),
+        "api_loader_smoke": _bool_conf(conf.get("api_loader_smoke"), default=True),
+        "dvc_check": _bool_conf(conf.get("dvc_check"), default=True),
+        "require_dvc": _bool_conf(conf.get("require_dvc"), default=False),
+        "write_gcs_summary": _bool_conf(
+            conf.get("write_gcs_summary"),
+            default=bool(source_gcs_prefix),
+        ),
+        "gcs_logs_prefix": str(conf.get("gcs_logs_prefix") or GCS_LOGS_PREFIX),
+    }
+
+
 @dag(
     dag_id=DAG_ID,
     start_date=datetime(2026, 7, 26),
-    schedule=None,
+    schedule=SNS_TREND_VALIDATION_SCHEDULE,
     catchup=False,
     max_active_runs=1,
     tags=["brandmate", "sns_trend", "processed", "validation"],
@@ -124,45 +222,7 @@ def sns_trend_processed_validation() -> None:
         run_id = str(getattr(dag_run, "run_id", "manual"))
         conf = dict(getattr(dag_run, "conf", None) or {})
 
-        version = str(conf.get("version") or DEFAULT_VERSION)
-        processed_prefix = str(
-            conf.get("processed_prefix")
-            or (
-                "data/processed/sns_trend/"
-                f"{version}/{DEFAULT_ARTIFACT_NAME}/"
-            )
-        )
-        source_gcs_prefix = conf.get("source_gcs_prefix") or conf.get("processed_gcs_prefix")
-        if processed_prefix.startswith("gs://") and not source_gcs_prefix:
-            source_gcs_prefix = processed_prefix
-
-        if source_gcs_prefix:
-            processed_dir = _cache_processed_dir(version=version, run_id=run_id)
-            source_type = "gcs"
-        else:
-            processed_dir = _repo_path(processed_prefix)
-            source_type = "local"
-
-        return {
-            "version": version,
-            "source_type": source_type,
-            "source_gcs_prefix": str(source_gcs_prefix).rstrip("/") + "/"
-            if source_gcs_prefix
-            else None,
-            "processed_dir": str(processed_dir),
-            "json_path": str(processed_dir / f"{DEFAULT_ARTIFACT_NAME}.json"),
-            "csv_path": str(processed_dir / f"{DEFAULT_ARTIFACT_NAME}.csv"),
-            "expected_card_count": _int_conf(conf.get("expected_card_count"), default=20),
-            "expected_schema_version": conf.get("expected_schema_version", "2.0"),
-            "api_loader_smoke": _bool_conf(conf.get("api_loader_smoke"), default=True),
-            "dvc_check": _bool_conf(conf.get("dvc_check"), default=True),
-            "require_dvc": _bool_conf(conf.get("require_dvc"), default=False),
-            "write_gcs_summary": _bool_conf(
-                conf.get("write_gcs_summary"),
-                default=bool(source_gcs_prefix),
-            ),
-            "gcs_logs_prefix": str(conf.get("gcs_logs_prefix") or GCS_LOGS_PREFIX),
-        }
+        return _resolve_processed_config(conf=conf, run_id=run_id)
 
     @task
     def sync_processed_package_from_gcs(config: dict[str, Any]) -> dict[str, Any]:
