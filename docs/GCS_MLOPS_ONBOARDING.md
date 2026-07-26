@@ -6,14 +6,17 @@ update: 2026.07.17
 
 일반 데이터셋 담당자가 새 데이터셋을 공유할 때는 이 문서 전체를 먼저 볼 필요가 없습니다.
 데이터 단계 판단, 제출물, manifest/description 작성 기준은
-[BrandMate Dataset Submission Onboarding](./DATASET_SUBMISSION_ONBOARDING.md)을 따릅니다.
-데이터셋 담당자가 GCS 폴더 구조 초안을 만들 때도 먼저 `DATASET_SUBMISSION_ONBOARDING.md`의
+[BrandMate Dataset Convention Onboarding](./GCS_DATASET_CONVENTION_ONBOARDING.md)을 따릅니다.
+GCS에 이미 올라간 데이터를 내려받거나 담당 데이터셋을 업로드하는 명령만 필요하면
+[BrandMate GCS Dataset Up/Down Onboarding](./GCS_DATASET_UPDOWN_ONBOARDING.md)을 봅니다.
+데이터셋 담당자가 GCS 폴더 구조 초안을 만들 때도 먼저 `GCS_DATASET_CONVENTION_ONBOARDING.md`의
 GCS 위치 규칙을 기준으로 잡습니다.
 이 문서는 bucket 구조, 권한, DVC remote, 업로드/복구 절차를 관리해야 할 때 참고합니다.
 
 데이터셋을 새로 만들거나 GCS에 업로드하기 전에는 데이터셋 제출 규격을 먼저 확인합니다.
 
-- [BrandMate Dataset Submission Onboarding](./DATASET_SUBMISSION_ONBOARDING.md)
+- [BrandMate Dataset Convention Onboarding](./GCS_DATASET_CONVENTION_ONBOARDING.md)
+- [BrandMate GCS Dataset Up/Down Onboarding](./GCS_DATASET_UPDOWN_ONBOARDING.md)
 - [BrandMate Airflow Onboarding](./AIRFLOW_ONBOARDING.md)
 
 ## 1. 설계 원칙
@@ -107,9 +110,6 @@ gs://ssakda/
               keyword_terms/
                 careet/
                 gogumafarm/
-          food_101/
-            v1/
-
         processed/
           aihub_food_image_text/
             v1/
@@ -117,8 +117,6 @@ gs://ssakda/
           sns_trend/
             v1/
               cross_platform_signal_top_candidates/
-          food_101/
-            v1/
           merged/
             v1/
 
@@ -129,7 +127,6 @@ gs://ssakda/
           source_split/
             aihub_food_image_text/
             sns/
-            food_101/
 
       models/
         flux_schnell_gguf/
@@ -160,14 +157,13 @@ gs://ssakda/
 | `data/curated/aihub_food_image_text/v1/` | AIHub `비전영역 음식이미지 및 정보소개 텍스트 데이터` 원본에서 BrandMate에 쓸 샘플만 선별한 데이터 풀입니다. 학습/전처리/평가셋 후보를 뽑는 문제은행 역할입니다. |
 | `data/curated/sns_trend/v1/platform_cleaned/` | YouTube, Gogumafarm, Careet, Naver처럼 플랫폼별로 null, 중복, 불필요 컬럼을 제거한 1차 정리본입니다. |
 | `data/curated/sns_trend/v1/keyword_terms/` | 플랫폼별 데이터에서 후보 밈/트렌드 키워드와 표현만 뽑은 목록입니다. 아직 최종 파이프라인 입력이라기보다 후보 풀입니다. |
-| `data/curated/food_101/v1/` | Food-101 기반 음식 이미지 데이터 풀입니다. 카페/음식점 광고 이미지 보강이나 음식 도메인 평가에 사용합니다. |
 | `data/processed/{dataset_name}/v1/{artifact_name}/` | dataset별 curated 데이터를 모델/API/평가 파이프라인이 바로 쓸 수 있게 전처리한 산출물입니다. 예: `data/processed/aihub_food_image_text/v1/food_description_data/` |
 | `data/processed/sns_trend/v1/cross_platform_signal_top_candidates/` | YouTube, Gogumafarm, Careet, Naver 후보를 merge한 뒤 source별 signal score를 정량화하고 상위 후보만 남긴 processed 산출물입니다. 현재 export는 demo query 기준 JSON/CSV이며, 프롬프트/RAG 파이프라인에서 바로 소비할 수 있습니다. |
 | `data/processed/merged/v1/` | dataset별 processed 데이터를 동일 schema로 맞춘 뒤 하나의 학습/비교실험 경로로 합친 통합 데이터셋입니다. manifest 없이 임의로 합치지 않습니다. |
 | `data/eval/smoke/` | 배포 직후 FastAPI, ComfyUI, model call이 살아있는지만 확인하는 최소 시험지입니다. 품질 평가용이 아니라 연결 확인용입니다. |
 | `data/eval/comparison/` | FLUX vs SDXL 등 모델/프롬프트/전처리 비교와 최종 리포트에 쓰는 고정 시험지입니다. 바꾸면 이전 실험과 비교가 깨집니다. |
 | `data/eval/final/` | comparison과 별도로 최종 발표용 평가셋을 잠그고 싶을 때만 쓰는 고정 시험지입니다. 현재는 비워둘 수 있습니다. |
-| `data/eval/source_split/{dataset_name}/` | AIHub, SNS, Food-101 등 dataset별로 성능이 어디서 약한지 따로 보는 시험지입니다. 전체 평균에 숨은 약점을 찾는 용도입니다. |
+| `data/eval/source_split/{dataset_name}/` | AIHub, SNS 등 dataset별로 성능이 어디서 약한지 따로 보는 시험지입니다. 전체 평균에 숨은 약점을 찾는 용도입니다. |
 | `models/flux_schnell_gguf/` | FLUX GGUF 모델의 manifest, ComfyUI workflow, 설정 파일을 두는 곳입니다. 모델 weight 자체를 무조건 여기에 올린다는 뜻은 아닙니다. |
 | `models/sdxl/` | SDXL 비교실험용 manifest, workflow, 설정 파일을 두는 곳입니다. 새 모델을 추가하면 같은 방식으로 model folder를 추가합니다. |
 | `outputs/evaluations/` | 내부 터미널 평가 runner가 만든 report, metric, 평가 중 생성 이미지를 저장합니다. 실험 산출물이며 웹서비스 사용자 결과와 섞지 않습니다. |
@@ -463,6 +459,15 @@ gcloud storage ls --recursive gs://ssakda/projects/brandmate/
 gcloud storage ls gs://ssakda/dvc/brandmate/
 ```
 
+`setup_gcs_layout.sh`는 MLOps/인프라 담당자가 초기 GCS 폴더 구조를 세팅할 때
+사용하는 bootstrap 스크립트입니다. 현재 팀원들은 이 파일을 사용할 필요가
+없습니다. 이미 업로드된 데이터는 `gcloud storage rsync`로 내려받습니다.
+
+일반 팀원이 이미 업로드된 데이터를 내려받거나 담당 데이터셋을 업로드할 때는
+[BrandMate GCS Dataset Up/Down Onboarding](./GCS_DATASET_UPDOWN_ONBOARDING.md)을 사용합니다.
+이 문서에는 `sns_trend v2`, `aihub_food_image_text` 업로드/다운로드 예시와
+`--delete-unmatched-destination-objects` 금지 기준을 따로 정리합니다.
+
 ## 8. 데이터 등록 기준
 
 업로드 대상별 역할을 먼저 구분합니다. 이 기준을 어기면 Git, GCS, DVC가 같은 일을 중복해서 하게 되고 나중에 팀원이 복구 절차를 이해하지 못합니다.
@@ -563,7 +568,7 @@ feature store로 승격하는 게 맞습니다.
 
 ## 10. Manifest 작성
 
-Manifest와 description 작성 기준은 [DATASET_SUBMISSION_ONBOARDING.md](./DATASET_SUBMISSION_ONBOARDING.md)를 따릅니다.
+Manifest와 description 작성 기준은 [GCS_DATASET_CONVENTION_ONBOARDING.md](./GCS_DATASET_CONVENTION_ONBOARDING.md)를 따릅니다.
 
 현재 AIHub 음식 이미지/텍스트 5GB processed artifact 기준 파일은 아래와 같습니다.
 

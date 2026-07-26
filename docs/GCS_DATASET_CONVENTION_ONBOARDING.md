@@ -1,4 +1,4 @@
-# BrandMate Dataset Submission Guide
+# BrandMate Dataset Convention Onboarding
 update: 2026.07.19
 
 이 문서는 BrandMate 팀원이 데이터셋을 만들고 공유할 때 지켜야 하는 공통 규칙입니다.
@@ -531,9 +531,9 @@ MLOps/인프라 담당자용 전체 bucket 구조, DVC remote, 권한, 업로드
 
 | 상황 | 먼저 볼 문서 |
 | --- | --- |
-| 데이터셋 담당자가 자기 데이터의 폴더 구조 초안을 만들 때 | `DATASET_SUBMISSION_ONBOARDING.md` |
-| `raw / curated / processed` 단계를 판단할 때 | `DATASET_SUBMISSION_ONBOARDING.md` |
-| `manifest.json`, `description.md`를 작성할 때 | `DATASET_SUBMISSION_ONBOARDING.md` |
+| 데이터셋 담당자가 자기 데이터의 폴더 구조 초안을 만들 때 | `GCS_DATASET_CONVENTION_ONBOARDING.md` |
+| `raw / curated / processed` 단계를 판단할 때 | `GCS_DATASET_CONVENTION_ONBOARDING.md` |
+| `manifest.json`, `description.md`를 작성할 때 | `GCS_DATASET_CONVENTION_ONBOARDING.md` |
 | 실제 GCS bucket 전체 구조, 권한, DVC remote를 관리할 때 | `GCS_MLOPS_ONBOARDING.md` |
 | `dvc add`, `dvc push`, DVC pointer 갱신 기준을 확인할 때 | `GCS_MLOPS_ONBOARDING.md` |
 

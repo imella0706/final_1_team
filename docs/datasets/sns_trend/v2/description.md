@@ -80,9 +80,6 @@
 | `gather_data/processed/*.json` | `data/curated/sns_trend/v2/meme_cards_reviewed/<source_family>/` | `schema_version=2.0`, `curation_meta.status=reviewed`, `trend_meta.status=active` 조건을 통과한 reviewed 카드 후보 풀 |
 | `gather_data/processed/*.json` | `data/processed/sns_trend/v2/cross_platform_signal_top_candidates/cross_platform_signal_top_candidates.json` | 개별 JSON 20개를 하나의 공식 API/RAG/프롬프트 입력 payload로 병합한 JSON |
 | `gather_data/processed/*.json` | `data/processed/sns_trend/v2/cross_platform_signal_top_candidates/cross_platform_signal_top_candidates.csv` | merged JSON과 같은 20개 카드의 사람이 검수하기 쉬운 CSV index |
-| `gather_data/processed/*.json` | `gs://ssakda/projects/brandmate/data/landing/sns_trend/week=2026-W30/raw/<source_family>/` | GCS landing 업로드 위치 |
-| `gather_data/processed/*.json` | `gs://ssakda/projects/brandmate/data/curated/sns_trend/v2/meme_cards_reviewed/<source_family>/` | GCS curated 업로드 위치 |
-| `gather_data/processed/*.json` | `gs://ssakda/projects/brandmate/data/processed/sns_trend/v2/cross_platform_signal_top_candidates/` | GCS processed 업로드 위치 |
 
 ## Recommended GCS Folder Structure
 

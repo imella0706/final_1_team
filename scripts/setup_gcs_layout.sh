@@ -115,9 +115,10 @@ main() {
 
   # [Design Intent] Keep datasets isolated so license, quality, and
   # preprocessing issues can be traced back to the original dataset.
+  gcs_cp_keep "$(project_path data/landing/sns_trend/week=2026-W30/raw)"
   gcs_cp_keep "$(project_path data/curated/aihub_food_image_text/v1)"
   gcs_cp_keep "$(project_path data/curated/sns/v1)"
-  gcs_cp_keep "$(project_path data/curated/food_101/v1)"
+  gcs_cp_keep "$(project_path data/curated/sns_trend/v2/meme_cards_reviewed)"
 
   # [Design Intent] Airflow MVP validates the official sns_trend processed
   # package that API/DVC will consume; landing/curated remain outside this gate.
@@ -125,7 +126,6 @@ main() {
 
   gcs_cp_keep "$(project_path data/processed/aihub_food_image_text/v1/food_description_data)"
   gcs_cp_keep "$(project_path data/processed/sns/v1)"
-  gcs_cp_keep "$(project_path data/processed/food_101/v1)"
   gcs_cp_keep "$(project_path data/processed/merged/v1)"
 
   # [Design Intent] Evaluation splits are named by purpose: smoke catches broken
@@ -135,7 +135,6 @@ main() {
   gcs_cp_keep "$(project_path data/eval/final)"
   gcs_cp_keep "$(project_path data/eval/source_split/aihub_food_image_text)"
   gcs_cp_keep "$(project_path data/eval/source_split/sns)"
-  gcs_cp_keep "$(project_path data/eval/source_split/food_101)"
   gcs_cp_keep "$(project_path data/manifests)"
 
   # [Design Intent] Model artifacts are managed separately from runtime enum
