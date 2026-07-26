@@ -220,6 +220,21 @@ gcloud auth application-default print-access-token
 }
 ```
 
+같은 검증을 CLI로 실행할 때는 아래 스크립트를 사용합니다. 로컬과 VM smoke test에서 같은 진입점을 쓰기 위한 명령입니다.
+
+```bash
+# [Design Intent] Airflow UI JSON 입력 실수를 줄이고 local/VM smoke test 절차를 같은 명령으로 고정한다.
+./scripts/airflow/trigger_sns_trend_gcs_validation.sh
+```
+
+다른 GCS prefix나 버전을 검증할 때만 환경변수로 override합니다.
+
+```bash
+AIRFLOW_SNS_TREND_VERSION=v3 \
+AIRFLOW_SNS_TREND_GCS_PREFIX=gs://ssakda/projects/brandmate/data/processed/sns_trend/v3/cross_platform_signal_top_candidates/ \
+./scripts/airflow/trigger_sns_trend_gcs_validation.sh
+```
+
 `sync_processed_package_from_gcs`가 아래처럼 실패하면 GCS 인증 문제가 아니라 writable cache 권한 문제입니다.
 
 ```text
