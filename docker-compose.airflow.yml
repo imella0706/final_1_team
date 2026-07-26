@@ -25,6 +25,8 @@ x-airflow-common: &airflow-common
     BRANDMATE_MOCK_GCS_BASE_DIR: /opt/airflow/mock_gcs
     BRANDMATE_AIRFLOW_GCS_CACHE_DIR: /opt/airflow/gcs_data_cache
     BRANDMATE_AIRFLOW_GCS_LOGS_PREFIX: ${BRANDMATE_AIRFLOW_GCS_LOGS_PREFIX:-gs://ssakda/projects/brandmate/logs/data_pipeline/airflow}
+    BRANDMATE_SNS_TREND_PROCESSED_GCS_ROOT: ${BRANDMATE_SNS_TREND_PROCESSED_GCS_ROOT:-}
+    BRANDMATE_SNS_TREND_VALIDATION_SCHEDULE: ${BRANDMATE_SNS_TREND_VALIDATION_SCHEDULE:-}
     BRANDMATE_REPO_ROOT: /opt/airflow
     BRANDMATE_AIRFLOW_INCLUDE_DIR: /opt/airflow/include
     CLOUDSDK_CONFIG: /home/airflow/.config/gcloud

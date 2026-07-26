@@ -291,6 +291,7 @@ def sns_trend_processed_validation() -> None:
             "run_id": run_id,
             "source_type": config.get("source_type"),
             "source_gcs_prefix": config.get("source_gcs_prefix"),
+            "gcs_version_discovery": config.get("gcs_version_discovery"),
             "gcs_sync": config.get("gcs_sync"),
             "validation_summary_path": str(summary_path),
         }
