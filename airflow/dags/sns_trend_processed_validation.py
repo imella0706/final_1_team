@@ -7,10 +7,11 @@ cannot safely consume.
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -18,6 +19,7 @@ from typing import Any
 DAG_ID = "sns_trend_processed_validation"
 DEFAULT_VERSION = "v2"
 DEFAULT_ARTIFACT_NAME = "cross_platform_signal_top_candidates"
+LAST_VALIDATED_VERSION_VARIABLE = "brandmate_sns_trend_last_validated_version"
 
 AIRFLOW_ROOT = Path(__file__).resolve().parents[1]
 REPO_ROOT = Path(os.getenv("BRANDMATE_REPO_ROOT", AIRFLOW_ROOT.parent))
@@ -46,6 +48,7 @@ for import_path in (INCLUDE_DIR,):
 
 from airflow.decorators import dag, task  # noqa: E402
 from airflow.exceptions import AirflowException  # noqa: E402
+from airflow.models import Variable  # noqa: E402
 from airflow.operators.python import get_current_context  # noqa: E402
 
 from sns_trend.storage import (  # noqa: E402
@@ -118,6 +121,36 @@ def _version_from_path(value: str) -> str | None:
 
 def _gcs_processed_prefix(*, gcs_root: str, version: str) -> str:
     return f"{gcs_root.rstrip('/')}/{version}/{DEFAULT_ARTIFACT_NAME}/"
+
+
+def _utc_now_iso() -> str:
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace(
+        "+00:00", "Z"
+    )
+
+
+def _build_validated_version_state(
+    *,
+    summary: dict[str, Any],
+    config: dict[str, Any],
+    write_result: dict[str, Any],
+    run_id: str,
+    validated_at_utc: str,
+) -> dict[str, Any]:
+    return {
+        "dataset_name": summary.get("dataset_name", "sns_trend"),
+        "artifact_name": summary.get("artifact_name", DEFAULT_ARTIFACT_NAME),
+        "version": str(config["version"]),
+        "source_gcs_prefix": config.get("source_gcs_prefix"),
+        "run_id": run_id,
+        "validated_at_utc": validated_at_utc,
+        "status": summary.get("status"),
+        "card_count": summary.get("card_count"),
+        "csv_row_count": (summary.get("csv") or {}).get("row_count"),
+        "checksums": summary.get("checksums"),
+        "validation_summary_path": write_result.get("validation_summary_path"),
+        "gcs_validation_summary_path": write_result.get("gcs_validation_summary_path"),
+    }
 
 
 def _resolve_processed_config(
@@ -323,10 +356,49 @@ def sns_trend_processed_validation() -> None:
             "gcs_validation_summary_path": gcs_summary_uri,
         }
 
+    @task
+    def record_validated_version(
+        summary: dict[str, Any],
+        config: dict[str, Any],
+        write_result: dict[str, Any],
+    ) -> dict[str, Any]:
+        if config.get("source_type") != "gcs":
+            return {
+                "status": "skipped",
+                "reason": "local processed_prefix is not a GCS release",
+            }
+        if summary.get("status") != "passed":
+            raise AirflowException("Only passed validation results can be recorded")
+
+        context = get_current_context()
+        dag_run = context.get("dag_run")
+        run_id = str(getattr(dag_run, "run_id", "manual"))
+        state = _build_validated_version_state(
+            summary=summary,
+            config=config,
+            write_result=write_result,
+            run_id=run_id,
+            validated_at_utc=_utc_now_iso(),
+        )
+
+        # [Design Intent] Store only release metadata in Airflow Variable. The
+        # processed JSON payload stays in GCS/local cache, not metadata DB.
+        Variable.set(
+            LAST_VALIDATED_VERSION_VARIABLE,
+            json.dumps(state, ensure_ascii=False, sort_keys=True),
+        )
+        return {
+            "status": "recorded",
+            "variable_key": LAST_VALIDATED_VERSION_VARIABLE,
+            "version": state["version"],
+            "source_gcs_prefix": state["source_gcs_prefix"],
+        }
+
     resolved_config = resolve_processed_package()
     synced_config = sync_processed_package_from_gcs(resolved_config)
     validation_summary = validate_package(synced_config)
-    write_validation_summary(validation_summary, synced_config)
+    written_summary = write_validation_summary(validation_summary, synced_config)
+    record_validated_version(validation_summary, synced_config, written_summary)
 
 
 sns_trend_processed_validation()

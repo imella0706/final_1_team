@@ -17,6 +17,7 @@ def _load_dag_module_with_fake_airflow(monkeypatch: pytest.MonkeyPatch) -> Any:
     airflow_module = types.ModuleType("airflow")
     decorators_module = types.ModuleType("airflow.decorators")
     exceptions_module = types.ModuleType("airflow.exceptions")
+    models_module = types.ModuleType("airflow.models")
     operators_module = types.ModuleType("airflow.operators")
     python_operator_module = types.ModuleType("airflow.operators.python")
 
@@ -34,14 +35,23 @@ def _load_dag_module_with_fake_airflow(monkeypatch: pytest.MonkeyPatch) -> Any:
     class FakeAirflowException(Exception):
         pass
 
+    class FakeVariable:
+        values: dict[str, str] = {}
+
+        @classmethod
+        def set(cls, key: str, value: str) -> None:
+            cls.values[key] = value
+
     decorators_module.dag = fake_dag
     decorators_module.task = lambda func: func
     exceptions_module.AirflowException = FakeAirflowException
+    models_module.Variable = FakeVariable
     python_operator_module.get_current_context = lambda: {}
 
     monkeypatch.setitem(sys.modules, "airflow", airflow_module)
     monkeypatch.setitem(sys.modules, "airflow.decorators", decorators_module)
     monkeypatch.setitem(sys.modules, "airflow.exceptions", exceptions_module)
+    monkeypatch.setitem(sys.modules, "airflow.models", models_module)
     monkeypatch.setitem(sys.modules, "airflow.operators", operators_module)
     monkeypatch.setitem(sys.modules, "airflow.operators.python", python_operator_module)
 
@@ -157,6 +167,56 @@ def test_resolve_processed_config_falls_back_to_local_v2(
     )
 
 
+def test_build_validated_version_state_keeps_only_release_metadata(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _load_dag_module_with_fake_airflow(monkeypatch)
+
+    state = module._build_validated_version_state(
+        summary={
+            "dataset_name": "sns_trend",
+            "artifact_name": "cross_platform_signal_top_candidates",
+            "status": "passed",
+            "card_count": 20,
+            "csv": {"row_count": 20},
+            "checksums": {"json": "json-sha", "csv": "csv-sha"},
+            "cards": [{"meme_id": "must-not-store"}],
+        },
+        config={
+            "version": "v3",
+            "source_gcs_prefix": (
+                "gs://ssakda/projects/brandmate/data/processed/sns_trend/"
+                "v3/cross_platform_signal_top_candidates/"
+            ),
+        },
+        write_result={
+            "validation_summary_path": "/opt/airflow/mock_gcs/summary.json",
+            "gcs_validation_summary_path": "gs://ssakda/projects/brandmate/logs/summary.json",
+        },
+        run_id="manual__test",
+        validated_at_utc="2026-07-26T19:30:00Z",
+    )
+
+    assert state == {
+        "dataset_name": "sns_trend",
+        "artifact_name": "cross_platform_signal_top_candidates",
+        "version": "v3",
+        "source_gcs_prefix": (
+            "gs://ssakda/projects/brandmate/data/processed/sns_trend/"
+            "v3/cross_platform_signal_top_candidates/"
+        ),
+        "run_id": "manual__test",
+        "validated_at_utc": "2026-07-26T19:30:00Z",
+        "status": "passed",
+        "card_count": 20,
+        "csv_row_count": 20,
+        "checksums": {"json": "json-sha", "csv": "csv-sha"},
+        "validation_summary_path": "/opt/airflow/mock_gcs/summary.json",
+        "gcs_validation_summary_path": "gs://ssakda/projects/brandmate/logs/summary.json",
+    }
+    assert "cards" not in state
+
+
 def test_sns_trend_processed_validation_dagbag_imports_when_airflow_is_installed() -> None:
     pytest.importorskip(
         "airflow.models.dagbag",
@@ -175,4 +235,5 @@ def test_sns_trend_processed_validation_dagbag_imports_when_airflow_is_installed
         "sync_processed_package_from_gcs",
         "validate_package",
         "write_validation_summary",
+        "record_validated_version",
     }
