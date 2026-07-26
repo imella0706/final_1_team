@@ -4,13 +4,29 @@ import argparse
 import csv
 import hashlib
 import json
+import os
 import sys
 from collections import Counter
 from pathlib import Path
+from types import ModuleType, SimpleNamespace
 from typing import Any
 
 
-REPO_ROOT = Path(__file__).resolve().parents[3]
+def _resolve_repo_root() -> Path:
+    env_value = os.getenv("BRANDMATE_REPO_ROOT")
+    if env_value:
+        return Path(env_value)
+
+    # [Design Intent] Support both local repo layout and the Airflow container
+    # layout where include/ is mounted directly under /opt/airflow.
+    current_path = Path(__file__).resolve()
+    for parent in current_path.parents:
+        if (parent / "data").exists() and (parent / "apps" / "api").exists():
+            return parent
+    return current_path.parents[3]
+
+
+REPO_ROOT = _resolve_repo_root()
 DEFAULT_PROCESSED_DIR = (
     REPO_ROOT
     / "data"
@@ -314,6 +330,24 @@ def smoke_test_api_loader(repo_root: Path, payload_path: Path) -> dict[str, Any]
     sys.path.insert(0, str(api_root))
     try:
         from app.modules.ad_copy.trend_context import load_trend_cards
+    except ModuleNotFoundError as error:
+        if error.name != "pydantic_settings":
+            raise ProcessedValidationError(
+                "FastAPI TrendCard loader cannot be imported"
+            ) from error
+
+        # [Design Intent] Airflow only needs an explicit payload-path smoke test.
+        # Avoid coupling the DAG image to the full API settings dependency stack.
+        config_stub = ModuleType("app.core.config")
+        config_stub.settings = SimpleNamespace(trend_card_payload_path=None)
+        sys.modules["app.core.config"] = config_stub
+        sys.modules.pop("app.modules.ad_copy.trend_context", None)
+        try:
+            from app.modules.ad_copy.trend_context import load_trend_cards
+        except Exception as retry_error:  # pragma: no cover - Airflow image path
+            raise ProcessedValidationError(
+                "FastAPI TrendCard loader cannot be imported"
+            ) from retry_error
     except Exception as error:  # pragma: no cover - depends on local environment
         raise ProcessedValidationError("FastAPI TrendCard loader cannot be imported") from error
 

@@ -8,10 +8,15 @@ x-airflow-common: &airflow-common
     AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "true"
     AIRFLOW__API__AUTH_BACKENDS: airflow.api.auth.backend.basic_auth,airflow.api.auth.backend.session
     BRANDMATE_MOCK_GCS_BASE_DIR: /opt/airflow/mock_gcs
+    BRANDMATE_REPO_ROOT: /opt/airflow
+    BRANDMATE_AIRFLOW_INCLUDE_DIR: /opt/airflow/include
+    PYTHONPATH: /opt/airflow/include:/opt/airflow/apps/api
   volumes:
     - ./airflow/dags:/opt/airflow/dags
     - ./airflow/include:/opt/airflow/include
     - ./airflow/mock_gcs:/opt/airflow/mock_gcs
+    - ./apps/api:/opt/airflow/apps/api:ro
+    - ./data:/opt/airflow/data:ro
     - airflow-logs-volume:/opt/airflow/logs
   user: "0:0"
   depends_on:

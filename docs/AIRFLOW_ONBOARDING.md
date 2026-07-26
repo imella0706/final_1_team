@@ -140,20 +140,25 @@ PYTHONPATH=airflow/include conda run -n ssakda python \
 ```text
 # [Design Intent] 검증 로직과 실행 진입점을 분리해 DAG, CLI, 테스트가 같은 코드를 재사용한다.
 airflow/
+  dags/
+    sns_trend_processed_validation.py
   include/
     sns_trend/
       __init__.py
       validation.py
     sns_trend_processed_validation_cli.py
   tests/
+    test_sns_trend_processed_validation_dag.py
     test_sns_trend_processed_validation.py
 ```
 
 역할:
 
+- `dags/sns_trend_processed_validation.py`: Airflow 수동 실행 DAG
 - `sns_trend/validation.py`: 실제 processed package 검증 로직
 - `sns_trend_processed_validation_cli.py`: CLI entrypoint
 - `test_sns_trend_processed_validation.py`: JSON/CSV consistency와 DVC policy 테스트
+- `test_sns_trend_processed_validation_dag.py`: DAG syntax와 Airflow DagBag import 테스트
 
 삭제된 legacy POC:
 
@@ -177,8 +182,7 @@ Task graph:
 ```text
 # [Design Intent] 공식 pipeline input인 processed package를 read-only로 검증하고 실패한 payload가 API/DVC gate를 통과하지 못하게 한다.
 resolve_processed_package
-  -> validate_processed_package
-  -> smoke_test_api_loader
+  -> validate_package
   -> write_validation_summary
 ```
 
@@ -238,6 +242,8 @@ docker-compose.airflow.yml
 - `user: "0:0"`은 로컬 POC 임시값
 - Fernet key가 비어 있음
 - admin credential이 compose에 하드코딩
+- `./data`와 `./apps/api`를 read-only로 마운트해 processed package와 FastAPI loader smoke test를 확인함
+- Airflow 컨테이너 시작 시 동적 pip install은 하지 않음
 - DB port 노출 정책은 운영 전 점검 필요
 
 L2 MVP 전환 시 고쳐야 합니다.
@@ -249,7 +255,8 @@ L2 MVP 전환 시 고쳐야 합니다.
 ```bash
 # [Design Intent] Airflow DAG 등록 전에 재사용 검증 로직을 ssakda 환경에서 검증한다.
 PYTHONPATH=airflow/include conda run -n ssakda python -m pytest \
-  airflow/tests/test_sns_trend_processed_validation.py
+  airflow/tests/test_sns_trend_processed_validation.py \
+  airflow/tests/test_sns_trend_processed_validation_dag.py
 ```
 
 정적 검사:
@@ -257,9 +264,11 @@ PYTHONPATH=airflow/include conda run -n ssakda python -m pytest \
 ```bash
 # [Design Intent] Airflow 컨테이너에 올리기 전에 Python 3.11 호환 가능한 표준 코드 품질을 확인한다.
 PYTHONPATH=airflow/include conda run -n ssakda python -m ruff check \
+  airflow/dags/sns_trend_processed_validation.py \
   airflow/include/sns_trend/validation.py \
   airflow/include/sns_trend_processed_validation_cli.py \
-  airflow/tests/test_sns_trend_processed_validation.py
+  airflow/tests/test_sns_trend_processed_validation.py \
+  airflow/tests/test_sns_trend_processed_validation_dag.py
 ```
 
 컴파일 확인:
@@ -267,6 +276,7 @@ PYTHONPATH=airflow/include conda run -n ssakda python -m ruff check \
 ```bash
 # [Design Intent] import-time syntax error를 DAG import 전에 잡는다.
 conda run -n ssakda python -m compileall -q \
+  airflow/dags/sns_trend_processed_validation.py \
   airflow/include/sns_trend \
   airflow/include/sns_trend_processed_validation_cli.py
 ```
