@@ -35,8 +35,15 @@ def _load_dag_module_with_fake_airflow(monkeypatch: pytest.MonkeyPatch) -> Any:
     class FakeAirflowException(Exception):
         pass
 
+    class FakeAirflowSkipException(Exception):
+        pass
+
     class FakeVariable:
         values: dict[str, str] = {}
+
+        @classmethod
+        def get(cls, key: str, default_var: str | None = None) -> str | None:
+            return cls.values.get(key, default_var)
 
         @classmethod
         def set(cls, key: str, value: str) -> None:
@@ -45,6 +52,7 @@ def _load_dag_module_with_fake_airflow(monkeypatch: pytest.MonkeyPatch) -> Any:
     decorators_module.dag = fake_dag
     decorators_module.task = lambda func: func
     exceptions_module.AirflowException = FakeAirflowException
+    exceptions_module.AirflowSkipException = FakeAirflowSkipException
     models_module.Variable = FakeVariable
     python_operator_module.get_current_context = lambda: {}
 
@@ -93,6 +101,7 @@ def test_resolve_processed_config_prefers_manual_source_gcs_prefix(
     )
 
     assert config["source_type"] == "gcs"
+    assert config["selection_mode"] == "manual_source_gcs_prefix"
     assert config["version"] == "v7"
     assert config["source_gcs_prefix"].endswith(
         "/v7/cross_platform_signal_top_candidates/"
@@ -112,6 +121,7 @@ def test_resolve_processed_config_builds_gcs_prefix_from_manual_version(
     )
 
     assert config["source_type"] == "gcs"
+    assert config["selection_mode"] == "manual_version"
     assert config["version"] == "v4"
     assert config["source_gcs_prefix"] == (
         "gs://ssakda/projects/brandmate/data/processed/sns_trend/"
@@ -143,6 +153,7 @@ def test_resolve_processed_config_discovers_latest_gcs_version(
     )
 
     assert config["source_type"] == "gcs"
+    assert config["selection_mode"] == "latest_discovery"
     assert config["version"] == "v10"
     assert config["gcs_version_discovery"]["status"] == "discovered"
     assert "version=v10" in config["processed_dir"]
@@ -160,6 +171,7 @@ def test_resolve_processed_config_falls_back_to_local_v2(
     )
 
     assert config["source_type"] == "local"
+    assert config["selection_mode"] == "local"
     assert config["version"] == "v2"
     assert config["source_gcs_prefix"] is None
     assert config["processed_dir"].endswith(
@@ -217,6 +229,85 @@ def test_build_validated_version_state_keeps_only_release_metadata(
     assert "cards" not in state
 
 
+def test_check_new_processed_release_marks_latest_version_as_new(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _load_dag_module_with_fake_airflow(monkeypatch)
+
+    result = module._check_new_processed_release_config(
+        config={
+            "source_type": "gcs",
+            "selection_mode": "latest_discovery",
+            "version": "v3",
+            "same_version_policy": "skip",
+        },
+        last_validated_state={"version": "v2", "run_id": "manual__v2"},
+    )
+
+    assert result["release_gate"] == {
+        "status": "new_release",
+        "current_version": "v3",
+        "previous_version": "v2",
+        "previous_run_id": "manual__v2",
+        "previous_validated_at_utc": None,
+    }
+
+
+def test_check_new_processed_release_skips_same_latest_version(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _load_dag_module_with_fake_airflow(monkeypatch)
+
+    with pytest.raises(module.AirflowSkipException, match="already validated"):
+        module._check_new_processed_release_config(
+            config={
+                "source_type": "gcs",
+                "selection_mode": "latest_discovery",
+                "version": "v3",
+                "same_version_policy": "skip",
+            },
+            last_validated_state={"version": "v3", "run_id": "manual__v3"},
+        )
+
+
+def test_check_new_processed_release_fails_same_latest_version_when_configured(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _load_dag_module_with_fake_airflow(monkeypatch)
+
+    with pytest.raises(module.AirflowException, match="already validated"):
+        module._check_new_processed_release_config(
+            config={
+                "source_type": "gcs",
+                "selection_mode": "latest_discovery",
+                "version": "v3",
+                "same_version_policy": "fail",
+            },
+            last_validated_state={"version": "v3", "run_id": "manual__v3"},
+        )
+
+
+def test_check_new_processed_release_bypasses_manual_version(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _load_dag_module_with_fake_airflow(monkeypatch)
+
+    result = module._check_new_processed_release_config(
+        config={
+            "source_type": "gcs",
+            "selection_mode": "manual_version",
+            "version": "v3",
+            "same_version_policy": "skip",
+        },
+        last_validated_state={"version": "v3", "run_id": "manual__v3"},
+    )
+
+    assert result["release_gate"] == {
+        "status": "bypassed",
+        "reason": "manual version or source_gcs_prefix was provided",
+    }
+
+
 def test_sns_trend_processed_validation_dagbag_imports_when_airflow_is_installed() -> None:
     pytest.importorskip(
         "airflow.models.dagbag",
@@ -232,6 +323,7 @@ def test_sns_trend_processed_validation_dagbag_imports_when_airflow_is_installed
     assert dag.catchup is False
     assert {task.task_id for task in dag.tasks} == {
         "resolve_processed_package",
+        "check_new_processed_release",
         "sync_processed_package_from_gcs",
         "validate_package",
         "write_validation_summary",

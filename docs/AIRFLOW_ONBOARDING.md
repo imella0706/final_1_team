@@ -186,9 +186,11 @@ Task graph:
 ```text
 # [Design Intent] 공식 pipeline input인 processed package를 read-only로 검증하고 실패한 payload가 API/DVC gate를 통과하지 못하게 한다.
 resolve_processed_package
+  -> check_new_processed_release
   -> sync_processed_package_from_gcs
   -> validate_package
   -> write_validation_summary
+  -> record_validated_version
 ```
 
 manual trigger config:
@@ -216,9 +218,23 @@ gcloud auth application-default print-access-token
 {
   "version": "v2",
   "source_gcs_prefix": "gs://ssakda/projects/brandmate/data/processed/sns_trend/v2/cross_platform_signal_top_candidates/",
-  "write_gcs_summary": true
+  "write_gcs_summary": true,
+  "force_revalidate": false,
+  "same_version_policy": "skip"
 }
 ```
+
+`check_new_processed_release`는 latest discovery로 선택된 `vN`이 Airflow Variable에 저장된 마지막 성공 검증 version과 같은지 확인합니다. 기본 정책은 `skip`입니다. 새 release가 없으면 validator를 다시 돌리지 않고 downstream task가 skipped 됩니다.
+
+같은 version을 의도적으로 다시 검증할 때는 manual trigger config에 아래 값을 넣습니다.
+
+```json
+{
+  "force_revalidate": true
+}
+```
+
+같은 version을 skip이 아니라 실패로 보고 싶으면 `same_version_policy`를 `fail`로 넘기거나 `.env.airflow`의 `BRANDMATE_SNS_TREND_SAME_VERSION_POLICY`를 `fail`로 바꿉니다. 현재 MVP 기본값은 알람 피로도를 줄이기 위해 `skip`입니다.
 
 같은 검증을 CLI로 실행할 때는 아래 스크립트를 사용합니다. 로컬과 VM smoke test에서 같은 진입점을 쓰기 위한 명령입니다.
 

@@ -40,6 +40,9 @@ SNS_TREND_PROCESSED_GCS_ROOT = os.getenv(
 SNS_TREND_VALIDATION_SCHEDULE = (
     os.getenv("BRANDMATE_SNS_TREND_VALIDATION_SCHEDULE", "").strip() or None
 )
+SNS_TREND_SAME_VERSION_POLICY = (
+    os.getenv("BRANDMATE_SNS_TREND_SAME_VERSION_POLICY", "skip").strip() or "skip"
+)
 
 for import_path in (INCLUDE_DIR,):
     import_path_value = str(import_path)
@@ -47,7 +50,7 @@ for import_path in (INCLUDE_DIR,):
         sys.path.insert(0, import_path_value)
 
 from airflow.decorators import dag, task  # noqa: E402
-from airflow.exceptions import AirflowException  # noqa: E402
+from airflow.exceptions import AirflowException, AirflowSkipException  # noqa: E402
 from airflow.models import Variable  # noqa: E402
 from airflow.operators.python import get_current_context  # noqa: E402
 
@@ -80,6 +83,16 @@ def _int_conf(value: Any, *, default: int | None) -> int | None:
     if value == "":
         return None
     return int(value)
+
+
+def _same_version_policy(value: Any) -> str:
+    normalized = str(value or "skip").strip().casefold()
+    if normalized not in {"skip", "fail"}:
+        raise AirflowException(
+            "same_version_policy must be one of: skip, fail. "
+            f"Received: {value!r}"
+        )
+    return normalized
 
 
 def _repo_path(value: str) -> Path:
@@ -153,6 +166,85 @@ def _build_validated_version_state(
     }
 
 
+def _load_last_validated_version_state() -> dict[str, Any] | None:
+    raw_state = Variable.get(LAST_VALIDATED_VERSION_VARIABLE, default_var=None)
+    if not raw_state:
+        return None
+
+    try:
+        parsed_state = json.loads(raw_state)
+    except json.JSONDecodeError as error:
+        raise AirflowException(
+            f"Invalid Airflow Variable JSON: {LAST_VALIDATED_VERSION_VARIABLE}"
+        ) from error
+    if not isinstance(parsed_state, dict):
+        raise AirflowException(
+            f"Airflow Variable must contain a JSON object: {LAST_VALIDATED_VERSION_VARIABLE}"
+        )
+    return parsed_state
+
+
+def _check_new_processed_release_config(
+    *,
+    config: dict[str, Any],
+    last_validated_state: dict[str, Any] | None,
+) -> dict[str, Any]:
+    if config.get("source_type") != "gcs":
+        return {
+            **config,
+            "release_gate": {
+                "status": "skipped",
+                "reason": "local processed_prefix is not a GCS release",
+            },
+        }
+
+    if config.get("selection_mode") != "latest_discovery":
+        return {
+            **config,
+            "release_gate": {
+                "status": "bypassed",
+                "reason": "manual version or source_gcs_prefix was provided",
+            },
+        }
+
+    if config.get("force_revalidate"):
+        return {
+            **config,
+            "release_gate": {
+                "status": "bypassed",
+                "reason": "force_revalidate=true",
+            },
+        }
+
+    current_version = str(config["version"])
+    previous_version = (
+        str(last_validated_state.get("version"))
+        if last_validated_state and last_validated_state.get("version")
+        else None
+    )
+    release_gate = {
+        "status": "new_release",
+        "current_version": current_version,
+        "previous_version": previous_version,
+        "previous_run_id": (
+            last_validated_state.get("run_id") if last_validated_state else None
+        ),
+        "previous_validated_at_utc": (
+            last_validated_state.get("validated_at_utc") if last_validated_state else None
+        ),
+    }
+    if previous_version != current_version:
+        return {**config, "release_gate": release_gate}
+
+    message = (
+        "No new sns_trend processed release. "
+        f"latest version {current_version} was already validated"
+    )
+    if config["same_version_policy"] == "fail":
+        raise AirflowException(message)
+    raise AirflowSkipException(message)
+
+
 def _resolve_processed_config(
     *,
     conf: dict[str, Any],
@@ -175,6 +267,7 @@ def _resolve_processed_config(
         source_gcs_prefix = source_gcs_prefix.rstrip("/") + "/"
         processed_dir = _cache_processed_dir(version=version, run_id=run_id)
         source_type = "gcs"
+        selection_mode = "manual_source_gcs_prefix"
     elif requested_version and processed_gcs_root:
         version = requested_version
         source_gcs_prefix = _gcs_processed_prefix(
@@ -183,6 +276,7 @@ def _resolve_processed_config(
         )
         processed_dir = _cache_processed_dir(version=version, run_id=run_id)
         source_type = "gcs"
+        selection_mode = "manual_version"
     elif processed_gcs_root:
         try:
             discovery_summary = discover_latest_gcs_processed_version(
@@ -195,6 +289,7 @@ def _resolve_processed_config(
         source_gcs_prefix = str(discovery_summary["source_gcs_prefix"])
         processed_dir = _cache_processed_dir(version=version, run_id=run_id)
         source_type = "gcs"
+        selection_mode = "latest_discovery"
     else:
         version = requested_version or _version_from_path(processed_prefix or "") or DEFAULT_VERSION
         processed_prefix = processed_prefix or (
@@ -203,10 +298,12 @@ def _resolve_processed_config(
         )
         processed_dir = _repo_path(processed_prefix)
         source_type = "local"
+        selection_mode = "local"
 
     return {
         "version": version,
         "source_type": source_type,
+        "selection_mode": selection_mode,
         "source_gcs_prefix": source_gcs_prefix,
         "gcs_version_discovery": discovery_summary,
         "processed_dir": str(processed_dir),
@@ -222,6 +319,10 @@ def _resolve_processed_config(
             default=bool(source_gcs_prefix),
         ),
         "gcs_logs_prefix": str(conf.get("gcs_logs_prefix") or GCS_LOGS_PREFIX),
+        "same_version_policy": _same_version_policy(
+            conf.get("same_version_policy", SNS_TREND_SAME_VERSION_POLICY)
+        ),
+        "force_revalidate": _bool_conf(conf.get("force_revalidate"), default=False),
     }
 
 
@@ -242,7 +343,9 @@ def _resolve_processed_config(
     {
       "version": "v2",
       "processed_prefix": "data/processed/sns_trend/v2/cross_platform_signal_top_candidates/",
-      "source_gcs_prefix": "gs://ssakda/projects/brandmate/data/processed/sns_trend/v2/cross_platform_signal_top_candidates/"
+      "source_gcs_prefix": "gs://ssakda/projects/brandmate/data/processed/sns_trend/v2/cross_platform_signal_top_candidates/",
+      "force_revalidate": false,
+      "same_version_policy": "skip"
     }
     ```
     """,
@@ -256,6 +359,13 @@ def sns_trend_processed_validation() -> None:
         conf = dict(getattr(dag_run, "conf", None) or {})
 
         return _resolve_processed_config(conf=conf, run_id=run_id)
+
+    @task
+    def check_new_processed_release(config: dict[str, Any]) -> dict[str, Any]:
+        return _check_new_processed_release_config(
+            config=config,
+            last_validated_state=_load_last_validated_version_state(),
+        )
 
     @task
     def sync_processed_package_from_gcs(config: dict[str, Any]) -> dict[str, Any]:
@@ -325,6 +435,7 @@ def sns_trend_processed_validation() -> None:
             "source_type": config.get("source_type"),
             "source_gcs_prefix": config.get("source_gcs_prefix"),
             "gcs_version_discovery": config.get("gcs_version_discovery"),
+            "release_gate": config.get("release_gate"),
             "gcs_sync": config.get("gcs_sync"),
             "validation_summary_path": str(summary_path),
         }
@@ -395,7 +506,8 @@ def sns_trend_processed_validation() -> None:
         }
 
     resolved_config = resolve_processed_package()
-    synced_config = sync_processed_package_from_gcs(resolved_config)
+    release_checked_config = check_new_processed_release(resolved_config)
+    synced_config = sync_processed_package_from_gcs(release_checked_config)
     validation_summary = validate_package(synced_config)
     written_summary = write_validation_summary(validation_summary, synced_config)
     record_validated_version(validation_summary, synced_config, written_summary)
