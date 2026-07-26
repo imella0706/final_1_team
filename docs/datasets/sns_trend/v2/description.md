@@ -13,7 +13,7 @@
 ## Files
 
 - 주요 파일 목록:
-  - `data/landing/sns_trend/week=2026-W30/raw/meme_cards_v2_incoming/`
+  - `data/landing/sns_trend/week=2026-W30/raw/`
   - `data/curated/sns_trend/v2/meme_cards_reviewed/`
   - `data/processed/sns_trend/v2/cross_platform_signal_top_candidates/cross_platform_signal_top_candidates.json`
   - `data/processed/sns_trend/v2/cross_platform_signal_top_candidates/cross_platform_signal_top_candidates.csv`
@@ -26,7 +26,7 @@
   - curated: 152,167 bytes
   - processed package: 173,648 bytes
 - 파일별 역할:
-  - `landing/.../meme_cards_v2_incoming/`: 2026-07-26에 들어온 파일을 변경 없이 보존하는 입고 사본입니다.
+  - `landing/.../raw/<source_family>/`: 2026-07-26에 들어온 파일을 변경 없이 보존하는 입고 사본입니다.
   - `curated/.../meme_cards_reviewed/`: `curation_meta.status=reviewed`인 `schema_version=2.0` 밈 카드 후보 풀입니다.
   - `cross_platform_signal_top_candidates.json`: 전체 카드 20개를 하나의 payload로 묶은 JSON입니다.
   - `cross_platform_signal_top_candidates.csv`: 카드 ID, display name, source family, curation/trend status, source list를 빠르게 검수하기 위한 index입니다.
@@ -76,7 +76,7 @@
 
 | 단계 | 로컬 위치 | 추천 GCS 위치 | 의미 |
 | --- | --- | --- | --- |
-| landing | `data/landing/sns_trend/week=2026-W30/raw/meme_cards_v2_incoming/` | `gs://ssakda/projects/brandmate/data/landing/sns_trend/week=2026-W30/raw/meme_cards_v2_incoming/` | 2026-07-26 입고 사본 |
+| landing | `data/landing/sns_trend/week=2026-W30/raw/` | `gs://ssakda/projects/brandmate/data/landing/sns_trend/week=2026-W30/raw/` | 2026-07-26 입고 사본 |
 | curated | `data/curated/sns_trend/v2/meme_cards_reviewed/` | `gs://ssakda/projects/brandmate/data/curated/sns_trend/v2/meme_cards_reviewed/` | reviewed v2 카드 후보 풀 |
 | processed | `data/processed/sns_trend/v2/cross_platform_signal_top_candidates/` | `gs://ssakda/projects/brandmate/data/processed/sns_trend/v2/cross_platform_signal_top_candidates/` | API/RAG/프롬프트 입력 패키지 |
 
@@ -90,31 +90,32 @@
 | `data/processed/sns_trend/v2/prompt_meme_card_payload/sns_trend_meme_cards_v2.jsonl` | 없음 | 현재 파이프라인에서 사용하지 않아 processed package에서 제외 |
 | `data/processed/sns_trend/v2/prompt_meme_card_payload/cards/` | `data/curated/sns_trend/v2/meme_cards_reviewed/` | 개별 카드 사본은 processed에 중복 보관하지 않고 curated에서만 관리 |
 | `data/processed/sns_trend/v2/prompt_meme_card_payload/docs/` | `docs/datasets/sns_trend/v2/` | GCS 데이터 패키지 내부 docs 업로드 금지 정책에 맞춰 canonical docs만 유지 |
+| `data/landing/sns_trend/week=2026-W30/raw/meme_cards_v2_incoming/` | `data/landing/sns_trend/week=2026-W30/raw/` | `week=2026-W28/raw/<source>/` 패턴과 맞추기 위해 landing 중간 폴더 제거 |
 
 ## Original File Mapping
 
 | 이전 로컬 파일 경로 | landing 배치 경로 | curated 배치 경로 | processed 포함 artifact |
 | --- | --- | --- | --- |
-| `gather_data/processed/gogumafarm_1bf390d89536004b.json` | `data/landing/sns_trend/week=2026-W30/raw/meme_cards_v2_incoming/gogumafarm/gogumafarm_1bf390d89536004b.json` | `data/curated/sns_trend/v2/meme_cards_reviewed/gogumafarm/gogumafarm_1bf390d89536004b.json` | `data/processed/sns_trend/v2/cross_platform_signal_top_candidates/cross_platform_signal_top_candidates.json` |
-| `gather_data/processed/gogumafarm_d4e6309980c15a81.json` | `data/landing/sns_trend/week=2026-W30/raw/meme_cards_v2_incoming/gogumafarm/gogumafarm_d4e6309980c15a81.json` | `data/curated/sns_trend/v2/meme_cards_reviewed/gogumafarm/gogumafarm_d4e6309980c15a81.json` | `data/processed/sns_trend/v2/cross_platform_signal_top_candidates/cross_platform_signal_top_candidates.json` |
-| `gather_data/processed/incross_dio-week.json` | `data/landing/sns_trend/week=2026-W30/raw/meme_cards_v2_incoming/incross/incross_dio-week.json` | `data/curated/sns_trend/v2/meme_cards_reviewed/incross/incross_dio-week.json` | `data/processed/sns_trend/v2/cross_platform_signal_top_candidates/cross_platform_signal_top_candidates.json` |
-| `gather_data/processed/manual_actor-challenge-n-days.json` | `data/landing/sns_trend/week=2026-W30/raw/meme_cards_v2_incoming/manual/manual_actor-challenge-n-days.json` | `data/curated/sns_trend/v2/meme_cards_reviewed/manual/manual_actor-challenge-n-days.json` | `data/processed/sns_trend/v2/cross_platform_signal_top_candidates/cross_platform_signal_top_candidates.json` |
-| `gather_data/processed/manual_backrooms-core.json` | `data/landing/sns_trend/week=2026-W30/raw/meme_cards_v2_incoming/manual/manual_backrooms-core.json` | `data/curated/sns_trend/v2/meme_cards_reviewed/manual/manual_backrooms-core.json` | `data/processed/sns_trend/v2/cross_platform_signal_top_candidates/cross_platform_signal_top_candidates.json` |
-| `gather_data/processed/manual_chopstick-walking.json` | `data/landing/sns_trend/week=2026-W30/raw/meme_cards_v2_incoming/manual/manual_chopstick-walking.json` | `data/curated/sns_trend/v2/meme_cards_reviewed/manual/manual_chopstick-walking.json` | `data/processed/sns_trend/v2/cross_platform_signal_top_candidates/cross_platform_signal_top_candidates.json` |
-| `gather_data/processed/manual_ddi-ro-ri-remix.json` | `data/landing/sns_trend/week=2026-W30/raw/meme_cards_v2_incoming/manual/manual_ddi-ro-ri-remix.json` | `data/curated/sns_trend/v2/meme_cards_reviewed/manual/manual_ddi-ro-ri-remix.json` | `data/processed/sns_trend/v2/cross_platform_signal_top_candidates/cross_platform_signal_top_candidates.json` |
-| `gather_data/processed/manual_dinosaur-sized-love.json` | `data/landing/sns_trend/week=2026-W30/raw/meme_cards_v2_incoming/manual/manual_dinosaur-sized-love.json` | `data/curated/sns_trend/v2/meme_cards_reviewed/manual/manual_dinosaur-sized-love.json` | `data/processed/sns_trend/v2/cross_platform_signal_top_candidates/cross_platform_signal_top_candidates.json` |
-| `gather_data/processed/manual_korea-trend-next.json` | `data/landing/sns_trend/week=2026-W30/raw/meme_cards_v2_incoming/manual/manual_korea-trend-next.json` | `data/curated/sns_trend/v2/meme_cards_reviewed/manual/manual_korea-trend-next.json` | `data/processed/sns_trend/v2/cross_platform_signal_top_candidates/cross_platform_signal_top_candidates.json` |
-| `gather_data/processed/manual_mazetara-challenge.json` | `data/landing/sns_trend/week=2026-W30/raw/meme_cards_v2_incoming/manual/manual_mazetara-challenge.json` | `data/curated/sns_trend/v2/meme_cards_reviewed/manual/manual_mazetara-challenge.json` | `data/processed/sns_trend/v2/cross_platform_signal_top_candidates/cross_platform_signal_top_candidates.json` |
-| `gather_data/processed/manual_mom-blackpink-dad-citizen.json` | `data/landing/sns_trend/week=2026-W30/raw/meme_cards_v2_incoming/manual/manual_mom-blackpink-dad-citizen.json` | `data/curated/sns_trend/v2/meme_cards_reviewed/manual/manual_mom-blackpink-dad-citizen.json` | `data/processed/sns_trend/v2/cross_platform_signal_top_candidates/cross_platform_signal_top_candidates.json` |
-| `gather_data/processed/manual_no-spacing-reason.json` | `data/landing/sns_trend/week=2026-W30/raw/meme_cards_v2_incoming/manual/manual_no-spacing-reason.json` | `data/curated/sns_trend/v2/meme_cards_reviewed/manual/manual_no-spacing-reason.json` | `data/processed/sns_trend/v2/cross_platform_signal_top_candidates/cross_platform_signal_top_candidates.json` |
-| `gather_data/processed/manual_nose-hit-sorry-challenge.json` | `data/landing/sns_trend/week=2026-W30/raw/meme_cards_v2_incoming/manual/manual_nose-hit-sorry-challenge.json` | `data/curated/sns_trend/v2/meme_cards_reviewed/manual/manual_nose-hit-sorry-challenge.json` | `data/processed/sns_trend/v2/cross_platform_signal_top_candidates/cross_platform_signal_top_candidates.json` |
-| `gather_data/processed/manual_prison-comeback.json` | `data/landing/sns_trend/week=2026-W30/raw/meme_cards_v2_incoming/manual/manual_prison-comeback.json` | `data/curated/sns_trend/v2/meme_cards_reviewed/manual/manual_prison-comeback.json` | `data/processed/sns_trend/v2/cross_platform_signal_top_candidates/cross_platform_signal_top_candidates.json` |
-| `gather_data/processed/manual_smooth-smooth.json` | `data/landing/sns_trend/week=2026-W30/raw/meme_cards_v2_incoming/manual/manual_smooth-smooth.json` | `data/curated/sns_trend/v2/meme_cards_reviewed/manual/manual_smooth-smooth.json` | `data/processed/sns_trend/v2/cross_platform_signal_top_candidates/cross_platform_signal_top_candidates.json` |
-| `gather_data/processed/manual_thats-red-red.json` | `data/landing/sns_trend/week=2026-W30/raw/meme_cards_v2_incoming/manual/manual_thats-red-red.json` | `data/curated/sns_trend/v2/meme_cards_reviewed/manual/manual_thats-red-red.json` | `data/processed/sns_trend/v2/cross_platform_signal_top_candidates/cross_platform_signal_top_candidates.json` |
-| `gather_data/processed/manual_trying-to-sleep-yang-euiji.json` | `data/landing/sns_trend/week=2026-W30/raw/meme_cards_v2_incoming/manual/manual_trying-to-sleep-yang-euiji.json` | `data/curated/sns_trend/v2/meme_cards_reviewed/manual/manual_trying-to-sleep-yang-euiji.json` | `data/processed/sns_trend/v2/cross_platform_signal_top_candidates/cross_platform_signal_top_candidates.json` |
-| `gather_data/processed/manual_undong-mani-doenda.json` | `data/landing/sns_trend/week=2026-W30/raw/meme_cards_v2_incoming/manual/manual_undong-mani-doenda.json` | `data/curated/sns_trend/v2/meme_cards_reviewed/manual/manual_undong-mani-doenda.json` | `data/processed/sns_trend/v2/cross_platform_signal_top_candidates/cross_platform_signal_top_candidates.json` |
-| `gather_data/processed/manual_yaru-song.json` | `data/landing/sns_trend/week=2026-W30/raw/meme_cards_v2_incoming/manual/manual_yaru-song.json` | `data/curated/sns_trend/v2/meme_cards_reviewed/manual/manual_yaru-song.json` | `data/processed/sns_trend/v2/cross_platform_signal_top_candidates/cross_platform_signal_top_candidates.json` |
-| `gather_data/processed/manual_young-creator-crew.json` | `data/landing/sns_trend/week=2026-W30/raw/meme_cards_v2_incoming/manual/manual_young-creator-crew.json` | `data/curated/sns_trend/v2/meme_cards_reviewed/manual/manual_young-creator-crew.json` | `data/processed/sns_trend/v2/cross_platform_signal_top_candidates/cross_platform_signal_top_candidates.json` |
+| `gather_data/processed/gogumafarm_1bf390d89536004b.json` | `data/landing/sns_trend/week=2026-W30/raw/gogumafarm/gogumafarm_1bf390d89536004b.json` | `data/curated/sns_trend/v2/meme_cards_reviewed/gogumafarm/gogumafarm_1bf390d89536004b.json` | `data/processed/sns_trend/v2/cross_platform_signal_top_candidates/cross_platform_signal_top_candidates.json` |
+| `gather_data/processed/gogumafarm_d4e6309980c15a81.json` | `data/landing/sns_trend/week=2026-W30/raw/gogumafarm/gogumafarm_d4e6309980c15a81.json` | `data/curated/sns_trend/v2/meme_cards_reviewed/gogumafarm/gogumafarm_d4e6309980c15a81.json` | `data/processed/sns_trend/v2/cross_platform_signal_top_candidates/cross_platform_signal_top_candidates.json` |
+| `gather_data/processed/incross_dio-week.json` | `data/landing/sns_trend/week=2026-W30/raw/incross/incross_dio-week.json` | `data/curated/sns_trend/v2/meme_cards_reviewed/incross/incross_dio-week.json` | `data/processed/sns_trend/v2/cross_platform_signal_top_candidates/cross_platform_signal_top_candidates.json` |
+| `gather_data/processed/manual_actor-challenge-n-days.json` | `data/landing/sns_trend/week=2026-W30/raw/manual/manual_actor-challenge-n-days.json` | `data/curated/sns_trend/v2/meme_cards_reviewed/manual/manual_actor-challenge-n-days.json` | `data/processed/sns_trend/v2/cross_platform_signal_top_candidates/cross_platform_signal_top_candidates.json` |
+| `gather_data/processed/manual_backrooms-core.json` | `data/landing/sns_trend/week=2026-W30/raw/manual/manual_backrooms-core.json` | `data/curated/sns_trend/v2/meme_cards_reviewed/manual/manual_backrooms-core.json` | `data/processed/sns_trend/v2/cross_platform_signal_top_candidates/cross_platform_signal_top_candidates.json` |
+| `gather_data/processed/manual_chopstick-walking.json` | `data/landing/sns_trend/week=2026-W30/raw/manual/manual_chopstick-walking.json` | `data/curated/sns_trend/v2/meme_cards_reviewed/manual/manual_chopstick-walking.json` | `data/processed/sns_trend/v2/cross_platform_signal_top_candidates/cross_platform_signal_top_candidates.json` |
+| `gather_data/processed/manual_ddi-ro-ri-remix.json` | `data/landing/sns_trend/week=2026-W30/raw/manual/manual_ddi-ro-ri-remix.json` | `data/curated/sns_trend/v2/meme_cards_reviewed/manual/manual_ddi-ro-ri-remix.json` | `data/processed/sns_trend/v2/cross_platform_signal_top_candidates/cross_platform_signal_top_candidates.json` |
+| `gather_data/processed/manual_dinosaur-sized-love.json` | `data/landing/sns_trend/week=2026-W30/raw/manual/manual_dinosaur-sized-love.json` | `data/curated/sns_trend/v2/meme_cards_reviewed/manual/manual_dinosaur-sized-love.json` | `data/processed/sns_trend/v2/cross_platform_signal_top_candidates/cross_platform_signal_top_candidates.json` |
+| `gather_data/processed/manual_korea-trend-next.json` | `data/landing/sns_trend/week=2026-W30/raw/manual/manual_korea-trend-next.json` | `data/curated/sns_trend/v2/meme_cards_reviewed/manual/manual_korea-trend-next.json` | `data/processed/sns_trend/v2/cross_platform_signal_top_candidates/cross_platform_signal_top_candidates.json` |
+| `gather_data/processed/manual_mazetara-challenge.json` | `data/landing/sns_trend/week=2026-W30/raw/manual/manual_mazetara-challenge.json` | `data/curated/sns_trend/v2/meme_cards_reviewed/manual/manual_mazetara-challenge.json` | `data/processed/sns_trend/v2/cross_platform_signal_top_candidates/cross_platform_signal_top_candidates.json` |
+| `gather_data/processed/manual_mom-blackpink-dad-citizen.json` | `data/landing/sns_trend/week=2026-W30/raw/manual/manual_mom-blackpink-dad-citizen.json` | `data/curated/sns_trend/v2/meme_cards_reviewed/manual/manual_mom-blackpink-dad-citizen.json` | `data/processed/sns_trend/v2/cross_platform_signal_top_candidates/cross_platform_signal_top_candidates.json` |
+| `gather_data/processed/manual_no-spacing-reason.json` | `data/landing/sns_trend/week=2026-W30/raw/manual/manual_no-spacing-reason.json` | `data/curated/sns_trend/v2/meme_cards_reviewed/manual/manual_no-spacing-reason.json` | `data/processed/sns_trend/v2/cross_platform_signal_top_candidates/cross_platform_signal_top_candidates.json` |
+| `gather_data/processed/manual_nose-hit-sorry-challenge.json` | `data/landing/sns_trend/week=2026-W30/raw/manual/manual_nose-hit-sorry-challenge.json` | `data/curated/sns_trend/v2/meme_cards_reviewed/manual/manual_nose-hit-sorry-challenge.json` | `data/processed/sns_trend/v2/cross_platform_signal_top_candidates/cross_platform_signal_top_candidates.json` |
+| `gather_data/processed/manual_prison-comeback.json` | `data/landing/sns_trend/week=2026-W30/raw/manual/manual_prison-comeback.json` | `data/curated/sns_trend/v2/meme_cards_reviewed/manual/manual_prison-comeback.json` | `data/processed/sns_trend/v2/cross_platform_signal_top_candidates/cross_platform_signal_top_candidates.json` |
+| `gather_data/processed/manual_smooth-smooth.json` | `data/landing/sns_trend/week=2026-W30/raw/manual/manual_smooth-smooth.json` | `data/curated/sns_trend/v2/meme_cards_reviewed/manual/manual_smooth-smooth.json` | `data/processed/sns_trend/v2/cross_platform_signal_top_candidates/cross_platform_signal_top_candidates.json` |
+| `gather_data/processed/manual_thats-red-red.json` | `data/landing/sns_trend/week=2026-W30/raw/manual/manual_thats-red-red.json` | `data/curated/sns_trend/v2/meme_cards_reviewed/manual/manual_thats-red-red.json` | `data/processed/sns_trend/v2/cross_platform_signal_top_candidates/cross_platform_signal_top_candidates.json` |
+| `gather_data/processed/manual_trying-to-sleep-yang-euiji.json` | `data/landing/sns_trend/week=2026-W30/raw/manual/manual_trying-to-sleep-yang-euiji.json` | `data/curated/sns_trend/v2/meme_cards_reviewed/manual/manual_trying-to-sleep-yang-euiji.json` | `data/processed/sns_trend/v2/cross_platform_signal_top_candidates/cross_platform_signal_top_candidates.json` |
+| `gather_data/processed/manual_undong-mani-doenda.json` | `data/landing/sns_trend/week=2026-W30/raw/manual/manual_undong-mani-doenda.json` | `data/curated/sns_trend/v2/meme_cards_reviewed/manual/manual_undong-mani-doenda.json` | `data/processed/sns_trend/v2/cross_platform_signal_top_candidates/cross_platform_signal_top_candidates.json` |
+| `gather_data/processed/manual_yaru-song.json` | `data/landing/sns_trend/week=2026-W30/raw/manual/manual_yaru-song.json` | `data/curated/sns_trend/v2/meme_cards_reviewed/manual/manual_yaru-song.json` | `data/processed/sns_trend/v2/cross_platform_signal_top_candidates/cross_platform_signal_top_candidates.json` |
+| `gather_data/processed/manual_young-creator-crew.json` | `data/landing/sns_trend/week=2026-W30/raw/manual/manual_young-creator-crew.json` | `data/curated/sns_trend/v2/meme_cards_reviewed/manual/manual_young-creator-crew.json` | `data/processed/sns_trend/v2/cross_platform_signal_top_candidates/cross_platform_signal_top_candidates.json` |
 
 ## Recommended GCS Folder Structure
 
@@ -124,10 +125,9 @@ gs://ssakda/projects/brandmate/data/
     sns_trend/
       week=2026-W30/
         raw/
-          meme_cards_v2_incoming/
-            gogumafarm/
-            incross/
-            manual/
+          gogumafarm/
+          incross/
+          manual/
 
   curated/
     sns_trend/
@@ -164,19 +164,20 @@ gs://ssakda/projects/brandmate/data/
 ## Storage
 
 - GCS 업로드 예정 경로: `gs://ssakda/projects/brandmate/data/processed/sns_trend/v2/cross_platform_signal_top_candidates/`
-- landing GCS 경로: `gs://ssakda/projects/brandmate/data/landing/sns_trend/week=2026-W30/raw/meme_cards_v2_incoming/`
+- landing GCS 경로: `gs://ssakda/projects/brandmate/data/landing/sns_trend/week=2026-W30/raw/`
 - curated GCS 경로: `gs://ssakda/projects/brandmate/data/curated/sns_trend/v2/meme_cards_reviewed/`
 - local example path: `data/processed/sns_trend/v2/cross_platform_signal_top_candidates/`
 - 기존 로컬 입력 경로: `gather_data/processed/`
 - canonical manifest: `docs/datasets/sns_trend/v2/manifest.json`
 - canonical description: `docs/datasets/sns_trend/v2/description.md`
 - GCS 데이터 패키지 내부 docs 업로드 여부: 아니오
+- `gather_data/` 하위 크롤링 runtime 산출물은 Git/GCS 공식 업로드 대상이 아닙니다. v2 공식 데이터셋은 `gather_data/processed/*.json`에서 온 20개 카드를 `data/landing`, `data/curated`, `data/processed`로 재분류한 결과만 기준으로 합니다.
 
 ## Reproducibility
 
 - 데이터셋 생성 스크립트 또는 노트북 경로: TODO
 - random seed: 없음
-- 같은 결과를 다시 만들 수 있는지: 부분 가능. 현재 파일 패키징은 재현 가능하지만, 각 밈 카드의 원본 수집/작성 과정은 별도 스크립트 또는 노트북 경로가 필요합니다.
+- 같은 결과를 다시 만들 수 있는지: 부분 가능. 현재 파일 패키징은 재현 가능하지만, 각 밈 카드의 원본 수집/작성 과정은 별도 스크립트 또는 노트북 경로가 필요합니다. 공식 데이터셋에 포함되지 않은 중간 CSV, PNG, smoke output이 필요하면 크롤러 코드를 다시 실행하거나 원본 작업자(박채빈님)에게 별도로 요청해야 합니다.
 
 ## Limitations
 

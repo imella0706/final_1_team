@@ -119,9 +119,9 @@ main() {
   gcs_cp_keep "$(project_path data/curated/sns/v1)"
   gcs_cp_keep "$(project_path data/curated/food_101/v1)"
 
-  # [Design Intent] Airflow MVP validates weekly processed candidate CSV files
-  # before a dataset manager promotes them to official DVC-tracked datasets.
-  gcs_cp_keep "$(project_path data/landing/processed/sns_meme_trend)"
+  # [Design Intent] Airflow MVP validates the official sns_trend processed
+  # package that API/DVC will consume; landing/curated remain outside this gate.
+  gcs_cp_keep "$(project_path data/processed/sns_trend/v2/cross_platform_signal_top_candidates)"
 
   gcs_cp_keep "$(project_path data/processed/aihub_food_image_text/v1/food_description_data)"
   gcs_cp_keep "$(project_path data/processed/sns/v1)"

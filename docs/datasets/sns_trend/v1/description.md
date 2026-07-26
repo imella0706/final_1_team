@@ -195,13 +195,14 @@ GCS에 올리는 파일명은 shell, Airflow, GCS CLI에서 안정적으로 다�
 - package docs:
   - `data/processed/sns_trend/v1/cross_platform_signal_top_candidates/docs/manifest.json`
   - `data/processed/sns_trend/v1/cross_platform_signal_top_candidates/docs/description.md`
+- `gather_data/` 하위 크롤링 runtime 산출물은 Git/GCS 공식 업로드 대상이 아닙니다. 공식 데이터셋에 포함되지 않은 중간 CSV, PNG, smoke output이 필요하면 크롤러 코드를 다시 실행하거나 원본 작업자(박채빈님)에게 별도로 요청해야 합니다.
 
 ## Reproducibility
 
 - 데이터셋 생성 스크립트 또는 노트북 경로: `demo/trend_ad/pipeline.py`
 - score 계산 코드 위치: `demo/trend_ad/pipeline.py`
 - random seed: none
-- 같은 결과를 다시 만들 수 있는지: TODO
+- 같은 결과를 다시 만들 수 있는지: 부분 가능. 공식 processed export는 `demo/trend_ad/pipeline.py` 기준으로 추적하지만, `gather_data/` 하위 runtime 산출물 전체를 Git에 보존하지 않으므로 동일 중간 산출물이 필요하면 크롤러 재실행 또는 원본 작업자 확인이 필요합니다.
 
 ## Limitations
 

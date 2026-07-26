@@ -54,7 +54,7 @@
       "data/curated/sns_trend/v2/meme_cards_reviewed/"
     ],
     "landing_inputs": [
-      "data/landing/sns_trend/week=2026-W30/raw/meme_cards_v2_incoming/"
+      "data/landing/sns_trend/week=2026-W30/raw/"
     ]
   },
   "processing": {
@@ -78,7 +78,7 @@
     "gcs_path": "gs://ssakda/projects/brandmate/data/processed/sns_trend/v2/cross_platform_signal_top_candidates/",
     "local_example_path": "data/processed/sns_trend/v2/cross_platform_signal_top_candidates/",
     "local_source_path": "gather_data/processed/",
-    "landing_gcs_path": "gs://ssakda/projects/brandmate/data/landing/sns_trend/week=2026-W30/raw/meme_cards_v2_incoming/",
+    "landing_gcs_path": "gs://ssakda/projects/brandmate/data/landing/sns_trend/week=2026-W30/raw/",
     "curated_gcs_path": "gs://ssakda/projects/brandmate/data/curated/sns_trend/v2/meme_cards_reviewed/",
     "canonical_docs": {
       "manifest_path": "docs/datasets/sns_trend/v2/manifest.json",
