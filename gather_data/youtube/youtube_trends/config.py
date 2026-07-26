@@ -14,7 +14,8 @@ from dotenv import load_dotenv
 
 YOUTUBE_DIR = Path(__file__).resolve().parent.parent
 GATHER_DATA_DIR = YOUTUBE_DIR.parent
-ENV_FILE = GATHER_DATA_DIR / ".env"
+REPO_ROOT = GATHER_DATA_DIR.parent
+ENV_FILE = REPO_ROOT / "apps" / "api" / ".env"
 RAW_DATA_DIR = YOUTUBE_DIR / "data" / "raw"
 HISTORY_V2_DIR = YOUTUBE_DIR / "data" / "history"
 REPORT_DIR = YOUTUBE_DIR / "reports"
@@ -82,7 +83,7 @@ def require_api_key() -> str:
     api_key = os.getenv("YOUTUBE_API_KEY", "").strip()
     if not api_key:
         raise ConfigurationError(
-            "YOUTUBE_API_KEY is missing. Set it in gather_data/.env."
+            "YOUTUBE_API_KEY is missing. Set it in apps/api/.env."
         )
     return api_key
 

@@ -17,7 +17,9 @@ youtube/
 └─ requirements-okt.txt           # 선택적 KoNLPy/Okt 의존성
 ```
 
-기존 세 진입 스크립트의 파일명은 유지한다. 기존 루트 CSV, `history/`와 PNG는 legacy 샘플로 보존하며, 새 v2 산출물은 `data/`와 `reports/` 아래에 분리한다.
+기존 세 진입 스크립트의 파일명은 유지한다. 생성되는 CSV, `history/`, PNG,
+`data/`, `reports/`는 Git에서 제외하고 공식 데이터셋은 repository root의
+`data/landing|curated|processed` 계층에서 관리한다.
 
 ## 설치
 
@@ -34,7 +36,8 @@ Okt 형태소 분석기를 명시적으로 사용할 때만 다음 의존성을 
 python -m pip install -r requirements-okt.txt
 ```
 
-API 키는 `gather_data/.env`에서만 읽는다.
+API 키는 repository의 canonical 환경 파일인 `apps/api/.env`에서 읽는다.
+환경 변수 목록은 `apps/api/.env.gcp.example`에서 관리한다.
 
 ```text
 YOUTUBE_API_KEY=
