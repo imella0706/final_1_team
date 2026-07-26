@@ -79,6 +79,16 @@ def test_sns_trend_processed_validation_dag_compiles() -> None:
     compile(source, str(DAG_FILE), "exec")
 
 
+def test_sns_trend_processed_validation_registers_failure_callback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _load_dag_module_with_fake_airflow(monkeypatch)
+
+    default_args = module.sns_trend_processed_validation.dag_kwargs["default_args"]
+
+    assert default_args["on_failure_callback"] is module.notify_airflow_failure
+
+
 def test_resolve_processed_config_prefers_manual_source_gcs_prefix(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

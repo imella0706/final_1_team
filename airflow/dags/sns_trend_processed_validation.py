@@ -60,6 +60,7 @@ from sns_trend.storage import (  # noqa: E402
     sync_gcs_prefix_to_local,
     upload_json_to_gcs,
 )
+from sns_trend.alerts import notify_airflow_failure  # noqa: E402
 from sns_trend.validation import (  # noqa: E402
     ProcessedValidationError,
     validate_processed_package,
@@ -333,7 +334,11 @@ def _resolve_processed_config(
     catchup=False,
     max_active_runs=1,
     tags=["brandmate", "sns_trend", "processed", "validation"],
-    default_args={"owner": "brandmate-data", "retries": 0},
+    default_args={
+        "owner": "brandmate-data",
+        "retries": 0,
+        "on_failure_callback": notify_airflow_failure,
+    },
     doc_md="""
     Validate the official `sns_trend` processed package.
 

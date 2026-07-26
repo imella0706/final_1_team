@@ -236,6 +236,25 @@ gcloud auth application-default print-access-token
 
 같은 version을 skip이 아니라 실패로 보고 싶으면 `same_version_policy`를 `fail`로 넘기거나 `.env.airflow`의 `BRANDMATE_SNS_TREND_SAME_VERSION_POLICY`를 `fail`로 바꿉니다. 현재 MVP 기본값은 알람 피로도를 줄이기 위해 `skip`입니다.
 
+실패 알림은 기본 비활성화입니다. Discord webhook URL은 secret이므로 Git에 올리지 않습니다.
+
+```bash
+# [Design Intent] 로컬/VM에서 실패 알림을 켤 때만 private .env.airflow에 실제 webhook URL을 넣는다.
+BRANDMATE_AIRFLOW_ALERTS_ENABLED=true
+BRANDMATE_AIRFLOW_DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/...
+BRANDMATE_AIRFLOW_ALERT_TIMEOUT_SECONDS=5
+```
+
+알림 기준:
+
+| 상태 | Discord 알림 |
+| --- | --- |
+| task `failed` | 전송 |
+| same-version `skipped` | 전송 안 함 |
+| local 개발에서 webhook 미설정 | 조용히 skip |
+
+알림 payload에는 `dag_id`, `task_id`, `run_id`, `version`, `source_gcs_prefix`, `exception`, `log_url`을 포함합니다. Discord 전송 실패는 원래 Airflow task 실패를 덮어쓰지 않습니다.
+
 같은 검증을 CLI로 실행할 때는 아래 스크립트를 사용합니다. 로컬과 VM smoke test에서 같은 진입점을 쓰기 위한 명령입니다.
 
 ```bash
