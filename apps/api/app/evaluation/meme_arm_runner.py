@@ -129,7 +129,7 @@ class MemeExperimentConfig(BaseModel):
     experiment_id: str = Field(min_length=1, max_length=120)
     description: str = Field(min_length=1, max_length=500)
     base_model: str = Field(min_length=1, max_length=200)
-    trend_card_path: str = Field(min_length=1)
+    trend_card_payload_path: str = Field(min_length=1)
     dataset_path: str = Field(min_length=1)
     few_shot_path: str = Field(min_length=1)
     fixture_review_path: str = Field(min_length=1)
@@ -218,7 +218,7 @@ class MemeFixtureReview(BaseModel):
 class LoadedMemeExperiment:
     config_path: Path
     config: MemeExperimentConfig
-    trend_card_path: Path
+    trend_card_payload_path: Path
     dataset_path: Path
     few_shot_path: Path
     fixture_review_path: Path
@@ -295,14 +295,17 @@ def load_meme_experiment(config_path: Path) -> LoadedMemeExperiment:
     resolved_config = config_path.resolve()
     try:
         config = MemeExperimentConfig.model_validate(_read_json(resolved_config))
-        trend_card_path = _resolve_fixture_path(resolved_config, config.trend_card_path)
+        trend_card_payload_path = _resolve_fixture_path(
+            resolved_config,
+            config.trend_card_payload_path,
+        )
         dataset_path = _resolve_fixture_path(resolved_config, config.dataset_path)
         few_shot_path = _resolve_fixture_path(resolved_config, config.few_shot_path)
         fixture_review_path = _resolve_fixture_path(
             resolved_config,
             config.fixture_review_path,
         )
-        trend_card = load_trend_card(path=trend_card_path)
+        trend_card = load_trend_card(path=trend_card_payload_path)
         cases = [MemeEvalCase.model_validate(item) for item in _read_json(dataset_path)]
         examples = [FewShotExample.model_validate(item) for item in _read_json(few_shot_path)]
         fixture_review = MemeFixtureReview.model_validate(
@@ -335,7 +338,7 @@ def load_meme_experiment(config_path: Path) -> LoadedMemeExperiment:
             )
             load_trend_card(
                 request.trend_card_id,
-                path=trend_card_path,
+                path=trend_card_payload_path,
                 require_channel=request.channel.value,
                 prohibited_terms=request.prohibited_terms,
             )
@@ -364,7 +367,7 @@ def load_meme_experiment(config_path: Path) -> LoadedMemeExperiment:
     return LoadedMemeExperiment(
         config_path=resolved_config,
         config=config,
-        trend_card_path=trend_card_path,
+        trend_card_payload_path=trend_card_payload_path,
         dataset_path=dataset_path,
         few_shot_path=few_shot_path,
         fixture_review_path=fixture_review_path,

@@ -1,3 +1,5 @@
+import json
+
 import pytest
 from pydantic import ValidationError
 
@@ -6,11 +8,12 @@ from app.modules.ad_copy.trend_context import (
     TrendCard,
     TrendCardNotFoundError,
     TrendCardNotUsableError,
+    load_trend_cards,
     load_trend_card,
 )
 
 
-def test_load_trend_card_from_gather_data() -> None:
+def test_load_trend_card_from_processed_v2_payload() -> None:
     card = load_trend_card("gogumafarm:1bf390d89536004b")
 
     assert isinstance(card, TrendCard)
@@ -38,6 +41,17 @@ def test_load_trend_card_from_gather_data() -> None:
     assert card.curation_meta.status == "reviewed"
     assert card.trend_meta.collected_week == "2026-W28"
     assert card.is_mock is True
+
+
+def test_load_trend_cards_from_processed_v2_payload() -> None:
+    cards = load_trend_cards()
+
+    assert len(cards) == 20
+    assert {card.meme_id for card in cards} >= {
+        "gogumafarm:1bf390d89536004b",
+        "gogumafarm:d4e6309980c15a81",
+        "manual:prison-comeback",
+    }
 
 
 def test_load_current_manually_curated_card_without_id() -> None:
@@ -95,16 +109,21 @@ def test_copy_card_requires_text_patterns() -> None:
         )
 
 
-def test_copy_card_requires_standalone_test_pass() -> None:
-    with pytest.raises(ValidationError, match="standalone_test"):
-        TrendCard.model_validate(
-            _behavior_meme_card(
-                modalities=["text"],
-                core_asset="text",
-                usable_assets=["copy"],
-                text_patterns=["멍하니 좋아, {메뉴}"],
-            )
+def test_copy_gate_rejects_failed_standalone_transfer(tmp_path) -> None:
+    card = TrendCard.model_validate(
+        _behavior_meme_card(
+            modalities=["text"],
+            core_asset="text",
+            usable_assets=["copy"],
+            text_patterns=["멍하니 좋아, {메뉴}"],
+            copy_markers=["좋아"],
         )
+    )
+    path = tmp_path / "failed-standalone-card.json"
+    path.write_text(json.dumps(card.model_dump(), ensure_ascii=False), encoding="utf-8")
+
+    with pytest.raises(TrendCardNotUsableError, match="텍스트 단독 전이"):
+        load_trend_card(card.meme_id, path=path, require_asset="copy")
 
 
 def test_copy_card_requires_explicit_validation_marker() -> None:
@@ -159,14 +178,14 @@ def test_load_trend_card_rejects_conflicting_prohibited_term() -> None:
         load_trend_card(prohibited_terms=["좋아"])
 
 
-def test_load_trend_card_uses_configured_manual_path(monkeypatch, tmp_path) -> None:
+def test_load_trend_card_uses_configured_payload_path(monkeypatch, tmp_path) -> None:
     source_card = load_trend_card()
     configured_path = tmp_path / "active-trendcard.json"
     configured_path.write_text(
         source_card.model_dump_json(indent=2),
         encoding="utf-8",
     )
-    monkeypatch.setattr(settings, "trend_card_path", configured_path)
+    monkeypatch.setattr(settings, "trend_card_payload_path", configured_path)
 
     loaded = load_trend_card()
 

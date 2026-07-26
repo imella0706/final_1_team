@@ -43,7 +43,15 @@ DEFAULT_COMPARISON_FILES = [
     API_ROOT / "evals" / "meme_ad_copy_cases.json",
     API_ROOT / "evals" / "few_shot_examples.json",
 ]
-DEFAULT_TREND_CARD_FILE = PROJECT_ROOT / "gather_data" / "trendcard.json"
+DEFAULT_TREND_CARD_FILE = (
+    PROJECT_ROOT
+    / "data"
+    / "processed"
+    / "sns_trend"
+    / "v2"
+    / "cross_platform_signal_top_candidates"
+    / "cross_platform_signal_top_candidates.json"
+)
 IMMUTABLE_REVISION_PATTERN = re.compile(r"^[0-9a-f]{40}$")
 DEFAULT_MAX_LENGTH = 4096
 QLORA_QUANT_TYPE = "nf4"

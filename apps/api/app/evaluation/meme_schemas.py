@@ -88,10 +88,28 @@ class MemeJudgeComebackRevealCopyStructure(BaseModel):
     reason_ending: NonEmptyText
 
 
+class MemeJudgeTemplateRevealCopyStructure(BaseModel):
+    """Generic v2 template/reveal/support contract supplied by a TrendCard."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    setup_source: NonEmptyText
+    setup_position: NonEmptyText
+    marker_template: NonEmptyText
+    marker_occurrences: int = Field(ge=1, le=5)
+    reveal_source: NonEmptyText
+    reveal_position: NonEmptyText
+    support_source: NonEmptyText
+    minimum_support_count: int = Field(ge=1, le=5)
+    support_relation: NonEmptyText
+    reason_ending: NonEmptyText
+
+
 MemeJudgeTrendCopyStructure: TypeAlias = (
     MemeJudgeCopyStructure
     | MemeJudgeContextDanceCopyStructure
     | MemeJudgeComebackRevealCopyStructure
+    | MemeJudgeTemplateRevealCopyStructure
 )
 
 

@@ -1,33 +1,63 @@
 x-airflow-common: &airflow-common
-  image: apache/airflow:2.10.5-python3.11
+  build:
+    context: .
+    dockerfile: Dockerfile.airflow
+    args:
+      AIRFLOW_VERSION: "2.10.5"
+      PYTHON_VERSION: "3.11"
+  image: brandmate-airflow:2.10.5-python3.11
   environment: &airflow-common-env
     AIRFLOW__CORE__EXECUTOR: LocalExecutor
     AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-postgres/airflow
-    AIRFLOW__CORE__FERNET_KEY: ""
+    AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW__CORE__FERNET_KEY:?set AIRFLOW__CORE__FERNET_KEY}
+    AIRFLOW__WEBSERVER__SECRET_KEY: ${AIRFLOW__WEBSERVER__SECRET_KEY:?set AIRFLOW__WEBSERVER__SECRET_KEY}
     AIRFLOW__CORE__LOAD_EXAMPLES: "false"
     AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "true"
+    AIRFLOW__CORE__DEFAULT_TIMEZONE: utc
+    AIRFLOW__WEBSERVER__DEFAULT_UI_TIMEZONE: UTC
+    AIRFLOW__SCHEDULER__ENABLE_HEALTH_CHECK: "true"
     AIRFLOW__API__AUTH_BACKENDS: airflow.api.auth.backend.basic_auth,airflow.api.auth.backend.session
+    AIRFLOW_ADMIN_USERNAME: ${AIRFLOW_ADMIN_USERNAME:?set AIRFLOW_ADMIN_USERNAME}
+    AIRFLOW_ADMIN_PASSWORD: ${AIRFLOW_ADMIN_PASSWORD:?set AIRFLOW_ADMIN_PASSWORD}
+    AIRFLOW_ADMIN_EMAIL: ${AIRFLOW_ADMIN_EMAIL:-admin@example.com}
+    AIRFLOW_ADMIN_FIRSTNAME: ${AIRFLOW_ADMIN_FIRSTNAME:-BrandMate}
+    AIRFLOW_ADMIN_LASTNAME: ${AIRFLOW_ADMIN_LASTNAME:-Admin}
     BRANDMATE_MOCK_GCS_BASE_DIR: /opt/airflow/mock_gcs
+    BRANDMATE_AIRFLOW_GCS_CACHE_DIR: /opt/airflow/gcs_data_cache
+    BRANDMATE_AIRFLOW_GCS_LOGS_PREFIX: ${BRANDMATE_AIRFLOW_GCS_LOGS_PREFIX:-gs://ssakda/projects/brandmate/logs/data_pipeline/airflow}
+    BRANDMATE_REPO_ROOT: /opt/airflow
+    BRANDMATE_AIRFLOW_INCLUDE_DIR: /opt/airflow/include
+    CLOUDSDK_CONFIG: /home/airflow/.config/gcloud
+    GOOGLE_CLOUD_PROJECT: ${GOOGLE_CLOUD_PROJECT:-ssakda}
+    PYTHONPATH: /opt/airflow/include:/opt/airflow/apps/api
   volumes:
-    - ./airflow/dags:/opt/airflow/dags
-    - ./airflow/include:/opt/airflow/include
+    - ./airflow/dags:/opt/airflow/dags:ro
+    - ./airflow/include:/opt/airflow/include:ro
     - ./airflow/mock_gcs:/opt/airflow/mock_gcs
+    - ./airflow/gcs_data_cache:/opt/airflow/gcs_data_cache
+    - ${HOME}/.config/gcloud:/home/airflow/.config/gcloud:ro
+    - ./apps/api:/opt/airflow/apps/api:ro
+    - ./data:/opt/airflow/data:ro
     - airflow-logs-volume:/opt/airflow/logs
-  user: "0:0"
-  depends_on:
-    airflow-postgres:
-      condition: service_healthy
+  # [Design Intent] Match the host UID while retaining the image's root group
+  # permissions. The process is not root because its UID is never zero.
+  user: "${AIRFLOW_UID:-50000}:0"
 
 services:
   airflow-postgres:
     image: postgres:16
     environment:
+      # [Design Intent] The metadata DB is network-internal and keeps its
+      # existing local credentials so the current volume remains reusable.
       POSTGRES_USER: airflow
       POSTGRES_PASSWORD: airflow
       POSTGRES_DB: airflow
     healthcheck:
-      test: ["CMD", "pg_isready", "-U", "airflow"]
+      test:
+        - CMD-SHELL
+        - pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"
       interval: 10s
+      timeout: 5s
       retries: 5
       start_period: 5s
     volumes:
@@ -35,35 +65,59 @@ services:
 
   airflow-init:
     <<: *airflow-common
-    entrypoint: /bin/bash
     command:
+      - bash
       - -c
       - |
+        set -e
         airflow db migrate
-        airflow users create \
-          --username admin \
-          --firstname BrandMate \
-          --lastname Admin \
+        airflow users reset-password \
+          --username "$${AIRFLOW_ADMIN_USERNAME}" \
+          --password "$${AIRFLOW_ADMIN_PASSWORD}" \
+        || airflow users create \
+          --username "$${AIRFLOW_ADMIN_USERNAME}" \
+          --firstname "$${AIRFLOW_ADMIN_FIRSTNAME}" \
+          --lastname "$${AIRFLOW_ADMIN_LASTNAME}" \
           --role Admin \
-          --email admin@example.com \
-          --password admin || true
+          --email "$${AIRFLOW_ADMIN_EMAIL}" \
+          --password "$${AIRFLOW_ADMIN_PASSWORD}"
+    depends_on:
+      airflow-postgres:
+        condition: service_healthy
+    restart: "no"
 
   airflow-webserver:
     <<: *airflow-common
     command: webserver
     ports:
-      - "8080:8080"
+      - "${AIRFLOW_WEB_PORT:-8080}:8080"
     healthcheck:
       test: ["CMD", "curl", "--fail", "http://localhost:8080/health"]
       interval: 30s
       timeout: 10s
       retries: 5
       start_period: 30s
+    depends_on:
+      airflow-postgres:
+        condition: service_healthy
+      airflow-init:
+        condition: service_completed_successfully
     restart: unless-stopped
 
   airflow-scheduler:
     <<: *airflow-common
     command: scheduler
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8974/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    depends_on:
+      airflow-postgres:
+        condition: service_healthy
+      airflow-init:
+        condition: service_completed_successfully
     restart: unless-stopped
 
 volumes:

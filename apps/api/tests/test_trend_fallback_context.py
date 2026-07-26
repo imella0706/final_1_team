@@ -13,7 +13,16 @@ from app.modules.ad_copy.trend_context import load_trend_card
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
-TREND_CARD_PATH = REPO_ROOT / "gather_data" / "trendcard1.json"
+TREND_CARD_FIXTURE = (
+    REPO_ROOT
+    / "data"
+    / "curated"
+    / "sns_trend"
+    / "v2"
+    / "meme_cards_reviewed"
+    / "gogumafarm"
+    / "gogumafarm_d4e6309980c15a81.json"
+)
 
 
 def _request(promotion: str) -> AdCopyRequest:
@@ -42,7 +51,7 @@ def test_context_dance_fallback_rejects_internal_audience_summary() -> None:
         "상권: 대학가 / 세부 타겟: 신메뉴를 기다리는 20대 학생"
     )
     request = _request(promotion)
-    card = load_trend_card(path=TREND_CARD_PATH, require_channel="instagram")
+    card = load_trend_card(path=TREND_CARD_FIXTURE, require_channel="instagram")
 
     content = build_fallback_copy(request, ["test fallback"], card)
     recommendation = content.channel_recommendation
@@ -58,7 +67,7 @@ def test_context_dance_fallback_rejects_internal_audience_summary() -> None:
 def test_context_dance_fallback_preserves_marker_with_long_campaign_context() -> None:
     promotion = ("여름 신메뉴 출시를 기다리는 고객을 위한 특별한 캠페인 상황 " * 6).strip()[:300]
     request = _request(promotion)
-    card = load_trend_card(path=TREND_CARD_PATH, require_channel="instagram")
+    card = load_trend_card(path=TREND_CARD_FIXTURE, require_channel="instagram")
 
     content = build_fallback_copy(request, ["test fallback"], card)
     recommendation = content.channel_recommendation
@@ -74,7 +83,7 @@ def test_context_dance_fallback_preserves_marker_with_long_campaign_context() ->
 def test_context_dance_fallback_keeps_real_context_before_internal_metadata() -> None:
     promotion = "7월 신메뉴 공개 / 성별 타겟: 전체 / 타겟: 대학생 / 지역: 서울 마포구"
     request = _request(promotion)
-    card = load_trend_card(path=TREND_CARD_PATH, require_channel="instagram")
+    card = load_trend_card(path=TREND_CARD_FIXTURE, require_channel="instagram")
 
     content = build_fallback_copy(request, ["test fallback"], card)
 
@@ -92,7 +101,7 @@ def test_generate_invalid_model_output_returns_safe_context_dance_fallback(
         "상권: 대학가 / 세부 타겟: 신메뉴를 기다리는 20대 학생"
     )
     request = _request(promotion)
-    card = load_trend_card(path=TREND_CARD_PATH, require_channel="instagram")
+    card = load_trend_card(path=TREND_CARD_FIXTURE, require_channel="instagram")
 
     async def invalid_model_response(*args, **kwargs) -> str:
         del args, kwargs
@@ -119,7 +128,7 @@ def test_generate_invalid_model_output_returns_safe_context_dance_fallback(
 
 def test_generate_wraps_fallback_schema_error(monkeypatch) -> None:
     request = _request("성별 타겟: 전체 / 타겟: 대학생")
-    card = load_trend_card(path=TREND_CARD_PATH, require_channel="instagram")
+    card = load_trend_card(path=TREND_CARD_FIXTURE, require_channel="instagram")
 
     async def invalid_model_response(*args, **kwargs) -> str:
         del args, kwargs
