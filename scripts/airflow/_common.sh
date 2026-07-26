@@ -69,6 +69,27 @@ airflow_compose() {
     "$@"
 }
 
+airflow_prepare_writable_dirs() {
+  local airflow_uid
+  airflow_uid="$(airflow_env_value AIRFLOW_UID "$(id -u)")"
+
+  mkdir -p \
+    "${AIRFLOW_REPO_ROOT}/airflow/gcs_data_cache" \
+    "${AIRFLOW_REPO_ROOT}/airflow/logs" \
+    "${AIRFLOW_REPO_ROOT}/airflow/mock_gcs"
+
+  # [Design Intent] Writable bind mounts must match the non-root Airflow UID.
+  # Use a one-shot root container instead of requiring every developer to run
+  # host-level sudo/chown commands.
+  airflow_compose run \
+    --rm \
+    --no-deps \
+    --user "0:0" \
+    --entrypoint bash \
+    airflow-init \
+    -lc "chown -R ${airflow_uid}:0 /opt/airflow/gcs_data_cache /opt/airflow/logs /opt/airflow/mock_gcs && chmod -R ug+rwX /opt/airflow/gcs_data_cache /opt/airflow/logs /opt/airflow/mock_gcs"
+}
+
 airflow_env_value() {
   local key="$1"
   local fallback="$2"

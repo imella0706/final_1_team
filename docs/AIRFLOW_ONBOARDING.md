@@ -220,6 +220,14 @@ gcloud auth application-default print-access-token
 }
 ```
 
+`sync_processed_package_from_gcs`가 아래처럼 실패하면 GCS 인증 문제가 아니라 writable cache 권한 문제입니다.
+
+```text
+PermissionError: [Errno 13] Permission denied: '/opt/airflow/gcs_data_cache/...'
+```
+
+이 경우 직접 `chown`하지 말고 `./scripts/airflow/up.sh`를 다시 실행합니다. `up.sh`는 `airflow/gcs_data_cache`, `airflow/mock_gcs`, Airflow log mount를 현재 `AIRFLOW_UID` 기준으로 보정합니다.
+
 로컬에서 GCS summary 업로드까지 아직 확인하지 않을 때는 아래처럼 끌 수 있습니다.
 
 ```json
@@ -282,6 +290,7 @@ L2 로컬 실행 기준:
 - `.env.airflow.example`에는 변수 계약만 기록
 - `up.sh` 최초 실행 시 `.env.airflow`와 무작위 secret을 자동 생성
 - `./data`, `./apps/api`, DAG, include 코드는 read-only mount
+- `./airflow/gcs_data_cache`, `./airflow/mock_gcs`, Airflow log mount는 `up.sh`가 `${AIRFLOW_UID}:0` 소유로 보정
 - Postgres host port는 노출하지 않음
 - 컨테이너 시작 시 동적 pip install을 하지 않고 image build 단계에서 dependency를 고정
 - Airflow system/UI timezone은 UTC 유지

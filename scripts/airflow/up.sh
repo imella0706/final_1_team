@@ -9,6 +9,7 @@ source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/_common.sh"
 airflow_generate_env
 airflow_require_command curl
 airflow_compose build airflow-init
+airflow_prepare_writable_dirs
 airflow_compose up -d --no-build
 
 airflow_web_port="$(airflow_env_value AIRFLOW_WEB_PORT 8080)"
