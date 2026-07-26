@@ -61,6 +61,7 @@ outputs
 # Airflow local runtime artifacts
 airflow/logs/
 airflow/mock_gcs/logs/
+airflow/gcs_data_cache/
 # Added by code-review-graph
 .code-review-graph/
 

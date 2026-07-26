@@ -30,6 +30,7 @@ def test_sns_trend_processed_validation_dagbag_imports_when_airflow_is_installed
     assert dag.catchup is False
     assert {task.task_id for task in dag.tasks} == {
         "resolve_processed_package",
+        "sync_processed_package_from_gcs",
         "validate_package",
         "write_validation_summary",
     }

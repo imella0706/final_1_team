@@ -1,3 +1,3 @@
 # [Design Intent] Pin only dependencies imported by the current DAG runtime.
-# GCS providers belong to Phase 2 and are intentionally excluded here.
 pydantic==2.10.6
+google-cloud-storage==2.18.2

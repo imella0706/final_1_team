@@ -25,6 +25,13 @@ INCLUDE_DIR = Path(os.getenv("BRANDMATE_AIRFLOW_INCLUDE_DIR", AIRFLOW_ROOT / "in
 MOCK_GCS_BASE_DIR = Path(
     os.getenv("BRANDMATE_MOCK_GCS_BASE_DIR", AIRFLOW_ROOT / "mock_gcs")
 )
+GCS_CACHE_BASE_DIR = Path(
+    os.getenv("BRANDMATE_AIRFLOW_GCS_CACHE_DIR", AIRFLOW_ROOT / "gcs_data_cache")
+)
+GCS_LOGS_PREFIX = os.getenv(
+    "BRANDMATE_AIRFLOW_GCS_LOGS_PREFIX",
+    "gs://ssakda/projects/brandmate/logs/data_pipeline/airflow",
+).rstrip("/")
 
 for import_path in (INCLUDE_DIR,):
     import_path_value = str(import_path)
@@ -35,6 +42,11 @@ from airflow.decorators import dag, task  # noqa: E402
 from airflow.exceptions import AirflowException  # noqa: E402
 from airflow.operators.python import get_current_context  # noqa: E402
 
+from sns_trend.storage import (  # noqa: E402
+    StorageError,
+    sync_gcs_prefix_to_local,
+    upload_json_to_gcs,
+)
 from sns_trend.validation import (  # noqa: E402
     ProcessedValidationError,
     validate_processed_package,
@@ -62,12 +74,19 @@ def _int_conf(value: Any, *, default: int | None) -> int | None:
 
 def _repo_path(value: str) -> Path:
     if value.startswith("gs://"):
-        raise AirflowException(
-            "GCS 직접 읽기는 아직 이 DAG의 MVP 범위가 아닙니다. "
-            "processed package를 /opt/airflow/data 아래로 sync/mount한 뒤 실행하세요."
-        )
+        raise AirflowException("GCS URI는 source_gcs_prefix로 전달하세요.")
     path = Path(value)
     return path if path.is_absolute() else REPO_ROOT / path
+
+
+def _cache_processed_dir(*, version: str, run_id: str) -> Path:
+    return (
+        GCS_CACHE_BASE_DIR
+        / f"dag_id={DAG_ID}"
+        / f"version={_safe_path_fragment(version)}"
+        / f"run_id={_safe_path_fragment(run_id)}"
+        / DEFAULT_ARTIFACT_NAME
+    )
 
 
 def _safe_path_fragment(value: str) -> str:
@@ -91,7 +110,8 @@ def _safe_path_fragment(value: str) -> str:
     ```json
     {
       "version": "v2",
-      "processed_prefix": "data/processed/sns_trend/v2/cross_platform_signal_top_candidates/"
+      "processed_prefix": "data/processed/sns_trend/v2/cross_platform_signal_top_candidates/",
+      "source_gcs_prefix": "gs://ssakda/projects/brandmate/data/processed/sns_trend/v2/cross_platform_signal_top_candidates/"
     }
     ```
     """,
@@ -101,6 +121,7 @@ def sns_trend_processed_validation() -> None:
     def resolve_processed_package() -> dict[str, Any]:
         context = get_current_context()
         dag_run = context.get("dag_run")
+        run_id = str(getattr(dag_run, "run_id", "manual"))
         conf = dict(getattr(dag_run, "conf", None) or {})
 
         version = str(conf.get("version") or DEFAULT_VERSION)
@@ -111,10 +132,23 @@ def sns_trend_processed_validation() -> None:
                 f"{version}/{DEFAULT_ARTIFACT_NAME}/"
             )
         )
-        processed_dir = _repo_path(processed_prefix)
+        source_gcs_prefix = conf.get("source_gcs_prefix") or conf.get("processed_gcs_prefix")
+        if processed_prefix.startswith("gs://") and not source_gcs_prefix:
+            source_gcs_prefix = processed_prefix
+
+        if source_gcs_prefix:
+            processed_dir = _cache_processed_dir(version=version, run_id=run_id)
+            source_type = "gcs"
+        else:
+            processed_dir = _repo_path(processed_prefix)
+            source_type = "local"
 
         return {
             "version": version,
+            "source_type": source_type,
+            "source_gcs_prefix": str(source_gcs_prefix).rstrip("/") + "/"
+            if source_gcs_prefix
+            else None,
             "processed_dir": str(processed_dir),
             "json_path": str(processed_dir / f"{DEFAULT_ARTIFACT_NAME}.json"),
             "csv_path": str(processed_dir / f"{DEFAULT_ARTIFACT_NAME}.csv"),
@@ -123,7 +157,37 @@ def sns_trend_processed_validation() -> None:
             "api_loader_smoke": _bool_conf(conf.get("api_loader_smoke"), default=True),
             "dvc_check": _bool_conf(conf.get("dvc_check"), default=True),
             "require_dvc": _bool_conf(conf.get("require_dvc"), default=False),
+            "write_gcs_summary": _bool_conf(
+                conf.get("write_gcs_summary"),
+                default=bool(source_gcs_prefix),
+            ),
+            "gcs_logs_prefix": str(conf.get("gcs_logs_prefix") or GCS_LOGS_PREFIX),
         }
+
+    @task
+    def sync_processed_package_from_gcs(config: dict[str, Any]) -> dict[str, Any]:
+        if config.get("source_type") != "gcs":
+            return {
+                **config,
+                "gcs_sync": {
+                    "status": "skipped",
+                    "reason": "local processed_prefix was provided",
+                },
+            }
+
+        try:
+            sync_summary = sync_gcs_prefix_to_local(
+                gcs_prefix=str(config["source_gcs_prefix"]),
+                local_dir=Path(config["processed_dir"]),
+                required_file_names={
+                    f"{DEFAULT_ARTIFACT_NAME}.json",
+                    f"{DEFAULT_ARTIFACT_NAME}.csv",
+                },
+            )
+        except StorageError as error:
+            raise AirflowException(str(error)) from error
+
+        return {**config, "gcs_sync": sync_summary}
 
     @task
     def validate_package(config: dict[str, Any]) -> dict[str, Any]:
@@ -165,18 +229,43 @@ def sns_trend_processed_validation() -> None:
             **summary,
             "dag_id": DAG_ID,
             "run_id": run_id,
+            "source_type": config.get("source_type"),
+            "source_gcs_prefix": config.get("source_gcs_prefix"),
+            "gcs_sync": config.get("gcs_sync"),
             "validation_summary_path": str(summary_path),
         }
         write_json(summary_path, persisted_summary)
+        gcs_summary_uri = None
+        if config.get("write_gcs_summary"):
+            gcs_summary_uri = (
+                str(config["gcs_logs_prefix"]).rstrip("/")
+                + f"/dag_id={DAG_ID}"
+                + f"/version={_safe_path_fragment(config['version'])}"
+                + f"/run_id={_safe_path_fragment(run_id)}"
+                + "/validation_summary.json"
+            )
+            try:
+                upload_result = upload_json_to_gcs(
+                    gcs_uri=gcs_summary_uri,
+                    payload={**persisted_summary, "gcs_validation_summary_path": gcs_summary_uri},
+                )
+            except StorageError as error:
+                raise AirflowException(str(error)) from error
+            persisted_summary["gcs_validation_summary_path"] = gcs_summary_uri
+            persisted_summary["gcs_summary_upload"] = upload_result
+            write_json(summary_path, persisted_summary)
+
         return {
             "status": persisted_summary["status"],
             "card_count": persisted_summary["card_count"],
             "validation_summary_path": str(summary_path),
+            "gcs_validation_summary_path": gcs_summary_uri,
         }
 
     resolved_config = resolve_processed_package()
-    validation_summary = validate_package(resolved_config)
-    write_validation_summary(validation_summary, resolved_config)
+    synced_config = sync_processed_package_from_gcs(resolved_config)
+    validation_summary = validate_package(synced_config)
+    write_validation_summary(validation_summary, synced_config)
 
 
 sns_trend_processed_validation()

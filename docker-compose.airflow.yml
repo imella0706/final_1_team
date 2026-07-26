@@ -23,13 +23,19 @@ x-airflow-common: &airflow-common
     AIRFLOW_ADMIN_FIRSTNAME: ${AIRFLOW_ADMIN_FIRSTNAME:-BrandMate}
     AIRFLOW_ADMIN_LASTNAME: ${AIRFLOW_ADMIN_LASTNAME:-Admin}
     BRANDMATE_MOCK_GCS_BASE_DIR: /opt/airflow/mock_gcs
+    BRANDMATE_AIRFLOW_GCS_CACHE_DIR: /opt/airflow/gcs_data_cache
+    BRANDMATE_AIRFLOW_GCS_LOGS_PREFIX: ${BRANDMATE_AIRFLOW_GCS_LOGS_PREFIX:-gs://ssakda/projects/brandmate/logs/data_pipeline/airflow}
     BRANDMATE_REPO_ROOT: /opt/airflow
     BRANDMATE_AIRFLOW_INCLUDE_DIR: /opt/airflow/include
+    CLOUDSDK_CONFIG: /home/airflow/.config/gcloud
+    GOOGLE_CLOUD_PROJECT: ${GOOGLE_CLOUD_PROJECT:-ssakda}
     PYTHONPATH: /opt/airflow/include:/opt/airflow/apps/api
   volumes:
     - ./airflow/dags:/opt/airflow/dags:ro
     - ./airflow/include:/opt/airflow/include:ro
     - ./airflow/mock_gcs:/opt/airflow/mock_gcs
+    - ./airflow/gcs_data_cache:/opt/airflow/gcs_data_cache
+    - ${HOME}/.config/gcloud:/home/airflow/.config/gcloud:ro
     - ./apps/api:/opt/airflow/apps/api:ro
     - ./data:/opt/airflow/data:ro
     - airflow-logs-volume:/opt/airflow/logs

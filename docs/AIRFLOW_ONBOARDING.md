@@ -145,20 +145,24 @@ airflow/
   include/
     sns_trend/
       __init__.py
+      storage.py
       validation.py
     sns_trend_processed_validation_cli.py
   tests/
     test_sns_trend_processed_validation_dag.py
     test_sns_trend_processed_validation.py
+    test_sns_trend_storage.py
 ```
 
 역할:
 
 - `dags/sns_trend_processed_validation.py`: Airflow 수동 실행 DAG
+- `sns_trend/storage.py`: GCS processed package sync와 validation summary upload adapter
 - `sns_trend/validation.py`: 실제 processed package 검증 로직
 - `sns_trend_processed_validation_cli.py`: CLI entrypoint
 - `test_sns_trend_processed_validation.py`: JSON/CSV consistency와 DVC policy 테스트
 - `test_sns_trend_processed_validation_dag.py`: DAG syntax와 Airflow DagBag import 테스트
+- `test_sns_trend_storage.py`: GCS URI parsing, sync, summary upload adapter 테스트
 
 삭제된 legacy POC:
 
@@ -182,6 +186,7 @@ Task graph:
 ```text
 # [Design Intent] 공식 pipeline input인 processed package를 read-only로 검증하고 실패한 payload가 API/DVC gate를 통과하지 못하게 한다.
 resolve_processed_package
+  -> sync_processed_package_from_gcs
   -> validate_package
   -> write_validation_summary
 ```
@@ -196,6 +201,34 @@ manual trigger config:
 ```
 
 MVP에서는 schedule을 켜지 않습니다. 데이터셋 담당자가 새 processed package를 올린 뒤 수동 trigger합니다.
+
+GCS에 업로드된 processed package를 검증할 때는 `source_gcs_prefix`를 넘깁니다. 이 경우 Airflow는 GCS object를 직접 스트리밍하지 않고, writable cache인 `/opt/airflow/gcs_data_cache`로 먼저 내려받은 뒤 기존 validator를 실행합니다.
+
+로컬 Docker Airflow에서 GCS를 읽으려면 host의 ADC를 컨테이너에 read-only로 mount합니다. 처음 한 번 또는 `Reauthentication is needed`가 나오면 아래 명령으로 갱신합니다.
+
+```bash
+# [Design Intent] Airflow Python GCS client가 사용할 Application Default Credentials를 로컬에 준비한다.
+gcloud auth application-default login
+gcloud auth application-default print-access-token
+```
+
+```json
+{
+  "version": "v2",
+  "source_gcs_prefix": "gs://ssakda/projects/brandmate/data/processed/sns_trend/v2/cross_platform_signal_top_candidates/",
+  "write_gcs_summary": true
+}
+```
+
+로컬에서 GCS summary 업로드까지 아직 확인하지 않을 때는 아래처럼 끌 수 있습니다.
+
+```json
+{
+  "version": "v2",
+  "source_gcs_prefix": "gs://ssakda/projects/brandmate/data/processed/sns_trend/v2/cross_platform_signal_top_candidates/",
+  "write_gcs_summary": false
+}
+```
 
 ## 8. Airflow Metadata DB 정책
 
