@@ -5,6 +5,7 @@ from app.modules.ad_copy.trend_context import (
     ComebackRevealCopyStructure,
     ContextDanceCopyStructure,
     CopyStructure,
+    TemplateRevealCopyStructure,
     TrendCard,
 )
 
@@ -27,6 +28,9 @@ def _copy_structure_prompt_rules(card: TrendCard) -> str:
     if isinstance(structure, ComebackRevealCopyStructure):
         return """15. 실제 복귀·재출시·재입고 맥락인 setup_source를 marker_template보다 먼저 제시한 다음, reveal_source의 대표 상품을 marker 뒤에 공개하세요. marker 수는 marker_occurrences와 정확히 맞추세요.
 16. 대표 상품 공개 뒤에는 support_source인 서로 다른 입력 특징을 minimum_support_count 이상 연결하고, 각 support는 reason_ending으로 끝내세요. 입력에 없는 복귀 맥락이나 특징을 만들지 마세요."""
+    if isinstance(structure, TemplateRevealCopyStructure):
+        return """15. marker_template의 구조를 기준으로 setup_source, reveal_source, support_source의 순서를 지키되, 플레이스홀더는 입력된 상품·상황·특징으로 자연스럽게 바꾸세요.
+16. support_source가 입력 특징을 요구하면 minimum_support_count 이상의 실제 입력 특징을 연결하고, 각 support는 reason_ending의 어감을 유지하세요. 입력에 없는 특징이나 출처를 만들지 마세요."""
     raise TypeError(f"지원하지 않는 copy_structure입니다: {type(structure).__name__}")
 
 

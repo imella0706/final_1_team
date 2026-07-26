@@ -1,0 +1,126 @@
+{
+  "dataset_name": "sns_trend",
+  "version": "v2",
+  "dataset_stage": "processed",
+  "status": "baseline",
+  "artifact_role": "api_payload",
+  "owner": "Chaebin",
+  "created_at": "2026-07-26",
+  "source": {
+    "provider": "manual_curation",
+    "source_name": "sns_trend_meme_cards_week_2026-W30",
+    "source_url": "multiple_sources",
+    "source_urls": {
+      "gogumafarm": "https://gogumafarm.kr/",
+      "careet": "https://contents.premium.naver.com/careets/insight",
+      "other": "TODO"
+    },
+    "source_split": "none",
+    "raw_uploaded_to_gcs": false,
+    "annotation_preserved": "none",
+    "platforms": [
+      "gogumafarm",
+      "incross",
+      "manual",
+      "youtube",
+      "instagram",
+      "x",
+      "naver_blog",
+      "careet",
+      "threads",
+      "other"
+    ],
+    "crawl_period": {
+      "timezone": "Asia/Seoul",
+      "created_date": "2026-07-26",
+      "landing_week": "2026-W30"
+    }
+  },
+  "curation": {
+    "selected_count": 20,
+    "target_size_gb": "none",
+    "actual_size_gb": 0.000162,
+    "actual_size_bytes": 173648,
+    "selection_policy": "Reviewed schema_version=2.0 meme cards were selected from gather_data/processed and grouped as the v2 sns_trend meme card pool.",
+    "category_balanced": "none",
+    "quality_filters": [
+      "schema_version=2.0 only",
+      "curation_meta.status=reviewed only",
+      "trend_meta.status=active only",
+      "grouped by source family from file name"
+    ],
+    "path_mapping_available": true,
+    "curated_inputs": [
+      "data/curated/sns_trend/v2/meme_cards_reviewed/"
+    ],
+    "landing_inputs": [
+      "data/landing/sns_trend/week=2026-W30/raw/meme_cards_v2_incoming/"
+    ]
+  },
+  "processing": {
+    "input_dataset": "data/curated/sns_trend/v2/meme_cards_reviewed/",
+    "artifact_name": "cross_platform_signal_top_candidates",
+    "target_use": "api",
+    "preprocessing_steps": [
+      "use reviewed individual meme cards from curated as input",
+      "merge individual JSON cards into one JSON payload",
+      "export CSV index with card identity, source family, curation status, trend status, and source list"
+    ],
+    "output_files": [
+      "cross_platform_signal_top_candidates.json",
+      "cross_platform_signal_top_candidates.csv"
+    ],
+    "input_card_count": 20,
+    "output_card_count": 20,
+    "schema_version": "2.0"
+  },
+  "storage": {
+    "gcs_path": "gs://ssakda/projects/brandmate/data/processed/sns_trend/v2/cross_platform_signal_top_candidates/",
+    "local_example_path": "data/processed/sns_trend/v2/cross_platform_signal_top_candidates/",
+    "local_source_path": "gather_data/processed/",
+    "landing_gcs_path": "gs://ssakda/projects/brandmate/data/landing/sns_trend/week=2026-W30/raw/meme_cards_v2_incoming/",
+    "curated_gcs_path": "gs://ssakda/projects/brandmate/data/curated/sns_trend/v2/meme_cards_reviewed/",
+    "canonical_docs": {
+      "manifest_path": "docs/datasets/sns_trend/v2/manifest.json",
+      "description_path": "docs/datasets/sns_trend/v2/description.md",
+      "stored_inside_gcs_data_package": false
+    },
+    "dvc_tracked": false
+  },
+  "reproducibility": {
+    "generation_script_available": false,
+    "generation_script_path": "TODO",
+    "random_seed": "none",
+    "can_rebuild": "partial"
+  },
+  "quality_notes": {
+    "total_json_files": 20,
+    "schema_versions": {
+      "2.0": 20
+    },
+    "source_family_counts": {
+      "gogumafarm": 2,
+      "incross": 1,
+      "manual": 17
+    },
+    "trend_meta_collected_week_counts": {
+      "2026-W30": 19,
+      "2026-W28": 1
+    },
+    "curation_status_counts": {
+      "reviewed": 20
+    },
+    "trend_status_counts": {
+      "active": 20
+    },
+    "is_mock": true
+  },
+  "limitations": [
+    "The source files are reviewed mock meme cards, not raw platform crawl exports.",
+    "The landing partition is week=2026-W30 because the v2 incoming package is primarily W30, but one carried-over card still has trend_meta.collected_week=2026-W28.",
+    "Some original source URLs and exact collection scripts are not fully encoded in this package.",
+    "The current processed artifact is an API/prompt payload, not an embedding index or scored retrieval ranking.",
+    "DVC tracking has not been enabled yet; final DVC registration is owned by the MLOps/infrastructure flow."
+  ],
+  "next_version_plan": "Attach source URL evidence per card, separate non-mock verified cards from mock cards, and add an embedding or ranking artifact if this dataset becomes a retrieval index."
+}

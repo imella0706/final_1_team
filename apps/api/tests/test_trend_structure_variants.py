@@ -23,10 +23,18 @@ from app.modules.ad_copy.trend_context import (
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
-TREND_CARD_PATHS = {
-    "feature_reason": REPO_ROOT / "gather_data" / "trendcard.json",
-    "context_dance": REPO_ROOT / "gather_data" / "trendcard1.json",
-    "comeback_reveal": REPO_ROOT / "gather_data" / "trendcard2.json",
+TREND_CARD_V2_ROOT = (
+    REPO_ROOT
+    / "data"
+    / "curated"
+    / "sns_trend"
+    / "v2"
+    / "meme_cards_reviewed"
+)
+TREND_CARD_FIXTURES = {
+    "feature_reason": TREND_CARD_V2_ROOT / "gogumafarm" / "gogumafarm_1bf390d89536004b.json",
+    "context_dance": TREND_CARD_V2_ROOT / "gogumafarm" / "gogumafarm_d4e6309980c15a81.json",
+    "comeback_reveal": TREND_CARD_V2_ROOT / "manual" / "manual_prison-comeback.json",
 }
 
 
@@ -64,7 +72,7 @@ def test_all_trend_card_shapes_load_without_losing_media_fields(
     asset_note: str,
 ) -> None:
     card = load_trend_card(
-        path=TREND_CARD_PATHS[variant],
+        path=TREND_CARD_FIXTURES[variant],
         require_asset="copy",
         require_channel="instagram",
     )
@@ -76,7 +84,7 @@ def test_all_trend_card_shapes_load_without_losing_media_fields(
 
 def test_context_dance_validator_checks_context_core_marker_and_optional_call() -> None:
     request = _request()
-    card = load_trend_card(path=TREND_CARD_PATHS["context_dance"])
+    card = load_trend_card(path=TREND_CARD_FIXTURES["context_dance"])
 
     valid = (
         "재입고를 기다리는 중인데 파라파라나 춰야지~\n"
@@ -100,7 +108,7 @@ def test_context_dance_validator_checks_context_core_marker_and_optional_call() 
 
 def test_comeback_validator_checks_setup_reveal_and_grounded_support() -> None:
     request = _request()
-    card = load_trend_card(path=TREND_CARD_PATHS["comeback_reveal"])
+    card = load_trend_card(path=TREND_CARD_FIXTURES["comeback_reveal"])
 
     valid = (
         "품절에서~ 누가 돌아왔게~?\n"
@@ -157,7 +165,7 @@ def test_new_structures_survive_prompt_judge_and_fallback_validation(
     rubric_term: str,
 ) -> None:
     request = _request()
-    card = load_trend_card(path=TREND_CARD_PATHS[variant])
+    card = load_trend_card(path=TREND_CARD_FIXTURES[variant])
     content = build_fallback_copy(request, [], card)
 
     assert validate_copy_output(content, request, card).valid is True
