@@ -253,6 +253,34 @@ PermissionError: [Errno 13] Permission denied: '/opt/airflow/gcs_data_cache/...'
 }
 ```
 
+### GCP VM smoke test
+
+GCP VM에서 처음 실행할 때 Docker가 없으면 Airflow를 띄울 수 없습니다. VM을 운영 서버처럼 재현 가능하게 관리하기 위해 수동 `apt-get install` 대신 Docker setup 스크립트를 사용합니다.
+
+```bash
+# [Design Intent] VM에 Docker와 compose plugin을 반복 가능한 방식으로 설치하고 Airflow smoke test 전제 조건을 맞춘다.
+cd ~/final_1_team
+./scripts/airflow/setup_gcp_vm_docker.sh
+```
+
+스크립트가 사용자를 `docker` group에 추가했다면 SSH를 끊고 다시 접속합니다. 재접속 후 확인합니다.
+
+```bash
+docker --version
+docker compose version
+docker ps
+```
+
+그 다음 Airflow를 띄우고 GCS processed validation을 실행합니다.
+
+```bash
+cd ~/final_1_team
+./scripts/airflow/up.sh
+./scripts/airflow/trigger_sns_trend_gcs_validation.sh
+```
+
+VM에서는 로컬 ADC 대신 VM service account 권한으로 GCS에 접근하는 것이 기준입니다. service account에 processed prefix read/list와 logs prefix write 권한이 없으면 `sync_processed_package_from_gcs` 또는 `write_validation_summary`에서 실패합니다.
+
 ## 8. Airflow Metadata DB 정책
 
 Airflow metadata DB에는 실행 상태만 저장합니다.
