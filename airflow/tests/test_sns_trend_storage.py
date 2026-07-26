@@ -6,6 +6,7 @@ import pytest
 
 from sns_trend.storage import (
     StorageError,
+    discover_latest_gcs_processed_version,
     parse_gcs_uri,
     sync_gcs_prefix_to_local,
     upload_json_to_gcs,
@@ -110,6 +111,53 @@ def test_sync_gcs_prefix_to_local_rejects_missing_required_file(tmp_path: Path) 
                 "cross_platform_signal_top_candidates.json",
                 "cross_platform_signal_top_candidates.csv",
             },
+            client=client,
+        )
+
+
+def test_discover_latest_gcs_processed_version_picks_highest_numeric_version() -> None:
+    root = "projects/brandmate/data/processed/sns_trend"
+    artifact_name = "cross_platform_signal_top_candidates"
+    client = FakeClient(
+        [
+            FakeBlob(f"{root}/v2/{artifact_name}/cross_platform_signal_top_candidates.json"),
+            FakeBlob(f"{root}/v2/{artifact_name}/cross_platform_signal_top_candidates.csv"),
+            FakeBlob(f"{root}/v10/{artifact_name}/cross_platform_signal_top_candidates.json"),
+            FakeBlob(f"{root}/v3/other_artifact/output.json"),
+            FakeBlob(f"{root}/draft/{artifact_name}/ignored.json"),
+            FakeBlob("projects/brandmate/data/processed/other/v99/output.json"),
+        ]
+    )
+
+    result = discover_latest_gcs_processed_version(
+        gcs_root=f"gs://ssakda/{root}/",
+        artifact_name=artifact_name,
+        client=client,
+    )
+
+    assert result["status"] == "discovered"
+    assert result["version"] == "v10"
+    assert result["version_number"] == 10
+    assert result["source_gcs_prefix"] == f"gs://ssakda/{root}/v10/{artifact_name}/"
+    assert result["discovered_versions"] == ["v2", "v3", "v10"]
+    assert result["object_count_by_version"] == {"v2": 2, "v3": 1, "v10": 1}
+    assert result["artifact_object_count"] == 1
+
+
+def test_discover_latest_gcs_processed_version_ignores_non_version_prefixes() -> None:
+    root = "projects/brandmate/data/processed/sns_trend"
+    client = FakeClient(
+        [
+            FakeBlob(f"{root}/latest/cross_platform_signal_top_candidates/data.json"),
+            FakeBlob(f"{root}/v0/cross_platform_signal_top_candidates/data.json"),
+            FakeBlob(f"{root}/version=2/cross_platform_signal_top_candidates/data.json"),
+        ]
+    )
+
+    with pytest.raises(StorageError, match="No processed version"):
+        discover_latest_gcs_processed_version(
+            gcs_root=f"gs://ssakda/{root}",
+            artifact_name="cross_platform_signal_top_candidates",
             client=client,
         )
 
