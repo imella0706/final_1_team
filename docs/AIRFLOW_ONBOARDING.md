@@ -224,10 +224,12 @@ Airflow metadata DB에는 실행 상태만 저장합니다.
 
 ## 9. Docker Compose
 
-현재 Airflow는 Docker Compose로만 구동합니다.
+현재 Airflow는 custom image와 Docker Compose로 구동합니다.
 
 ```text
 # [Design Intent] Airflow 실행 상태와 스케줄링 컴포넌트만 컨테이너로 묶고 서비스 런타임과 분리한다.
+Dockerfile.airflow
+requirements.airflow.txt
 docker-compose.airflow.yml
   airflow-postgres
   airflow-init
@@ -235,18 +237,46 @@ docker-compose.airflow.yml
   airflow-scheduler
 ```
 
-현재 이미지는 `apache/airflow:2.10.5-python3.11`입니다. 로컬 `ssakda` conda env의 Python `3.12`와 다릅니다. Airflow 안에서 실행될 코드는 Python 3.11 기준으로도 동작해야 합니다.
+custom image `brandmate-airflow:2.10.5-python3.11`은
+`apache/airflow:2.10.5-python3.11`을 base로 사용합니다. 로컬 `ssakda`
+conda env의 Python `3.12`와 다르므로 Airflow 안에서 실행될 코드는 Python
+3.11에서도 동작해야 합니다.
 
-현재 compose는 POC 성격이 남아 있습니다.
+L2 로컬 실행 기준:
 
-- `user: "0:0"`은 로컬 POC 임시값
-- Fernet key가 비어 있음
-- admin credential이 compose에 하드코딩
-- `./data`와 `./apps/api`를 read-only로 마운트해 processed package와 FastAPI loader smoke test를 확인함
-- Airflow 컨테이너 시작 시 동적 pip install은 하지 않음
-- DB port 노출 정책은 운영 전 점검 필요
+- webserver, scheduler, init은 `${AIRFLOW_UID}:0`으로 실행하며 UID 0을 사용하지 않음
+- `.env.airflow`은 Git ignore 대상이며 Fernet key, webserver secret, admin password를 보관
+- `.env.airflow.example`에는 변수 계약만 기록
+- `up.sh` 최초 실행 시 `.env.airflow`와 무작위 secret을 자동 생성
+- `./data`, `./apps/api`, DAG, include 코드는 read-only mount
+- Postgres host port는 노출하지 않음
+- 컨테이너 시작 시 동적 pip install을 하지 않고 image build 단계에서 dependency를 고정
+- Airflow system/UI timezone은 UTC 유지
 
-L2 MVP 전환 시 고쳐야 합니다.
+표준 실행 명령:
+
+```bash
+# [Design Intent] 팀원이 compose 세부 명령과 init 순서를 외우지 않게 lifecycle을 단일 진입점으로 고정한다.
+./scripts/airflow/up.sh
+./scripts/airflow/status.sh
+./scripts/airflow/logs.sh airflow-scheduler
+./scripts/airflow/logs.sh airflow-webserver --follow
+./scripts/airflow/down.sh
+```
+
+`down.sh`는 container와 Airflow compose network만 내리고 metadata DB와 log
+volume은 보존합니다. 실행 이력을 지우는 `docker compose down -v`는 초기화를
+명시적으로 결정한 경우가 아니면 사용하지 않습니다.
+
+로그인 계정과 port는 로컬 `.env.airflow`에서 확인합니다. 해당 파일의
+password, Fernet key, webserver secret은 문서, commit, terminal output에
+붙여 넣지 않습니다.
+
+프로젝트 root에서 다른 Compose 서비스도 실행 중이면 Airflow 실행 시
+`orphan containers` 또는 `network resource is still in use` warning이 보일 수
+있습니다. 현재 `final_1_team` Compose project를 공유해서 생기는 warning이며,
+Airflow 장애가 아닙니다. 다른 backend DB까지 제거할 수 있으므로
+`--remove-orphans`로 무작정 정리하지 않습니다.
 
 ## 10. 테스트
 
@@ -285,14 +315,11 @@ conda run -n ssakda python -m compileall -q \
 
 우선순위:
 
-1. `sns_trend_processed_validation` DAG 추가
-2. validation summary를 mock logs prefix에 저장
-3. Airflow DagBag import test 추가
-4. GCS adapter/ADC 연결
-5. `.env.airflow.example`과 non-root compose 정리
-6. 새 processed version 수동 run 절차 문서화
-7. 알림 연결
-8. YouTube/고구마팜 crawler ingestion 검토
-9. 캐릿/네이버 crawler ingestion 검토
+1. GCS adapter/ADC 연결
+2. 새 processed version 수동 run 절차 문서화
+3. 알림 연결
+4. metadata DB backup/runbook 정리
+5. YouTube/고구마팜 crawler ingestion 검토
+6. 캐릿/네이버 crawler ingestion 검토
 
 크롤러 ingestion은 후속 단계입니다. 지금 MVP의 성공 기준은 processed package validation gate가 안정적으로 동작하는 것입니다.
