@@ -595,7 +595,7 @@ def render_video_validation(
         )
         command = (
             "/home/imella0707/miniconda3/envs/ssakda/bin/python "
-            "scripts/visitor_flow_l2_render_preview.py \\\n"
+            "scripts/archive/visitor_flow/L2/visitor_flow_l2_render_preview.py \\\n"
             f"  --video {selected_video} \\\n"
             f"  --model {model_path} \\\n"
             "  --device 0 \\\n"
@@ -704,7 +704,7 @@ def render_operator_roi_video(
         )
         command = (
             "/home/imella0707/miniconda3/envs/ssakda/bin/python "
-            "scripts/visitor_flow_l2_render_preview.py \\\n"
+            "scripts/archive/visitor_flow/L2/visitor_flow_l2_render_preview.py \\\n"
             f"  --video {selected_video} \\\n"
             f"  --model {model_path} \\\n"
             "  --device 0 \\\n"

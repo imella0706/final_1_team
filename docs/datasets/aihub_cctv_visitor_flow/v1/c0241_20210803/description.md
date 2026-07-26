@@ -136,7 +136,7 @@ Curated evaluation subset:
 
 ```text
 scripts/visitor_flow_yolo_config_compare.py
-scripts/visitor_flow_l2_aggregate.py
+scripts/archive/visitor_flow/L2/visitor_flow_l2_aggregate.py
 scripts/visitor_flow_yolo_evaluate.py
 ```
 

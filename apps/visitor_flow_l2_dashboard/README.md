@@ -1,8 +1,8 @@
 # Visitor Flow L2/L3 Dashboard
 
-C0241 Aug 2 8 clips와 Aug 3 7 clips의 L2-4 집계, L3-1 수동 ROI 산출물, L3-2 개인정보 보호 미디어를 읽어 시간대별 frame-normalized 관측량, 매장 전면 ROI 관측, 화면 기준 `6x4` 관측 분포를 보여주는 Streamlit POC입니다. 운영자 화면에서도 기본 시각자료는 마스킹 처리된 L3-2 JPG/WebM을 표시합니다.
+C0241 Aug 2 8 clips와 Aug 3 7 clips의 L2-4 집계, L3-1 수동 ROI 산출물, L3-2 개인정보 보호 미디어, L3-4 tracking QA, L3-5 line crossing 후보 산출물을 읽어 시간대별 frame-normalized 관측량, 매장 전면 ROI 관측, 화면 기준 `6x4` 관측 분포를 보여주는 Streamlit POC입니다. 고객 PDF는 L3-2 마스킹 대표 이미지를 사용하고, 운영 QA는 L3-4/L3-5 내부 검수 영상을 사용합니다.
 
-이 화면은 YOLO를 다시 실행하지 않습니다. 입력은 L2-3a GPU prediction을 재사용해 만든 L2-4 artifact, 이를 CPU 후처리한 L3-1 ROI artifact, L3-2 privacy media, 오프라인 preview입니다.
+이 화면은 YOLO를 다시 실행하지 않습니다. 입력은 L2-3a GPU prediction을 재사용해 만든 L2-4 artifact, 이를 CPU 후처리한 L3-1 ROI artifact, L3-2 privacy media, L3-4/L3-5 오프라인 QA artifact입니다.
 
 ```text
 outputs/visitor_flow_mvp/c0241_20210802_20210803_l2_4/
@@ -41,6 +41,14 @@ outputs/visitor_flow_mvp/c0241_20210802_20210803_l3_4_tracking_qa/
 │  └─ track_events.csv
 └─ qa/
    └─ tracking_qa_summary.json
+
+outputs/visitor_flow_mvp/c0241_20210802_20210803_l3_5_line_crossing/
+├─ media/
+│  └─ line_crossing_qa.webm
+├─ crossings/
+│  └─ crossing_events.csv
+└─ qa/
+   └─ crossing_summary.json
 ```
 
 ## L2-4 artifact 생성
@@ -49,7 +57,7 @@ L2-4는 L2-3a의 최종 설정인 `YOLO11s / imgsz=960 / conf=0.50` prediction �
 
 ```bash
 # [Design Intent] L2-3a GPU prediction을 재사용해 0명 frame 포함 프레임 정규화 지표를 만든다.
-/home/imella0707/miniconda3/envs/ssakda/bin/python scripts/visitor_flow_l2_aggregate.py \
+/home/imella0707/miniconda3/envs/ssakda/bin/python scripts/archive/visitor_flow/L2/visitor_flow_l2_aggregate.py \
   --from-evaluation-dir outputs/visitor_flow_mvp/c0241_20210802_20210803_yolo_l2_3/configs/yolo11s_imgsz960/calibration_2021-08-02/clips \
   --from-evaluation-dir outputs/visitor_flow_mvp/c0241_20210802_20210803_yolo_l2_3/configs/yolo11s_imgsz960/validation_2021-08-03/clips \
   --conf 0.50 \
@@ -96,7 +104,7 @@ ROI 좌표를 직접 다시 잡을 때는 기준 프레임 이미지에서 꼭�
 
 ```bash
 # [Design Intent] L2-4 최종 설정과 같은 conf=0.50을 사용하되 모든 연속 frame에 bbox/grid를 그려 사람이 탐지 품질을 직접 감사한다.
-/home/imella0707/miniconda3/envs/ssakda/bin/python scripts/visitor_flow_l2_render_preview.py \
+/home/imella0707/miniconda3/envs/ssakda/bin/python scripts/archive/visitor_flow/L2/visitor_flow_l2_render_preview.py \
   --video data/curated/aihub_cctv_visitor_flow/v1/c0241_20210802/videos/2021-08-02_12-51-00_mon_sunny_out_ju-ja_C0241.mp4 \
   --model /home/imella0707/yolo11s.pt \
   --device 0 \
@@ -115,7 +123,7 @@ ROI 좌표를 직접 다시 잡을 때는 기준 프레임 이미지에서 꼭�
 
 ```bash
 # [Design Intent] 수동 ROI가 연속 frame에서도 유지되고 bbox bottom-center 포함 판정이 의도대로 동작하는지 내부 운영자가 검수한다.
-/home/imella0707/miniconda3/envs/ssakda/bin/python scripts/visitor_flow_l2_render_preview.py \
+/home/imella0707/miniconda3/envs/ssakda/bin/python scripts/archive/visitor_flow/L2/visitor_flow_l2_render_preview.py \
   --video data/curated/aihub_cctv_visitor_flow/v1/c0241_20210802/videos/2021-08-02_12-51-00_mon_sunny_out_ju-ja_C0241.mp4 \
   --model /home/imella0707/yolo11s.pt \
   --device 0 \
@@ -179,6 +187,45 @@ L3-4는 통행량이나 방문자 수를 세는 단계가 아닙니다. 같은 �
 ```
 
 `tracking_id_qa.webm`은 내부 운영자 QA 전용입니다. 영상에는 clip-local track ID와 최근 bottom-center trajectory가 표시되며, 사람 bbox 상단부에는 기본적으로 mosaic가 적용됩니다. `track_events.csv`와 `tracking_qa_summary.json`은 후속 L3-5 line crossing 기준선 검증에 사용할 후보 입력입니다. 이 결과를 고유 방문자 수, 하루 통행량, 매장 입장객 수로 해석하면 안 됩니다.
+
+## L3-5 line crossing 보행 방향 이벤트 생성
+
+L3-5는 YOLO나 ByteTrack을 다시 실행하지 않습니다. L3-4의 `track_events.csv`와 관리자가 직접 찍은 2점 기준선 config를 읽어, 같은 clip 안에서 track bottom-center가 기준선을 통과한 이벤트만 계산합니다.
+
+기준선을 다시 잡을 때는 개인정보 보호 처리된 대표 이미지에서 왼쪽 endpoint를 먼저 클릭하고 오른쪽 endpoint를 두 번째로 클릭합니다.
+
+```bash
+# [Design Intent] 운영자가 C0241 보행 방향 기준선을 직접 찍고 normalized 2-point config로 저장한다.
+/home/imella0707/miniconda3/envs/ssakda/bin/python scripts/visitor_flow_l3_crossing_line_define.py \
+  --image outputs/visitor_flow_mvp/c0241_20210802_20210803_l3_2_privacy_media/images/roi_overlay_preview_masked.jpg \
+  --output configs/visitor_flow/c0241_crossing_config.json \
+  --camera-id C0241 \
+  --line-id walkway_up_down_flow
+```
+
+조작 방법은 왼쪽 클릭으로 start/end 2점 선택, 오른쪽 클릭으로 마지막 점 취소, `s`로 저장, `q` 또는 `Esc`로 종료입니다.
+
+```bash
+# [Design Intent] L3-4 tracking event를 재사용해 기준선 통과 방향 이벤트만 CPU 후처리로 집계한다.
+/home/imella0707/miniconda3/envs/ssakda/bin/python scripts/visitor_flow_l3_line_crossing_aggregate.py \
+  --tracking-dir outputs/visitor_flow_mvp/c0241_20210802_20210803_l3_4_tracking_qa \
+  --crossing-config configs/visitor_flow/c0241_crossing_config.json \
+  --output-dir outputs/visitor_flow_mvp/c0241_20210802_20210803_l3_5_line_crossing \
+  --line-margin-px 3 \
+  --min-event-gap-frames 6
+```
+
+현재 C0241 L3-5 기준선은 보행로의 화면 기준 상향/하향 흐름을 보기 위한 선입니다. 매장 입장/퇴장 판정선이 아닙니다.
+
+| 항목 | 값 |
+| --- | ---: |
+| 입력 track observations | 1,287 |
+| 입력 clip-local track IDs | 52 |
+| 전체 crossing events | 14 |
+| screen upward events | 7 |
+| screen downward events | 7 |
+
+`line_crossing_qa.webm`은 내부 운영자 QA 전용입니다. 이 결과는 분석 clip 내 이동 이벤트이며, 고유 방문자 수나 하루 통행량이 아닙니다.
 
 ## 실행
 
