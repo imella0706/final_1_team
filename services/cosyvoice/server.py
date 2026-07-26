@@ -108,7 +108,7 @@ def normalize_korean_tts_text(text: str) -> str:
         normalized,
     )
     normalized = re.sub(
-        r"(?<![\d.])([\d,]+(?:\.\d+)?)\s*%",
+        r"(?<![\d.])([\d,]+(?:\.\d+)?)\s*(?:%|퍼센트|프로)",
         lambda match: f"{_decimal_korean(match.group(1))} 퍼센트",
         normalized,
     )
