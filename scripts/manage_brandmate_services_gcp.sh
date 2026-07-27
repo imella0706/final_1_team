@@ -80,9 +80,16 @@ is_ready() {
 }
 
 require_docker_compose() {
-  require_command docker
+  if ! command -v docker >/dev/null 2>&1; then
+    echo "[error] command not found: docker" >&2
+    echo "[hint] run: scripts/airflow/setup_gcp_vm_docker.sh" >&2
+    echo "[hint] reconnect to the VM if the script adds your user to the docker group" >&2
+    exit 1
+  fi
+
   if ! docker compose version >/dev/null 2>&1; then
     echo "[error] docker compose plugin not available" >&2
+    echo "[hint] run: scripts/airflow/setup_gcp_vm_docker.sh" >&2
     exit 1
   fi
 }

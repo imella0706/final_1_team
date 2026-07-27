@@ -1,0 +1,16 @@
+ARG AIRFLOW_VERSION=2.10.5
+ARG PYTHON_VERSION=3.11
+
+FROM apache/airflow:${AIRFLOW_VERSION}-python${PYTHON_VERSION}
+
+ARG AIRFLOW_VERSION
+
+# [Design Intent] Install DAG runtime dependencies at image-build time so every
+# developer runs the same environment and containers never mutate on startup.
+COPY --chown=airflow:root requirements.airflow.txt /opt/airflow/requirements.airflow.txt
+
+USER airflow
+
+RUN python -m pip install --no-cache-dir \
+    "apache-airflow==${AIRFLOW_VERSION}" \
+    -r /opt/airflow/requirements.airflow.txt

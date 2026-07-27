@@ -6,8 +6,6 @@
 
 ```text
 gather_data/
-├─ .env
-├─ .env.example
 ├─ .gitignore
 ├─ crawling/
 ├─ naver/
@@ -16,9 +14,9 @@ gather_data/
 
 ## 공통 환경
 
-- API 키는 `gather_data/.env`에서 읽는다.
-- `.env`는 실제 키가 들어가는 파일이므로 출력하거나 커밋하지 않는다.
-- `.env.example`에는 필요한 키 이름만 있다.
+- API 키는 repository의 canonical 환경 파일인 `apps/api/.env`에서 읽는다.
+- 실제 `.env`는 출력하거나 커밋하지 않는다.
+- 환경 변수 예시는 `apps/api/.env.gcp.example` 하나에서 관리한다.
 
 필요한 환경 변수:
 
@@ -28,7 +26,9 @@ NAVER_CLIENT_ID=
 NAVER_CLIENT_SECRET=
 ```
 
-현재 `.gitignore`에는 `.env`, `__pycache__/`, `*.py[cod]`, `.agents/`가 포함되어 있다.
+`gather_data/`는 크롤러 코드, 명세, 테스트, 의존성 파일만 Git으로 추적한다.
+생성된 JSON/CSV/PNG와 source별 `data/`, `history/`, `reports/`는 추적하지
+않으며, 공식 데이터셋은 repository root의 `data/` 계층에서 관리한다.
 
 ## 전체 목적
 
@@ -351,7 +351,7 @@ v2 비교에는 같은 분석 signature로 만든 날짜별 파일이 최소 2�
 
 - 필수 의존성: `requirements.txt`.
 - 선택 Okt 의존성: `requirements-okt.txt`와 Java.
-- API 키는 CLI 인자로 받지 않고 `gather_data/.env`의 `YOUTUBE_API_KEY`만 사용한다.
+- API 키는 CLI 인자로 받지 않고 `apps/api/.env`의 `YOUTUBE_API_KEY`를 사용한다.
 - CLI > 환경 변수 > 기본값 순서로 설정한다. 잘못된 미사용 환경 변수는 명시적 CLI 값을 막지 않는다.
 - 날짜 기본 timezone은 `Asia/Seoul`이며 `YOUTUBE_TIMEZONE`으로 바꿀 수 있다.
 - 성공 exit code `0`, API/파일/분석 실패 `1`, 설정 오류 `2`.
@@ -377,7 +377,7 @@ python -m compileall -q .
 
 1. `gather_data/AGENT_HANDOFF.md`를 먼저 읽는다.
 2. `crawling` 작업이면 `gather_data/crawling/AGENT_HANDOFF.md`와 해당 사이트의 README/명세를 읽는다.
-3. API 키가 필요한 작업이면 `gather_data/.env.example`의 키 이름만 확인하고, 실제 `.env` 값은 출력하지 않는다.
+3. API 키가 필요한 작업이면 `apps/api/.env.gcp.example`의 키 이름만 확인하고, 실제 `.env` 값은 출력하지 않는다.
 4. 기존 산출물을 덮어쓸 수 있는 스크립트는 실행 전에 목적과 출력 파일명을 확인한다.
 5. 새 수집 소스를 추가할 때는 기존 구조처럼 독립 폴더와 README/명세/테스트를 함께 둔다.
 6. 광고 생성 agent와 연결할 때는 원본 전체를 모델에 넣기보다, 각 출처의 결과를 트렌드 카드 형태로 정규화한 뒤 검색/RAG 컨텍스트로 사용하는 방향을 우선한다.

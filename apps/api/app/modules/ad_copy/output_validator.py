@@ -17,6 +17,7 @@ from app.modules.ad_copy.trend_context import (
     ComebackRevealCopyStructure,
     ContextDanceCopyStructure,
     CopyStructure,
+    TemplateRevealCopyStructure,
     TrendCard,
 )
 
@@ -191,7 +192,7 @@ def _marker_matches(text: str, card: TrendCard) -> list[re.Match[str]]:
             key=len,
             reverse=True,
         )
-    elif isinstance(structure, ComebackRevealCopyStructure):
+    elif isinstance(structure, ComebackRevealCopyStructure | TemplateRevealCopyStructure):
         literal_template = re.sub(r"\{[^{}]+\}", "", structure.marker_template)
         markers = sorted(
             {
