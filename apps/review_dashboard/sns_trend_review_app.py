@@ -351,15 +351,15 @@ def main() -> None:
         with col_trigger:
             st.markdown("### 3. Airflow Event-Driven Trigger")
             if st.button("🚀 Trigger Airflow Processed Release DAG", use_container_width=True):
-                trigger_airflow_release_dag(selected_week)
+                trigger_airflow_release_dag(selected_week, selected_run_id)
 
     # Tab 4: User Manual & SOP
     with tab4:
         st.markdown(
             """
-            ### 📖 BrandMate 대시보드 검수 매뉴얼 (Standard Operating Procedure)
+            ### 📖 BrandMate 대시보드 검수 매뉴얼 
 
-            #### 1. 2단계 검수 아키텍처 (2-Tier Review)
+            #### 1. 2단계 검수 아키텍처 
             - **⚡ Top 20 Default Review**: Scoring 알고리즘이 선정한 최상위 20개 트렌드 후보입니다. 주간 3분 이내로 빠르게 검수를 완료하는 기본 추천 탭입니다.
             - **🔍 Top 100 Search & Filter**: 1,975개 전체 수집 데이터 중 상위 100개 컷오프 내에서 키워드/플랫폼별로 탐색하는 안전망 탭입니다.
 
@@ -663,15 +663,30 @@ def save_and_validate_decisions(week: str, queue_candidates: list[dict[str, Any]
     st.json(summary)
 
 
-def trigger_airflow_release_dag(week: str) -> None:
+def trigger_airflow_release_dag(week: str, run_id: str = "") -> None:
     airflow_url = os.getenv("AIRFLOW_URL", "http://localhost:8080")
     dag_id = "sns_trend_processed_release"
-    endpoint = f"{airflow_url}/api/v1/dags/{dag_id}/dagRuns"
+    auth = ("admin", os.getenv("AIRFLOW_ADMIN_PASSWORD", "admin"))
 
+    # 1. Unpause DAG automatically via PATCH API if it's currently paused
+    unpause_endpoint = f"{airflow_url}/api/v1/dags/{dag_id}"
+    try:
+        requests.patch(
+            unpause_endpoint,
+            json={"is_paused": False},
+            auth=auth,
+            timeout=5,
+        )
+    except Exception as e:
+        st.caption(f"Unpause API 시도 경고: {e}")
+
+    # 2. Trigger DAG via POST API
+    endpoint = f"{airflow_url}/api/v1/dags/{dag_id}/dagRuns"
     st.info(f"Airflow REST API 호출 시도: `POST {endpoint}`")
     payload = {
         "conf": {
             "week": week,
+            "run_id": run_id,
             "triggered_by": "streamlit_dashboard",
         }
     }
@@ -680,11 +695,11 @@ def trigger_airflow_release_dag(week: str) -> None:
         response = requests.post(
             endpoint,
             json=payload,
-            auth=("admin", os.getenv("AIRFLOW_ADMIN_PASSWORD", "admin")),
+            auth=auth,
             timeout=5,
         )
         if response.status_code in (200, 201):
-            st.success(f"🎉 Processed Release DAG 트리거 성공! (HTTP {response.status_code})")
+            st.success(f"🎉 Processed Release DAG 자동 활성화(Unpause) 및 트리거 성공! (HTTP {response.status_code})")
             st.json(response.json())
         else:
             st.warning(f"Airflow 응답 상태 코드: {response.status_code}")

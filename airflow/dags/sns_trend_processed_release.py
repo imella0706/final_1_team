@@ -89,6 +89,19 @@ def build_drafts_if_needed_task(**context: Any) -> dict[str, Any]:
     decisions_json = CURATED_ROOT / "review_decisions" / f"week={week}" / "sns_trend_review_decisions.json"
     queue_json = CURATED_ROOT / "review_queue" / f"week={week}" / f"run_id={run_id}" / "sns_trend_review_queue.json"
 
+    # Fallback to auto-discover latest available queue run_id for week if specified queue_json does not exist
+    if not queue_json.exists():
+        queue_week_dir = CURATED_ROOT / "review_queue" / f"week={week}"
+        if queue_week_dir.exists():
+            for run_dir in sorted(queue_week_dir.glob("run_id=*"), reverse=True):
+                cand_queue = run_dir / "sns_trend_review_queue.json"
+                if cand_queue.exists():
+                    queue_json = cand_queue
+                    run_id = run_dir.name.split("run_id=", 1)[-1]
+                    drafts_dir = CURATED_ROOT / "trendcard_drafts" / f"week={week}" / f"run_id={run_id}"
+                    drafts_json = drafts_dir / "sns_trend_trendcard_drafts.json"
+                    break
+
     if not drafts_json.exists():
         if not decisions_json.exists():
             raise ValueError(f"Review decisions not found: {decisions_json}")
