@@ -161,6 +161,15 @@ def build_processed_release_candidate(
         draft_markers = draft.get("copy_markers", [])
         all_markers = list(dict.fromkeys([display_name, clean_display] + sub_phrases + word_parts + meaning_quotes + draft_markers))
 
+        # Filter out draft placeholder text patterns and supply usable default patterns
+        raw_patterns = draft.get("text_patterns", [])
+        clean_patterns = [p for p in raw_patterns if p and not p.startswith("[DRAFT]")]
+        if not clean_patterns:
+            clean_patterns = [
+                f"{{대표상품}} {display_name}",
+                f"요즘 대세 {clean_display}, {{대표상품}}와 함께!",
+            ]
+
         card: dict[str, Any] = {
             "schema_version": "2.0",
             "meme_id": meme_id,
@@ -187,7 +196,7 @@ def build_processed_release_candidate(
                 "level": "low",
                 "notes": "사람 검수 완료된 안전 트렌드",
             },
-            "text_patterns": draft.get("text_patterns", [f"{{대표상품}} {display_name}"]),
+            "text_patterns": clean_patterns,
             "copy_markers": [m for m in all_markers if m and m != "[DRAFT] 핵심 키워드 마커 작성"],
             "suitable_channels": draft.get("suitable_channels", ["instagram", "youtube"]),
             "suitable_tones": draft.get("suitable_tones", ["witty", "friendly"]),
