@@ -180,6 +180,33 @@ v2 비교는 `prevalence` 변화의 퍼센트포인트인 `delta_pp`를 우선�
 - 기존 동작 호환을 위해 기본은 같은 이름의 파일을 교체한다. 보호가 필요하면 `--fail-if-exists`를 사용한다.
 - 오류 메시지에는 API 키나 전체 요청 URL을 출력하지 않는다.
 
+## Airflow landing 실행 계약
+
+Airflow 또는 동일한 배치 실행기는 `--week`와 `--run-id`를 함께 전달한다.
+
+```bash
+# [Design Intent] 주차와 run_id를 경로에 포함해 재실행 결과가 기존 raw를 덮어쓰지 않게 한다.
+python youtube_trending_collector.py \
+  --week 2026-W31 \
+  --run-id manual__youtube_2026w31
+```
+
+`--output-dir`를 생략하면 아래 표준 위치에 저장한다.
+
+```text
+data/landing/sns_trend/week=2026-W31/raw/youtube/run_id=manual__youtube_2026w31/
+  youtube_trending_KR_2026-W31.csv
+  run_summary.json
+  error.json  # 실패 시에만 생성
+```
+
+- `--week`는 `Asia/Seoul` 기준 ISO week를 `YYYY-Www` 형식으로 전달한다.
+- `--week`와 `--run-id` 중 하나만 전달하면 설정 오류(`exit 2`)다.
+- 성공 시 raw CSV와 `run_summary.json`을 기록한다.
+- 수집 또는 파일 저장 실패 시 `error.json`을 기록하고 non-zero로 종료한다.
+- API key와 전체 요청 URL은 artifact에 기록하지 않는다.
+- 기존 사용자는 두 인자 없이 기존 raw 출력 방식을 계속 사용할 수 있다.
+
 ## 테스트
 
 외부 YouTube API를 호출하지 않는다.

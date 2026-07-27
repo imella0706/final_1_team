@@ -15,8 +15,63 @@ airflow_require_command() {
   fi
 }
 
+airflow_ensure_env_value() {
+  local key="$1"
+  local value="$2"
+
+  if grep -q "^${key}=" "${AIRFLOW_ENV_FILE_PATH}" 2>/dev/null; then
+    return
+  fi
+
+  printf '%s=%s\n' "${key}" "${value}" >>"${AIRFLOW_ENV_FILE_PATH}"
+}
+
+airflow_append_default_env_values() {
+  local managed_keys=(
+    "BRANDMATE_AIRFLOW_GCS_LOGS_PREFIX"
+    "BRANDMATE_SNS_TREND_PROCESSED_GCS_ROOT"
+    "BRANDMATE_SNS_TREND_VALIDATION_SCHEDULE"
+    "BRANDMATE_SNS_TREND_SAME_VERSION_POLICY"
+    "BRANDMATE_AIRFLOW_ALERTS_ENABLED"
+    "BRANDMATE_AIRFLOW_DISCORD_WEBHOOK_URL"
+    "BRANDMATE_AIRFLOW_ALERT_TIMEOUT_SECONDS"
+    "GOOGLE_CLOUD_PROJECT"
+  )
+  local key
+  local has_missing="false"
+
+  for key in "${managed_keys[@]}"; do
+    if ! grep -q "^${key}=" "${AIRFLOW_ENV_FILE_PATH}" 2>/dev/null; then
+      has_missing="true"
+      break
+    fi
+  done
+
+  if [[ "${has_missing}" == "true" ]]; then
+    {
+      echo
+      echo "# [Design Intent] Non-secret Airflow defaults are appended when an"
+      echo "# existing .env.airflow predates newer DAG features."
+    } >>"${AIRFLOW_ENV_FILE_PATH}"
+  fi
+
+  airflow_ensure_env_value \
+    "BRANDMATE_AIRFLOW_GCS_LOGS_PREFIX" \
+    "gs://ssakda/projects/brandmate/logs/data_pipeline/airflow"
+  airflow_ensure_env_value \
+    "BRANDMATE_SNS_TREND_PROCESSED_GCS_ROOT" \
+    "gs://ssakda/projects/brandmate/data/processed/sns_trend/"
+  airflow_ensure_env_value "BRANDMATE_SNS_TREND_VALIDATION_SCHEDULE" ""
+  airflow_ensure_env_value "BRANDMATE_SNS_TREND_SAME_VERSION_POLICY" "skip"
+  airflow_ensure_env_value "BRANDMATE_AIRFLOW_ALERTS_ENABLED" "false"
+  airflow_ensure_env_value "BRANDMATE_AIRFLOW_DISCORD_WEBHOOK_URL" ""
+  airflow_ensure_env_value "BRANDMATE_AIRFLOW_ALERT_TIMEOUT_SECONDS" "5"
+  airflow_ensure_env_value "GOOGLE_CLOUD_PROJECT" "ssakda"
+}
+
 airflow_generate_env() {
   if [[ -f "${AIRFLOW_ENV_FILE_PATH}" ]]; then
+    airflow_append_default_env_values
     return
   fi
 
@@ -49,6 +104,7 @@ airflow_generate_env() {
   } >"${env_tmp}"
   chmod 600 "${env_tmp}"
   mv "${env_tmp}" "${AIRFLOW_ENV_FILE_PATH}"
+  airflow_append_default_env_values
 
   echo "generated private Airflow environment: ${AIRFLOW_ENV_FILE_PATH}"
 }
