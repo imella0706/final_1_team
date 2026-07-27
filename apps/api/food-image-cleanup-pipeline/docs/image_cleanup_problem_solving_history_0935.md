@@ -42,6 +42,18 @@
 | 오전 9시 35분의 마지막 수정은 무엇인가 | 원본 고채도 림 색을 샘플링해 상단 결손부에 강한 `synthetic_rim_bridge`를 적용했다. |
 | 마지막 수정은 완전히 검증됐는가 | 코드·설정·문법 검증은 끝났고, 변경 후 새 결과의 최종 시각 검증은 필요하다. |
 
+### 현재 코드와 비교할 때 헷갈리기 쉬운 부분
+
+이 문서는 오전 9시 35분까지 실제로 겪은 문제와 해결 과정을 기록한다. 이후 코드에는 실험용 스위치와 후속 기능이 더 들어가 있지만, 그것이 이 시점의 해결 과정에 포함됐다는 뜻은 아니다.
+
+| 현재 코드에 보이는 항목 | 이 문서에서 다루는 방식 |
+| --- | --- |
+| `models.plate_segmenter` | 오전 9시 35분 이후에 연결된 접시 전용 `YOLO11-seg` 어댑터다. 현재 기본 설정은 `enabled: false`라서 이 문서의 문제 해결 흐름에는 넣지 않는다. |
+| `synthetic_rim_bridge_top_ratio`, `synthetic_rim_bridge_dilation`, `synthetic_rim_bridge_horizontal_margin` | 오전 9시 35분의 핵심 해결책인 synthetic rim bridge를 더 강하고 좁게 제어하기 위한 보조 설정이다. 이 문서에서는 “상단 림 결손부에 강제 브리지를 얹었다”는 문제 해결 과정 안에 포함해서 이해하면 된다. |
+| `synthetic_rim_bridge_connect_full_top`, `synthetic_rim_bridge_dilate` | 끊긴 상단 림이 여러 조각일 때 더 확실히 이어 보이도록 만든 보조 옵션이다. 핵심 아이디어는 새 모델이 아니라 원본 림 색 기반의 직접 보정이다. |
+| `synthetic_rim_band_enabled` | 별도 림 밴드 실험용 옵션이다. 기본값이 `false`라서 이 문서의 최종 해결 상태에는 포함하지 않는다. |
+| `plate_mask_rim_completion_enabled` | `plate_mask` 기준으로 림을 더 완성하는 실험용 옵션이다. 기본값이 `false`라서 이 문서의 최종 해결 상태에는 포함하지 않는다. |
+
 ---
 
 ## 2. 전체 문제 해결 순서

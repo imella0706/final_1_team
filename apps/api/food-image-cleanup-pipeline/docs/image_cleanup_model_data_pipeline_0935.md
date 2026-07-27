@@ -17,6 +17,25 @@
 
 > 중요: 접시 전체와 보이는 음식을 학습한 `YOLO11-seg` 모델은 오전 9시 35분 이후에 학습하고 연결한 기술이다. 따라서 이 문서의 모델 목록, 처리 흐름, 현재 사용 여부에는 포함하지 않는다.
 
+### 현재 코드와 함께 읽을 때 주의할 점
+
+이 문서는 오전 9시 35분 기준의 사람이 읽는 설명서다. 이후 코드에는 실험과 전환을 쉽게 하기 위한 설정 항목이 더 들어가 있지만, 기본 파이프라인이 모두 그 기능을 실행한다는 뜻은 아니다.
+
+현재 코드에서 특히 헷갈릴 수 있는 부분은 다음과 같다.
+
+| 현재 코드에 보이는 항목 | 사람이 이해해야 하는 의미 |
+| --- | --- |
+| `models.plate_segmenter` | 접시 전용 `YOLO11-seg` 어댑터다. 오전 9시 35분 이후 작업이므로 이 문서의 기준 흐름에는 포함하지 않는다. 현재 기본 설정은 `enabled: false`이므로 실행되지 않는다. |
+| `plate_edge_repair.synthetic_rim_bridge_top_ratio` | 강제 림 브리지를 이미지의 위쪽 어느 범위에서만 찾을지 정하는 보조 설정이다. 접시 상단 림 끊김 문제를 좁혀 처리하기 위한 값이다. |
+| `plate_edge_repair.synthetic_rim_bridge_dilation` | 끊긴 림 주변을 얼마나 넓게 보면서 연결 후보를 만들지 정한다. 값이 커질수록 더 강하게 이어 보려 한다. |
+| `plate_edge_repair.synthetic_rim_bridge_horizontal_margin` | 상단 림의 좌우 연결 범위를 조금 더 넓게 잡기 위한 여유 값이다. |
+| `plate_edge_repair.synthetic_rim_bridge_connect_full_top` | 상단 림이 여러 조각으로 끊겨 있을 때 한 줄처럼 이어 보려는 옵션이다. |
+| `plate_edge_repair.synthetic_rim_bridge_dilate` | 만든 브리지 마스크를 조금 두껍게 만들어 실제 초록 림이 충분히 보이게 하는 옵션이다. |
+| `plate_edge_repair.synthetic_rim_band_enabled` | 별도의 림 밴드를 그리는 실험 옵션이다. 현재 기본값은 `false`이므로 사용하지 않는다. |
+| `plate_edge_repair.plate_mask_rim_completion_enabled` | `plate_mask` 기준으로 림을 완성하는 실험 옵션이다. 현재 기본값은 `false`이므로 최종 결과에 영향을 주지 않는다. |
+
+즉, 오전 9시 35분 기준 핵심 해결책은 여전히 **HQ-SAM 보조 마스크 + 원본 접시 보존 + Big-LaMA 제거 + synthetic rim bridge**다. 이후에 보이는 비활성 옵션들은 다음 실험을 빠르게 켜기 위한 스위치로 보면 된다.
+
 ---
 
 ## 1. 이 기능을 한 문장으로 설명하면
