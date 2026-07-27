@@ -33,6 +33,15 @@ QUEUE_ROOT = CURATED_ROOT / "review_queue"
 DECISIONS_ROOT = CURATED_ROOT / "review_decisions"
 TOP_K_CUTOFF = 100
 DEFAULT_TOP_COUNT = 20
+V2_PROCESSED_PATH = (
+    PROJECT_ROOT
+    / "data"
+    / "processed"
+    / "sns_trend"
+    / "v2"
+    / "cross_platform_signal_top_candidates"
+    / "cross_platform_signal_top_candidates.json"
+)
 
 st.set_page_config(
     page_title="BrandMate SNS TrendCard Review Dashboard",
@@ -256,12 +265,13 @@ def main() -> None:
 
     st.markdown("---")
 
-    # 2-Tier Review Tabs + User Guide Tab
-    tab1, tab2, tab3, tab4 = st.tabs([
+    # 2-Tier Review Tabs + User Guide + v2 Baseline Reference Tab
+    tab1, tab2, tab3, tab4, tab5 = st.tabs([
         "⚡ Top 20 Default Review (3분 빠른 검수)",
         "🔍 Top 100 Candidate Search & Filter (컷오프 탐색)",
         "🚀 Release & Persistence Gate",
         "📖 검수 매뉴얼 & 사용 가이드 (SOP)",
+        "📌 v2 Baseline 참조 (채빈 님 20개 카드)",
     ])
 
     # Tab 1: Top 20 Default View
@@ -354,8 +364,90 @@ def main() -> None:
             #### 3. 검수 완료 및 릴리스 배포 흐름
             1. **`💾 Save Review Decisions` 클릭**: 작성한 검수 결과가 `review_decisions.json`에 안전하게 저장을 완료합니다.
             2. **`🚀 Trigger Airflow Processed Release DAG` 클릭**: 승인된 카드들을 최종 `processed/v3/` 패키지로 변환하고 Airflow 무결성 검증을 거쳐 방출합니다.
+
+            ---
+
+            #### 4. 💡 버저닝 정책 참고 (`Dataset Version` vs `Schema Version`)
+            - **Dataset Release Version (`version: "v3"`)**: Phase 5 대시보드/릴리스 시스템이 방출하는 데이터셋 위치입니다 (`data/processed/sns_trend/v3/`).
+            - **Schema Version (`schema_version: "2.0"`)**: 후속 AI 광고 생성기(LLM API)가 호환성을 갖고 읽어들이는 개별 카드 포맷 버전입니다. 하위 호환을 위해 2.0으로 기재됩니다.
             """
         )
+
+    # Tab 5: v2 Baseline Reference (Chaebin's 20 Cards)
+    with tab5:
+        st.info("📌 **채빈 님이 수동으로 검수 및 작성했던 v2 Processed Baseline 20개 트렌드 카드**입니다. v3 검수 시 마케팅 가이드로 자유롭게 참조할 수 있습니다.")
+        render_v2_baseline_reference()
+
+
+def render_v2_baseline_reference() -> None:
+    if not V2_PROCESSED_PATH.exists():
+        st.warning(f"v2 Baseline 데이터셋이 존재하지 않습니다: `{V2_PROCESSED_PATH}`")
+        return
+
+    try:
+        with V2_PROCESSED_PATH.open("r", encoding="utf-8") as f:
+            v2_payload = json.load(f)
+    except Exception as e:
+        st.error(f"v2 Baseline 데이터 읽기 실패: {e}")
+        return
+
+    cards = v2_payload.get("cards", [])
+    st.markdown(f"총 **{len(cards)}개**의 v2 Baseline 트렌드 카드가 등록되어 있습니다.")
+
+    search_query = st.text_input("🔍 v2 Baseline 카드 키워드 검색", "", key="v2_search")
+    filtered_cards = cards
+    if search_query.strip():
+        q = search_query.strip().casefold()
+        filtered_cards = [
+            c for c in cards
+            if q in c.get("display_name", "").casefold()
+            or q in c.get("meaning", "").casefold()
+            or q in c.get("meme_id", "").casefold()
+        ]
+
+    for idx, card in enumerate(filtered_cards, start=1):
+        display_name = card.get("display_name", "")
+        meme_id = card.get("meme_id", "")
+        meaning = card.get("meaning", "")
+        sources = card.get("trend_meta", {}).get("sources", [])
+        collected_week = card.get("trend_meta", {}).get("collected_week", "")
+        patterns = card.get("text_patterns", [])
+        copy_markers = card.get("copy_markers", [])
+
+        with st.container():
+            st.markdown(
+                f"""
+                <div class="candidate-card candidate-card-accepted">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <span style="font-size: 1.25rem; font-weight: 700; color: #111827;">#{idx} | {display_name}</span>
+                        <div>
+                            <span class="badge-accept">v2 BASELINE</span>
+                            <span style="background-color: #E5E7EB; color: #374151; padding: 3px 8px; border-radius: 6px; font-size: 0.75rem; margin-left: 6px; font-weight: 600;">ID: {meme_id}</span>
+                        </div>
+                    </div>
+                    <div style="margin-top: 8px; font-size: 0.9rem; color: #1F2937;">
+                        <b>밈 의미/해설:</b> {meaning}
+                    </div>
+                    <div style="margin-top: 6px; font-size: 0.85rem; color: #4B5563;">
+                        <b>Sources:</b> {', '.join(sources)} | <b>Collected Week:</b> {collected_week} | <b>Markers:</b> {', '.join(copy_markers)}
+                    </div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+            with st.expander(f"📋 '{display_name}' 카피 패턴 및 세부 규칙"):
+                st.markdown("**Text Patterns:**")
+                for p in patterns:
+                    st.code(p, language="text")
+                if card.get("usage_rules"):
+                    st.markdown("**Usage Rules:**")
+                    for rule in card["usage_rules"]:
+                        st.markdown(f"- {rule}")
+                if card.get("prohibited_usage"):
+                    st.markdown("**Prohibited Usage:**")
+                    for prob in card["prohibited_usage"]:
+                        st.markdown(f"- ❌ {prob}")
+            st.markdown("---")
 
 
 def render_candidate_list(candidates: list[dict[str, Any]], week: str, key_prefix: str) -> None:
