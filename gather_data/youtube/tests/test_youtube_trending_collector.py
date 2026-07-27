@@ -122,6 +122,46 @@ class YouTubeLandingContractTest(unittest.TestCase):
 
     @patch(
         "youtube_trending_collector.fetch_trending_videos",
+        return_value=[_video()],
+    )
+    @patch("youtube_trending_collector.build_youtube_service", return_value=object())
+    @patch("youtube_trending_collector.require_api_key", return_value="secret-api-key")
+    @patch("youtube_trending_collector.landing_run_directory")
+    def test_landing_default_writes_csv_inside_canonical_run_directory(
+        self,
+        _landing_run_directory: object,
+        _require_api_key: object,
+        _build_service: object,
+        _fetch_videos: object,
+    ) -> None:
+        with TemporaryDirectory() as temporary:
+            run_directory = Path(temporary)
+            _landing_run_directory.return_value = run_directory
+            exit_code = main(
+                [
+                    "--week",
+                    "2026-W31",
+                    "--run-id",
+                    "manual__youtube_smoke",
+                    "--date",
+                    "2026-07-27",
+                    "--limit",
+                    "1",
+                ]
+            )
+
+            self.assertEqual(exit_code, 0)
+            _landing_run_directory.assert_called_once_with(
+                week="2026-W31",
+                run_id="manual__youtube_smoke",
+            )
+            self.assertTrue(
+                (run_directory / "youtube_trending_KR_2026-W31.csv").is_file()
+            )
+            self.assertTrue((run_directory / "run_summary.json").is_file())
+
+    @patch(
+        "youtube_trending_collector.fetch_trending_videos",
         side_effect=CollectionError("YouTube API request failed with HTTP 403"),
     )
     @patch("youtube_trending_collector.build_youtube_service", return_value=object())

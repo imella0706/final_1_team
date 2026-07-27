@@ -251,9 +251,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             output_name = (
                 f"youtube_trending_{options.region_code}_{run_date.strftime('%Y%m%d')}.csv"
             )
-        output = args.output_file or (
-            (args.output_dir or RAW_DATA_DIR) / output_name
+        output_base = run_directory if landing_week is not None else (
+            args.output_dir or RAW_DATA_DIR
         )
+        output = args.output_file or (output_base / output_name)
         if args.fail_if_exists and output.exists():
             raise DataFileError(f"output already exists: {output}")
         api_key = require_api_key()
