@@ -168,14 +168,16 @@ def build_processed_release_candidate(
                     "image": "특정 포즈나 연출이 지정되지 않음",
                 },
             ),
-            "rights_risk": draft.get(
-                "rights_risk",
-                {
-                    "has_risk": False,
-                    "risk_type": "none",
-                    "description": "사람 검수 완료된 안전 트렌드",
-                },
+            "text_transferability": draft.get(
+                "text_transferability",
+                {"standalone_test": "pass", "evidence": [f"'{display_name}' 텍스트 키워드 독립 성립"]},
             ),
+            "rights_risk": draft.get("rights_risk")
+            if isinstance(draft.get("rights_risk"), dict) and "level" in draft["rights_risk"]
+            else {
+                "level": "low",
+                "notes": "사람 검수 완료된 안전 트렌드",
+            },
             "text_patterns": draft.get("text_patterns", [f"{{대표상품}} {display_name}"]),
             "copy_markers": draft.get("copy_markers", [display_name]),
             "suitable_channels": draft.get("suitable_channels", ["instagram", "youtube"]),
@@ -190,8 +192,7 @@ def build_processed_release_candidate(
             "curation_meta": {
                 "mode": "manual",
                 "status": "reviewed",
-                "reviewer": curation_meta.get("reviewer", "reviewer"),
-                "reviewed_at": curation_meta.get("reviewed_at", ""),
+                "notes": f"Reviewed by {curation_meta.get('reviewer', 'reviewer')}",
             },
             "trend_meta": {
                 "status": "active",
