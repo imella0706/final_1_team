@@ -88,15 +88,16 @@ service.py
 
 ## 수동 TrendCard
 
-광고에 사용할 활성 TrendCard의 원본은 저장소 루트의
-`gather_data/trendcard.json`입니다. 이 파일은 자동 생성 산출물이 아니라 사람이 직접
-작성·검수하는 카드입니다.
+광고에 사용할 TrendCard의 공식 원본은 저장소 루트의
+`data/processed/sns_trend/v2/cross_platform_signal_top_candidates/cross_platform_signal_top_candidates.json`
+입니다. 이 payload는 사람이 작성·검수한 v2 카드들을 공식 processed 데이터셋 구조로
+패키징한 산출물입니다.
 
 - `curation_meta.status`가 `reviewed`인 카드만 광고에 사용합니다.
 - `copy_markers`는 결과 검증 전용이며 LLM 프롬프트에는 전달하지 않습니다.
-- Instagram 요청은 현재 활성 카드를 서버에서 자동으로 선택합니다.
-- 명시적인 `trend_card_id`가 전달되면 활성 카드의 `meme_id`와 일치하는지 확인합니다.
-- 배포 환경에서는 `BRANDMATE_TREND_CARD_PATH`로 JSON 위치를 지정할 수 있습니다.
+- Instagram 요청은 payload의 첫 번째 usable 카드를 active default로 선택합니다.
+- 명시적인 `trend_card_id`가 전달되면 payload 안에서 해당 `meme_id`를 찾아 사용합니다.
+- 배포 환경에서는 `BRANDMATE_TREND_CARD_PAYLOAD_PATH`로 JSON 위치를 지정할 수 있습니다.
 
 ## 실행 테스트
 

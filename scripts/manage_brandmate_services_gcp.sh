@@ -144,6 +144,8 @@ require_docker_compose() {
     candidate="docker.exe"
   else
     echo "[error] Docker Compose is unavailable. Enable Docker Desktop WSL integration." >&2
+    echo "[hint] run: scripts/airflow/setup_gcp_vm_docker.sh" >&2
+    echo "[hint] reconnect to the VM if the script adds your user to the docker group" >&2
     exit 1
   fi
 

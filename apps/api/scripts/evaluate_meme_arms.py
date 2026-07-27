@@ -469,13 +469,13 @@ def build_dry_run_report(
         "trend_card": {
             "meme_id": loaded.trend_card.meme_id,
             "display_name": loaded.trend_card.display_name,
-            "path": str(loaded.trend_card_path),
+            "payload_path": str(loaded.trend_card_payload_path),
         },
         "case_count": len(cases),
         "few_shot_example_count": len(loaded.examples),
         "artifact_sha256": {
             "config": file_sha256(loaded.config_path),
-            "trend_card": file_sha256(loaded.trend_card_path),
+            "trend_card": file_sha256(loaded.trend_card_payload_path),
             "dataset": file_sha256(loaded.dataset_path),
             "few_shot": file_sha256(loaded.few_shot_path),
             "fixture_review": file_sha256(loaded.fixture_review_path),
@@ -1618,7 +1618,7 @@ async def run(args: argparse.Namespace) -> int:
             "dataset_path": str(loaded.dataset_path),
             "few_shot_path": str(loaded.few_shot_path),
             "fixture_review_path": str(loaded.fixture_review_path),
-            "trend_card_path": str(loaded.trend_card_path),
+            "trend_card_payload_path": str(loaded.trend_card_payload_path),
             "trend_card_id": loaded.trend_card.meme_id,
             "base_model": loaded.config.base_model,
             "generation_actual_models": sorted(
@@ -1667,7 +1667,7 @@ async def run(args: argparse.Namespace) -> int:
             "judge_usage": _sum_usage(records, "judge_usage"),
             "artifact_sha256": {
                 "config": file_sha256(loaded.config_path),
-                "trend_card": file_sha256(loaded.trend_card_path),
+                "trend_card": file_sha256(loaded.trend_card_payload_path),
                 "dataset": file_sha256(loaded.dataset_path),
                 "few_shot": file_sha256(loaded.few_shot_path),
                 "fixture_review": file_sha256(loaded.fixture_review_path),

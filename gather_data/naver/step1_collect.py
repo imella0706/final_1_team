@@ -3,7 +3,7 @@
 [1단계] 네이버 검색 API로 블로그·뉴스 글 수집
 --------------------------------------------------
 사용법
-1. 루트 .env 파일에 NAVER_CLIENT_ID, NAVER_CLIENT_SECRET 입력
+1. apps/api/.env 파일에 NAVER_CLIENT_ID, NAVER_CLIENT_SECRET 입력
 2. 아래 KEYWORD를 원하는 검색어로 수정
 3. 터미널에서 실행:  python step1_collect.py
 결과
@@ -14,7 +14,6 @@
 import html
 import os
 import re
-import sys
 import time
 
 import pandas as pd
@@ -23,7 +22,8 @@ from dotenv import load_dotenv
 
 # ========== 설정 ==========
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-load_dotenv(os.path.join(BASE_DIR, "..", ".env"))
+ENV_FILE = os.path.abspath(os.path.join(BASE_DIR, "..", "..", "apps", "api", ".env"))
+load_dotenv(ENV_FILE)
 
 CLIENT_ID = os.getenv("NAVER_CLIENT_ID")
 CLIENT_SECRET = os.getenv("NAVER_CLIENT_SECRET")
@@ -84,7 +84,7 @@ if __name__ == "__main__":
     if not CLIENT_ID or not CLIENT_SECRET:
         raise SystemExit(
             "NAVER_CLIENT_ID 또는 NAVER_CLIENT_SECRET이 없습니다. "
-            "루트 .env 파일을 확인하세요."
+            "apps/api/.env 파일을 확인하세요."
         )
 
     for source in ["blog", "news"]:

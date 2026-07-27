@@ -54,7 +54,7 @@ def test_experiment_loads_one_card_cases_and_examples() -> None:
     loaded = load_meme_experiment(EXPERIMENT_PATH)
 
     assert loaded.trend_card.meme_id == "gogumafarm:1bf390d89536004b"
-    assert loaded.trend_card_path.name == "trendcard.json"
+    assert loaded.trend_card_payload_path.name == "cross_platform_signal_top_candidates.json"
     assert len(loaded.cases) == 8
     assert len(loaded.examples) == 3
     assert {case.case_type for case in loaded.cases} == {
