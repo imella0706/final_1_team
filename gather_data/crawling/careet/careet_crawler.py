@@ -14,7 +14,7 @@ import os
 import re
 import time
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Iterable, Protocol
 from urllib.parse import urljoin, urlparse
@@ -29,6 +29,11 @@ SERIES_NAME = "요즘 뜨는 밈"
 LIST_URL = f"{BASE_URL}/Content/Series/{SERIES_ID}"
 USER_AGENT = "CareetPublicMetadataCrawler/1.0 (research; no-login; contact: local-user)"
 RETRYABLE_STATUS = {429, 500, 502, 503, 504}
+KST = timezone(timedelta(hours=9))
+REPO_ROOT = Path(__file__).resolve().parents[3]
+LANDING_DATA_ROOT = REPO_ROOT / "data" / "landing" / "sns_trend"
+CRAWLER_RUN_SUMMARY_FILENAME = "crawler_run_summary.json"
+CRAWLER_ERROR_FILENAME = "error.json"
 
 ARTICLE_FIELDS = [
     "source", "series_id", "series_name", "article_id", "url", "title",
@@ -94,6 +99,50 @@ def normalize_status(value: str) -> str:
 
 def now_iso() -> str:
     return datetime.now().astimezone().isoformat(timespec="seconds")
+
+
+def now_utc_z() -> str:
+    return datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+
+
+def current_run_date() -> date:
+    return datetime.now(KST).date()
+
+
+def parse_run_date(value: str) -> date:
+    try:
+        return datetime.strptime(clean_text(value), "%Y-%m-%d").date()
+    except ValueError as exc:
+        raise CrawlerError("--date must use YYYY-MM-DD format") from exc
+
+
+def parse_iso_week(value: str) -> str:
+    normalized = clean_text(value).upper()
+    if not re.fullmatch(r"\d{4}-W\d{2}", normalized):
+        raise CrawlerError("--week must use YYYY-Www format")
+    year, week = normalized.split("-W", 1)
+    week_number = int(week)
+    if not 1 <= week_number <= 53:
+        raise CrawlerError("--week number must be between 01 and 53")
+    return f"{year}-W{week_number:02d}"
+
+
+def parse_run_id(value: str) -> str:
+    normalized = clean_text(value)
+    if not normalized:
+        raise CrawlerError("--run-id must not be empty")
+    if not re.fullmatch(r"[A-Za-z0-9_.:+@=-]+", normalized):
+        raise CrawlerError("--run-id contains unsupported characters")
+    return normalized
+
+
+def landing_run_directory(
+    *,
+    week: str,
+    run_id: str,
+    root: Path = LANDING_DATA_ROOT,
+) -> Path:
+    return root / f"week={week}" / "raw" / "careet" / f"run_id={run_id}"
 
 
 class PoliteSession:
@@ -586,8 +635,24 @@ def _date_from_meme_csv(path: Path) -> str:
     return match.group(1) if match else ""
 
 
+def _resolve_stamp(args: argparse.Namespace, fallback_path: Path | None = None) -> str:
+    if getattr(args, "run_date", None):
+        return parse_run_date(args.run_date).strftime("%Y%m%d")
+    if fallback_path is not None:
+        fallback_stamp = _date_from_meme_csv(fallback_path)
+        if fallback_stamp:
+            return fallback_stamp
+    return current_run_date().strftime("%Y%m%d")
+
+
 def emit_final_terms(output_root: Path, meme_rows: Iterable[dict[str, Any]], stamp: str) -> Path:
     final_path = output_root / "final_processed" / f"careet_meme_terms_{stamp}.json"
+    atomic_write_json(final_path, final_meme_terms(meme_rows))
+    return final_path
+
+
+def emit_landing_final_terms(output_root: Path, meme_rows: Iterable[dict[str, Any]], stamp: str) -> Path:
+    final_path = output_root / f"careet_meme_terms_{stamp}.json"
     atomic_write_json(final_path, final_meme_terms(meme_rows))
     return final_path
 
@@ -598,9 +663,99 @@ def emit_suspect_terms(output_root: Path, meme_rows: Iterable[dict[str, Any]], s
     return suspect_path
 
 
+def emit_landing_suspect_terms(output_root: Path, meme_rows: Iterable[dict[str, Any]], stamp: str) -> Path:
+    suspect_path = output_root / f"careet_meme_term_suspects_{stamp}.csv"
+    atomic_write_csv(suspect_path, SUSPECT_TERM_FIELDS, suspect_non_term_rows(meme_rows))
+    return suspect_path
+
+
 def read_csv_rows(path: Path) -> list[dict[str, str]]:
     with path.open("r", encoding="utf-8-sig", newline="") as handle:
         return list(csv.DictReader(handle))
+
+
+def _landing_context(args: argparse.Namespace) -> tuple[str, str] | None:
+    week = getattr(args, "week", None)
+    run_id = getattr(args, "run_id", None)
+    if week is None and run_id is None:
+        return None
+    if week is None or run_id is None:
+        raise CrawlerError("--week and --run-id must be provided together")
+    return parse_iso_week(week), parse_run_id(run_id)
+
+
+def _resolve_output_dir(args: argparse.Namespace, landing: tuple[str, str] | None) -> Path:
+    if args.output_dir is not None:
+        return Path(args.output_dir)
+    if landing is None:
+        return Path("data")
+    week, run_id = landing
+    return landing_run_directory(week=week, run_id=run_id)
+
+
+def _ensure_outputs_do_not_exist(paths: Iterable[Path]) -> None:
+    existing = [str(path) for path in paths if path.exists()]
+    if existing:
+        raise CrawlerError(f"output already exists: {existing[0]}")
+
+
+def write_landing_summary(
+    *,
+    output_dir: Path,
+    week: str,
+    run_id: str,
+    started_at: str,
+    article_count: int,
+    meme_count: int,
+    outputs: dict[str, Path],
+    mode: str,
+) -> Path:
+    summary_path = output_dir / CRAWLER_RUN_SUMMARY_FILENAME
+    summary = {
+        "schema_version": "1.0",
+        "source": "careet",
+        "status": "success",
+        "mode": mode,
+        "week": week,
+        "run_id": run_id,
+        "started_at": started_at,
+        "ended_at": now_utc_z(),
+        "article_count": article_count,
+        "meme_count": meme_count,
+        "outputs": {name: str(path) for name, path in outputs.items()},
+    }
+    atomic_write_json(summary_path, summary)
+    return summary_path
+
+
+def write_landing_error(
+    *,
+    output_dir: Path,
+    week: str,
+    run_id: str,
+    started_at: str,
+    exit_code: int,
+    error: Exception,
+) -> Path:
+    error_path = output_dir / CRAWLER_ERROR_FILENAME
+    payload = {
+        "schema_version": "1.0",
+        "source": "careet",
+        "status": "failed",
+        "week": week,
+        "run_id": run_id,
+        "started_at": started_at,
+        "ended_at": now_utc_z(),
+        "exit_code": exit_code,
+        "error_type": type(error).__name__,
+        "message": str(error),
+    }
+    atomic_write_json(error_path, payload)
+    return error_path
+
+
+def clear_landing_error(output_dir: Path) -> None:
+    (output_dir / CRAWLER_ERROR_FILENAME).unlink(missing_ok=True)
 
 
 def _sort_articles(rows: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -631,13 +786,27 @@ def _apply_detail(article: dict[str, Any], detail: DetailData) -> None:
 
 
 def crawl(args: argparse.Namespace, client: PoliteSession | None = None) -> tuple[Path, Path, list[dict[str, Any]], list[dict[str, Any]]]:
+    started_at = now_utc_z()
+    landing = _landing_context(args)
     owns_client = client is None
     client = client or PoliteSession(args.delay, args.timeout, args.retries)
-    output_root = Path(args.output_dir)
-    stamp = datetime.now().astimezone().strftime("%Y%m%d")
-    article_path = output_root / "raw" / f"careet_articles_{stamp}.csv"
-    meme_path = output_root / "processed" / f"careet_memes_{stamp}.csv"
-    final_path = output_root / "final_processed" / f"careet_meme_terms_{stamp}.json"
+    output_root = _resolve_output_dir(args, landing)
+    stamp = _resolve_stamp(args)
+    if landing is None:
+        article_path = output_root / "raw" / f"careet_articles_{stamp}.csv"
+        meme_path = output_root / "processed" / f"careet_memes_{stamp}.csv"
+        final_path = output_root / "final_processed" / f"careet_meme_terms_{stamp}.json"
+        suspect_path = output_root / "final_processed" / f"careet_meme_term_suspects_{stamp}.csv"
+    else:
+        article_path = output_root / f"careet_articles_{stamp}.csv"
+        meme_path = output_root / f"careet_memes_{stamp}.csv"
+        final_path = output_root / f"careet_meme_terms_{stamp}.json"
+        suspect_path = output_root / f"careet_meme_term_suspects_{stamp}.csv"
+    if getattr(args, "fail_if_exists", False):
+        paths = [article_path, meme_path, final_path, suspect_path]
+        if landing is not None:
+            paths.append(output_root / CRAWLER_RUN_SUMMARY_FILENAME)
+        _ensure_outputs_do_not_exist(paths)
     previous_articles = read_csv_by_key(article_path, "article_id") if args.resume else {}
     previous_memes = read_csv_by_key(meme_path, "meme_id") if args.resume else {}
     generator: SummaryGenerator = DisabledSummaryGenerator() if args.summary_mode == "off" else RuleBasedSummaryGenerator()
@@ -733,13 +902,18 @@ def crawl(args: argparse.Namespace, client: PoliteSession | None = None) -> tupl
                 atomic_write_csv(article_path, ARTICLE_FIELDS, _sort_articles(articles_by_id.values()))
                 atomic_write_csv(meme_path, MEME_FIELDS, meme_rows)
                 atomic_write_json(final_path, final_meme_terms(meme_rows))
-                emit_suspect_terms(output_root, meme_rows, stamp)
+                atomic_write_csv(suspect_path, SUSPECT_TERM_FIELDS, suspect_non_term_rows(meme_rows))
     except KeyboardInterrupt:
         LOG.warning("중단 신호 수신; 현재까지의 결과를 체크포인트로 저장")
         atomic_write_csv(article_path, ARTICLE_FIELDS, _sort_articles(articles_by_id.values()))
         atomic_write_csv(meme_path, MEME_FIELDS, meme_rows)
         atomic_write_json(final_path, final_meme_terms(meme_rows))
-        emit_suspect_terms(output_root, meme_rows, stamp)
+        atomic_write_csv(suspect_path, SUSPECT_TERM_FIELDS, suspect_non_term_rows(meme_rows))
+        raise
+    except (CrawlerError, HTTPStatusError, requests.RequestException) as exc:
+        if landing is not None:
+            week, run_id = landing
+            write_landing_error(output_dir=output_root, week=week, run_id=run_id, started_at=started_at, exit_code=1, error=exc)
         raise
     finally:
         if owns_client:
@@ -750,8 +924,26 @@ def crawl(args: argparse.Namespace, client: PoliteSession | None = None) -> tupl
     meme_rows.sort(key=lambda row: (article_order.get(str(row["article_id"]), len(article_order)), int(row["position"])))
     atomic_write_csv(article_path, ARTICLE_FIELDS, articles)
     atomic_write_csv(meme_path, MEME_FIELDS, meme_rows)
-    emit_final_terms(output_root, meme_rows, stamp)
-    emit_suspect_terms(output_root, meme_rows, stamp)
+    atomic_write_json(final_path, final_meme_terms(meme_rows))
+    atomic_write_csv(suspect_path, SUSPECT_TERM_FIELDS, suspect_non_term_rows(meme_rows))
+    if landing is not None:
+        week, run_id = landing
+        clear_landing_error(output_root)
+        write_landing_summary(
+            output_dir=output_root,
+            week=week,
+            run_id=run_id,
+            started_at=started_at,
+            article_count=len(articles),
+            meme_count=len(meme_rows),
+            outputs={
+                "articles_csv": article_path,
+                "memes_csv": meme_path,
+                "meme_terms_json": final_path,
+                "meme_term_suspects_csv": suspect_path,
+            },
+            mode="landing",
+        )
     LOG.info(
         "완료: articles=%d success=%d failed=%d no_toc=%d memes=%d summaries=%d images=%d",
         len(articles),
@@ -772,7 +964,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--delay", type=float, default=1.5, help="요청 사이 대기(초), 최소 1.0")
     parser.add_argument("--timeout", type=float, default=15.0)
     parser.add_argument("--retries", type=int, default=3)
-    parser.add_argument("--output-dir", type=Path, default=Path("data"))
+    parser.add_argument("--output-dir", type=Path)
+    parser.add_argument("--date", dest="run_date", help="output date in YYYY-MM-DD format")
+    parser.add_argument("--week", help="landing partition in Asia/Seoul ISO week format (YYYY-Www)")
+    parser.add_argument("--run-id", help="landing run identifier")
+    parser.add_argument("--fail-if-exists", action="store_true", help="fail if target output files already exist")
     parser.add_argument("--list-only", action="store_true")
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--emit-final-from-csv", type=Path, help="existing processed/careet_memes_YYYYMMDD.csv에서 final_processed JSON만 생성")
@@ -798,31 +994,46 @@ def validate_args(parser: argparse.ArgumentParser, args: argparse.Namespace) -> 
     if args.max_image_bytes <= 0:
         parser.error("--max-image-bytes는 0보다 커야 합니다")
 
+    try:
+        _landing_context(args)
+        if args.run_date is not None:
+            parse_run_date(args.run_date)
+    except CrawlerError as exc:
+        parser.error(str(exc))
+
     if args.emit_final_from_csv is not None and not args.emit_final_from_csv.exists():
         parser.error("--emit-final-from-csv file does not exist")
     if args.audit_final_from_csv is not None and not args.audit_final_from_csv.exists():
         parser.error("--audit-final-from-csv file does not exist")
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     validate_args(parser, args)
     logging.basicConfig(
         level=getattr(logging, args.log_level),
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
     try:
+        landing = _landing_context(args)
+        output_dir = _resolve_output_dir(args, landing)
         if args.emit_final_from_csv is not None:
             rows = read_csv_rows(args.emit_final_from_csv)
-            stamp = _date_from_meme_csv(args.emit_final_from_csv) or datetime.now().astimezone().strftime("%Y%m%d")
-            final_path = emit_final_terms(Path(args.output_dir), rows, stamp)
+            stamp = _resolve_stamp(args, args.emit_final_from_csv)
+            if landing is None:
+                final_path = emit_final_terms(output_dir, rows, stamp)
+            else:
+                final_path = emit_landing_final_terms(output_dir, rows, stamp)
             LOG.info("final terms output: %s", final_path)
             return 0
         if args.audit_final_from_csv is not None:
             rows = read_csv_rows(args.audit_final_from_csv)
-            stamp = _date_from_meme_csv(args.audit_final_from_csv) or datetime.now().astimezone().strftime("%Y%m%d")
-            suspect_path = emit_suspect_terms(Path(args.output_dir), rows, stamp)
+            stamp = _resolve_stamp(args, args.audit_final_from_csv)
+            if landing is None:
+                suspect_path = emit_suspect_terms(output_dir, rows, stamp)
+            else:
+                suspect_path = emit_landing_suspect_terms(output_dir, rows, stamp)
             LOG.info("suspect terms output: %s", suspect_path)
             return 0
         crawl(args)
