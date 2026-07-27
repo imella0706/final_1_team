@@ -75,6 +75,35 @@ class AdImageResponse(BaseModel):
     latency_ms: int
 
 
+class AdAudioRequest(BaseModel):
+    input: str = Field(min_length=1, max_length=4096)
+    voice: str | None = Field(default=None, min_length=1, max_length=80)
+    instructions: str | None = Field(default=None, max_length=1000)
+    speed: float = Field(default=1.0, ge=0.25, le=4.0)
+
+
+class AdAudioResponse(BaseModel):
+    provider: str = "openai"
+    requested_provider: str = "openai"
+    model: str
+    requested_model: str
+    fallback_used: bool = False
+    voice: str
+    media_type: str
+    audio_base64: str
+    latency_ms: int
+
+
+class AudioProviderStatus(BaseModel):
+    provider: str
+    configured: bool
+    available: bool
+    model: str
+    voices: list[str] = Field(default_factory=list)
+    instructions_supported: bool = True
+    detail: str = ""
+
+
 class BlogImageInput(BaseModel):
     id: str = Field(min_length=1, max_length=40)
     name: str = Field(default="", max_length=120)

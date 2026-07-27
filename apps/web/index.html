@@ -9,10 +9,10 @@
     <meta name="brandmate-api-origin" content="" />
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; base-uri 'none'; object-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; connect-src 'self' http://localhost:7660 http://127.0.0.1:7660 http://34.55.162.157:7660; form-action 'self'"
+      content="default-src 'self'; base-uri 'none'; object-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; media-src 'self' data: blob:; connect-src 'self' http://localhost:7660 http://127.0.0.1:7660 http://34.55.162.157:7660; form-action 'self'"
     />
     <title>BrandMate Ad Content Studio</title>
-    <link rel="stylesheet" href="./styles.css?v=service-selection-20260721" />
+    <link rel="stylesheet" href="./styles.css?v=voice-auth-20260721" />
   </head>
   <body>
     <header class="topbar">
@@ -501,6 +501,57 @@
                   <p class="image-caption" id="image-caption"></p>
                 </article>
               </div>
+
+              <section class="voice-ad-section" aria-labelledby="voice-ad-title">
+                <div class="voice-ad-heading">
+                  <div>
+                    <div class="result-label">음성 광고 <span id="result-audio-model">gpt-4o-mini-tts</span></div>
+                    <h3 id="voice-ad-title">광고 문구를 음성으로 만들기</h3>
+                  </div>
+                  <span class="voice-state" id="voice-state">준비됨</span>
+                </div>
+
+                <div class="voice-ad-layout">
+                  <div class="field voice-script-field">
+                    <label for="voice-script">내레이션 대본</label>
+                    <textarea id="voice-script" rows="6" maxlength="4096"></textarea>
+                    <small><span id="voice-script-count">0</span> / 4096자</small>
+                  </div>
+
+                  <div class="voice-settings">
+                    <div class="field">
+                      <label for="voice-select">목소리</label>
+                      <select id="voice-select">
+                        <option value="coral" selected>Coral · 밝고 자연스러움</option>
+                        <option value="nova">Nova · 활기차고 친근함</option>
+                        <option value="alloy">Alloy · 균형 잡힌 중성</option>
+                        <option value="onyx">Onyx · 낮고 차분함</option>
+                        <option value="shimmer">Shimmer · 부드럽고 밝음</option>
+                        <option value="echo">Echo · 또렷하고 안정적</option>
+                        <option value="ash">Ash · 차분하고 자연스러움</option>
+                        <option value="sage">Sage · 따뜻하고 신뢰감 있음</option>
+                        <option value="fable">Fable · 표현력이 풍부함</option>
+                      </select>
+                    </div>
+
+                    <div class="field speed-field">
+                      <label for="voice-speed">말하기 속도 <output id="voice-speed-value">1.0×</output></label>
+                      <input id="voice-speed" type="range" min="0.75" max="1.5" value="1" step="0.05" />
+                    </div>
+
+                    <button class="generate-voice-button" id="generate-voice-button" type="button">
+                      음성 광고 생성
+                    </button>
+                  </div>
+                </div>
+
+                <div class="voice-error" id="voice-error" hidden></div>
+                <div class="voice-output" id="voice-output" hidden>
+                  <audio id="voice-player" controls preload="metadata"></audio>
+                  <button class="text-button" id="download-voice-button" type="button">MP3 저장</button>
+                </div>
+                <p class="ai-voice-notice">이 음성은 AI로 생성되었습니다.</p>
+              </section>
             </div>
           </div>
         </section>
@@ -508,6 +559,6 @@
       </section>
     </main>
 
-    <script src="./app.js?v=service-selection-local-vision-20260723"></script>
+    <script src="./app.js?v=local-emotion-voices-20260723"></script>
   </body>
 </html>

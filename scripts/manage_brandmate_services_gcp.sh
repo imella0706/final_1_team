@@ -17,11 +17,34 @@ COMFYUI_DIR="${COMFYUI_DIR:-$DEFAULT_COMFYUI_DIR}"
 API_ENV="${API_ENV:-ssakda}"
 COMFYUI_ENV="${COMFYUI_ENV:-comfyui}"
 CONDA_BIN="${CONDA_EXE:-conda}"
+declare -a API_PYTHON=()
+API_RUNTIME_LABEL=""
+DOCKER_BIN="${DOCKER_BIN:-}"
+DOCKER_COMPOSE_FILE="$API_COMPOSE_FILE"
 
 API_HOST="${API_HOST:-0.0.0.0}"
 API_PORT="${API_PORT:-7660}"
 WEB_HOST="${WEB_HOST:-0.0.0.0}"
 WEB_PORT="${WEB_PORT:-5501}"
+if [[ -n "${BRANDMATE_POSTGRES_PORT:-}" ]]; then
+  POSTGRES_PORT="$BRANDMATE_POSTGRES_PORT"
+elif grep -qi microsoft /proc/sys/kernel/osrelease 2>/dev/null; then
+  POSTGRES_PORT="55432"
+else
+  POSTGRES_PORT="5433"
+fi
+export BRANDMATE_POSTGRES_PORT="$POSTGRES_PORT"
+if [[ "$POSTGRES_PORT" != "5433" && -z "${BRANDMATE_DATABASE_URL:-}" ]]; then
+  export BRANDMATE_DATABASE_URL="postgresql+asyncpg://brandmate:brandmate-local-only@127.0.0.1:${POSTGRES_PORT}/brandmate"
+fi
+if [[ -n "${WSL_DISTRO_NAME:-}" ]]; then
+  for forwarded_var in BRANDMATE_POSTGRES_PORT BRANDMATE_DATABASE_URL; do
+    if [[ ":${WSLENV:-}:" != *":${forwarded_var}:"* ]]; then
+      WSLENV="${WSLENV:+${WSLENV}:}${forwarded_var}"
+    fi
+  done
+  export WSLENV
+fi
 DASHBOARD_HOST="${DASHBOARD_HOST:-127.0.0.1}"
 DASHBOARD_PORT="${DASHBOARD_PORT:-8503}"
 COMFYUI_HOST="${COMFYUI_HOST:-127.0.0.1}"
@@ -74,24 +97,66 @@ require_command() {
   fi
 }
 
+configure_api_runtime() {
+  if command -v "$CONDA_BIN" >/dev/null 2>&1; then
+    API_PYTHON=("$CONDA_BIN" run -n "$API_ENV" python)
+    API_RUNTIME_LABEL="conda:$API_ENV"
+  elif [[ -x "$API_DIR/.venv/bin/python" ]]; then
+    API_PYTHON=("$API_DIR/.venv/bin/python")
+    API_RUNTIME_LABEL="$API_DIR/.venv"
+  elif [[ -f "$API_DIR/.venv/Scripts/python.exe" ]]; then
+    API_PYTHON=("$API_DIR/.venv/Scripts/python.exe")
+    API_RUNTIME_LABEL="$API_DIR/.venv (Windows)"
+  else
+    echo "[error] API Python runtime not found." >&2
+    echo "[hint] create apps/api/.venv or install conda env: $API_ENV" >&2
+    exit 1
+  fi
+  echo "[info] API Python runtime: $API_RUNTIME_LABEL"
+}
+
 is_ready() {
   local url="$1"
-  curl -fsS "$url" >/dev/null 2>&1
+  if curl -fsS "$url" >/dev/null 2>&1; then
+    return 0
+  fi
+  if [[ -n "${WSL_DISTRO_NAME:-}" ]] && command -v powershell.exe >/dev/null 2>&1; then
+    powershell.exe -NoProfile -Command \
+      "\$ProgressPreference='SilentlyContinue'; try { \$response = Invoke-WebRequest -UseBasicParsing -Uri '$url' -TimeoutSec 2; if (\$response.StatusCode -lt 500) { exit 0 } } catch {}; exit 1" \
+      >/dev/null 2>&1
+    return $?
+  fi
+  return 1
 }
 
 require_docker_compose() {
-  if ! command -v docker >/dev/null 2>&1; then
-    echo "[error] command not found: docker" >&2
+  local candidate
+  if [[ -n "$DOCKER_BIN" ]]; then
+    candidate="$DOCKER_BIN"
+    if ! command -v "$candidate" >/dev/null 2>&1 || \
+      ! "$candidate" compose version >/dev/null 2>&1; then
+      echo "[error] configured Docker Compose command is unavailable: $candidate" >&2
+      exit 1
+    fi
+  elif command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
+    candidate="docker"
+  elif command -v docker.exe >/dev/null 2>&1 && docker.exe compose version >/dev/null 2>&1; then
+    candidate="docker.exe"
+  else
+    echo "[error] Docker Compose is unavailable. Enable Docker Desktop WSL integration." >&2
     echo "[hint] run: scripts/airflow/setup_gcp_vm_docker.sh" >&2
     echo "[hint] reconnect to the VM if the script adds your user to the docker group" >&2
     exit 1
   fi
 
-  if ! docker compose version >/dev/null 2>&1; then
-    echo "[error] docker compose plugin not available" >&2
-    echo "[hint] run: scripts/airflow/setup_gcp_vm_docker.sh" >&2
-    exit 1
+  DOCKER_BIN="$candidate"
+  if [[ "$DOCKER_BIN" == *.exe ]]; then
+    require_command wslpath
+    DOCKER_COMPOSE_FILE="$(wslpath -w "$API_COMPOSE_FILE")"
+  else
+    DOCKER_COMPOSE_FILE="$API_COMPOSE_FILE"
   fi
+  echo "[info] Docker runtime: $DOCKER_BIN"
 }
 
 wait_until_ready() {
@@ -138,8 +203,8 @@ start_process() {
     cd "$work_dir"
     # [Design Intent] Keep service logs durable outside the terminal session so
     # local and GCP smoke tests can be diagnosed after the shell is closed.
-    # Start each managed service in its own process group so `conda run`
-    # wrapper processes and their child Python servers can be stopped together.
+    # Start each managed service in its own process group so runtime wrappers
+    # and their child Python servers can be stopped together.
     nohup setsid "$@" >"$log_file" 2>&1 &
     echo "$!" >"$pid_file"
   )
@@ -169,6 +234,15 @@ ensure_comfyui() {
     return 0
   fi
 
+  if ! command -v "$CONDA_BIN" >/dev/null 2>&1; then
+    if [[ "$START_COMFYUI" == "true" ]]; then
+      echo "[error] conda is required for the configured ComfyUI environment." >&2
+      exit 1
+    fi
+    echo "[skip] ComfyUI conda runtime is unavailable: $CONDA_BIN"
+    return 0
+  fi
+
   start_process \
     comfyui \
     "$PID_DIR/comfyui.pid" \
@@ -186,20 +260,20 @@ ensure_postgres() {
   require_docker_compose
 
   echo "[start] postgres container"
-  docker compose -f "$API_COMPOSE_FILE" up -d brandmate-postgres
+  "$DOCKER_BIN" compose -f "$DOCKER_COMPOSE_FILE" up -d brandmate-postgres
 
   local started_at
   started_at="$(date +%s)"
   while true; do
-    if docker compose -f "$API_COMPOSE_FILE" exec -T brandmate-postgres \
+    if "$DOCKER_BIN" compose -f "$DOCKER_COMPOSE_FILE" exec -T brandmate-postgres \
       pg_isready -U brandmate -d brandmate >/dev/null 2>&1; then
-      echo "[ok] postgres ready: 127.0.0.1:5433"
+      echo "[ok] postgres ready: 127.0.0.1:$POSTGRES_PORT"
       return 0
     fi
 
     if (( "$(date +%s)" - started_at >= 60 )); then
       echo "[error] postgres not ready after 60s" >&2
-      echo "[hint] check: docker compose -f $API_COMPOSE_FILE logs brandmate-postgres" >&2
+      echo "[hint] check: $DOCKER_BIN compose -f $DOCKER_COMPOSE_FILE logs brandmate-postgres" >&2
       return 1
     fi
 
@@ -220,7 +294,7 @@ run_db_migrations() {
     # the auth/session tables expected by the current code before it accepts
     # login requests. Alembic upgrade head is idempotent when the schema is
     # already current.
-    "$CONDA_BIN" run -n "$API_ENV" alembic upgrade head
+    "${API_PYTHON[@]}" -m alembic upgrade head
   )
 }
 
@@ -235,7 +309,7 @@ ensure_api() {
     "$PID_DIR/fastapi.pid" \
     "$LOG_DIR/fastapi.log" \
     "$API_DIR" \
-    "$CONDA_BIN" run -n "$API_ENV" python -m uvicorn app.main:app \
+    "${API_PYTHON[@]}" -m uvicorn app.main:app \
       --host "$API_HOST" \
       --port "$API_PORT" \
       --log-level debug \
@@ -255,7 +329,7 @@ ensure_frontend() {
     "$PID_DIR/frontend.pid" \
     "$LOG_DIR/frontend.log" \
     "$WEB_DIR" \
-    "$CONDA_BIN" run -n "$API_ENV" python -m http.server "$WEB_PORT" \
+    "${API_PYTHON[@]}" -m http.server "$WEB_PORT" \
       --bind "$WEB_HOST"
 
   wait_until_ready frontend "$WEB_URL/" 30
@@ -282,14 +356,14 @@ ensure_dashboard() {
     return 0
   fi
 
-  if ! "$CONDA_BIN" run -n "$API_ENV" python -c "import streamlit" >/dev/null 2>&1; then
+  if ! "${API_PYTHON[@]}" -c "import streamlit" >/dev/null 2>&1; then
     if [[ "$START_DASHBOARD" == "true" ]]; then
-      echo "[error] Streamlit is not importable in conda env: $API_ENV" >&2
+      echo "[error] Streamlit is not importable in API runtime: $API_RUNTIME_LABEL" >&2
       echo "Install dashboard requirements, or omit START_DASHBOARD while the dashboard is under development." >&2
       exit 1
     fi
 
-    echo "[skip] Streamlit is not available in conda env: $API_ENV"
+    echo "[skip] Streamlit is not available in API runtime: $API_RUNTIME_LABEL"
     echo "[info] CCTV visitor-flow dashboard will be unavailable in this environment."
     return 0
   fi
@@ -299,7 +373,7 @@ ensure_dashboard() {
     "$PID_DIR/visitor_flow_dashboard.pid" \
     "$LOG_DIR/visitor_flow_dashboard.log" \
     "$PROJECT_ROOT" \
-    "$CONDA_BIN" run -n "$API_ENV" python -m streamlit run "$DASHBOARD_DIR/app.py" \
+    "${API_PYTHON[@]}" -m streamlit run "$DASHBOARD_DIR/app.py" \
       --server.address "$DASHBOARD_HOST" \
       --server.port "$DASHBOARD_PORT"
 
@@ -318,7 +392,7 @@ check_frontend_api_url() {
 
 serve() {
   require_command curl
-  require_command "$CONDA_BIN"
+  configure_api_runtime
 
   # [Design Intent] ComfyUI is kept private on localhost while FastAPI and the
   # static frontend bind externally for browser access through the GCP firewall.
@@ -395,15 +469,16 @@ status_one() {
 }
 
 status_stack() {
+  require_docker_compose
   status_one frontend "$WEB_URL/"
   status_one fastapi "$API_URL/health"
   status_one visitor_flow_dashboard "$DASHBOARD_URL/"
   status_one comfyui "$COMFYUI_URL/system_stats"
-  if docker compose -f "$API_COMPOSE_FILE" exec -T brandmate-postgres \
+  if "$DOCKER_BIN" compose -f "$DOCKER_COMPOSE_FILE" exec -T brandmate-postgres \
     pg_isready -U brandmate -d brandmate >/dev/null 2>&1; then
-    echo "[ok] postgres: 127.0.0.1:5433"
+    echo "[ok] postgres: 127.0.0.1:$POSTGRES_PORT"
   else
-    echo "[down] postgres: 127.0.0.1:5433"
+    echo "[down] postgres: 127.0.0.1:$POSTGRES_PORT"
   fi
 }
 

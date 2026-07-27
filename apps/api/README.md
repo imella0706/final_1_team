@@ -27,6 +27,8 @@ POST /api/v1/ad-copies/generate
 
 GET  /api/v1/ad-content/image-models
 POST /api/v1/ad-content/generate
+GET  /api/v1/ad-content/audio/providers
+POST /api/v1/ad-content/audio/generate
 
 POST /api/llm/generate
 POST /api/image/generate
