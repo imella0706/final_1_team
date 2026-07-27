@@ -179,3 +179,76 @@ def notify_airflow_failure(
         # [Design Intent] Alert transport failure must not hide the original
         # Airflow task failure. Airflow will log this callback result.
         return {"status": "failed", "reason": str(error)}
+
+
+def build_discord_review_required_payload(
+    week: str,
+    run_id: str,
+    summary: dict[str, Any],
+    top_candidate: dict[str, Any] | None = None,
+    dashboard_url: str = "http://localhost:8501",
+) -> dict[str, Any]:
+    candidate_count = summary.get("candidate_count", 0)
+    top_candidate_name = top_candidate.get("display_term", "-") if top_candidate else "-"
+    top_score = (
+        top_candidate.get("score_breakdown", {}).get("cross_platform_score", 0)
+        + top_candidate.get("score_breakdown", {}).get("recency_score", 0)
+        + top_candidate.get("score_breakdown", {}).get("source_reliability_score", 0)
+    ) if top_candidate else 0
+
+    fields = [
+        {"name": "ISO Week", "value": week, "inline": True},
+        {"name": "Airflow Run ID", "value": _truncate(run_id), "inline": False},
+        {"name": "Total Cut-off Candidates", "value": f"{candidate_count} (Top 100 컷오프)", "inline": True},
+        {"name": "Top #1 Candidate", "value": f"{top_candidate_name}", "inline": False},
+        {"name": "Review Dashboard", "value": f"[Streamlit Dashboard]({dashboard_url})", "inline": False},
+    ]
+
+    return {
+        "embeds": [
+            {
+                "title": "📢 [BrandMate SNS Trend] 주간 Review Queue 생성 완료! (검수 요청)",
+                "description": f"**{week}** 주간 트렌드 후보 추출이 완료되었습니다. 대시보드에서 accept/reject 검수를 진행해 주세요.",
+                "color": 3066993,  # Emerald green / blue
+                "fields": fields,
+            }
+        ]
+    }
+
+
+def notify_review_required_discord(
+    week: str,
+    run_id: str,
+    summary: dict[str, Any],
+    top_candidate: dict[str, Any] | None = None,
+    *,
+    env: dict[str, str] | None = None,
+    post_json: PostJsonFunc = post_json_to_webhook,
+) -> dict[str, Any]:
+    active_env = env or os.environ
+    webhook_url = (
+        active_env.get("BRANDMATE_DISCORD_WEBHOOK_URL", "")
+        or active_env.get("DISCORD_WEBHOOK_URL", "")
+        or active_env.get("BRANDMATE_AIRFLOW_DISCORD_WEBHOOK_URL", "")
+    ).strip()
+
+    if not webhook_url:
+        return {"status": "skipped", "reason": "discord webhook url missing"}
+
+    timeout_seconds = float(
+        active_env.get("BRANDMATE_AIRFLOW_ALERT_TIMEOUT_SECONDS", "5")
+    )
+    dashboard_url = active_env.get("STREAMLIT_DASHBOARD_URL", "http://localhost:8501")
+    payload = build_discord_review_required_payload(
+        week=week,
+        run_id=run_id,
+        summary=summary,
+        top_candidate=top_candidate,
+        dashboard_url=dashboard_url,
+    )
+
+    try:
+        return post_json(webhook_url, payload, timeout_seconds)
+    except AlertError as error:
+        return {"status": "failed", "reason": str(error)}
+

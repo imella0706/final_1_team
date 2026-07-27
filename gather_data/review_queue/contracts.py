@@ -205,3 +205,59 @@ def _evidence_urls_for_term(payload: dict[str, Any], term: str) -> list[str]:
     if not all(isinstance(item, str) for item in urls):
         raise CandidateContractError("evidence URLs must be strings")
     return [url for url in urls if url.strip()]
+
+
+ALLOWED_DECISIONS = {"accept", "reject", "hold"}
+
+
+class ReviewDecisionError(ValueError):
+    """Base exception raised for invalid review decision structure or values."""
+
+
+class DecisionValidationError(ValueError):
+    """Raised when review decisions fail domain validation against candidate queue rules."""
+
+
+@dataclass(frozen=True)
+class ReviewDecisionRecord:
+    candidate_id: str
+    review_decision: str
+    reviewer: str
+    reviewed_at: str
+    review_note: str = ""
+    override_reason: str | None = None
+    display_name_override: str | None = None
+    risk_review_notes: str | None = None
+    decision_source: str = "streamlit"
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.candidate_id, str) or not self.candidate_id.strip():
+            raise ReviewDecisionError("candidate_id must be a non-empty string")
+        if self.review_decision not in ALLOWED_DECISIONS:
+            raise ReviewDecisionError(
+                f"review_decision must be one of {sorted(ALLOWED_DECISIONS)}, got '{self.review_decision}'"
+            )
+        if not isinstance(self.reviewer, str) or not self.reviewer.strip():
+            raise ReviewDecisionError("reviewer must be a non-empty string")
+        if not isinstance(self.reviewed_at, str) or not self.reviewed_at.strip():
+            raise ReviewDecisionError("reviewed_at must be a non-empty string")
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> ReviewDecisionRecord:
+        if not isinstance(data, dict):
+            raise ReviewDecisionError("decision item must be a dictionary")
+        return cls(
+            candidate_id=str(data.get("candidate_id", "")).strip(),
+            review_decision=str(data.get("review_decision", "")).strip(),
+            reviewer=str(data.get("reviewer", "")).strip(),
+            reviewed_at=str(data.get("reviewed_at", "")).strip(),
+            review_note=str(data.get("review_note", "") or ""),
+            override_reason=data.get("override_reason"),
+            display_name_override=data.get("display_name_override"),
+            risk_review_notes=data.get("risk_review_notes"),
+            decision_source=str(data.get("decision_source", "streamlit")).strip(),
+        )
+
