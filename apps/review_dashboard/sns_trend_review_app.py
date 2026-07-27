@@ -336,15 +336,20 @@ def main() -> None:
         st.subheader("💾 Review Decisions Persistence & Processed Release")
         st.write("대시보드에서 선택한 검수 결과(`accept/reject/hold`)를 저장하고, Processed Release DAG를 트리거합니다.")
 
-        col_save, col_trigger = st.columns(2)
+        col_save, col_reset, col_trigger = st.columns(3)
 
         with col_save:
             st.markdown("### 1. Decisions 저장")
             if st.button("💾 Save Review Decisions to Artifacts", type="primary", use_container_width=True):
                 save_and_validate_decisions(selected_week, raw_candidates)
 
+        with col_reset:
+            st.markdown("### 2. Decisions 삭제/초기화")
+            if st.button("🗑️ Reset All Decisions", type="secondary", use_container_width=True):
+                reset_review_decisions(selected_week)
+
         with col_trigger:
-            st.markdown("### 2. Airflow Event-Driven Trigger")
+            st.markdown("### 3. Airflow Event-Driven Trigger")
             if st.button("🚀 Trigger Airflow Processed Release DAG", use_container_width=True):
                 trigger_airflow_release_dag(selected_week)
 
@@ -365,8 +370,8 @@ def main() -> None:
 
             - **승인 (`accept`) 시**:
               - 여기서 입력한 `Review Note`는 최종 **TrendCard의 공식 `meaning` (유래/의미/마케팅 활용법)** 필드로 자동 승격됩니다.
-              - 💡 **좋은 작성 예시**: *"좋아하는 대상을 먼저 부르고 '니가 좋아'라고 고백한 뒤 특징을 나열하는 SNS 바이럴 밈. 대표 상품명과 입력 특징을 좋아하는 이유로 연결하는 카피 생성에 적합."*
-              - ⚠️ **잘못된 작성 예시**: *"Good meme"*, *"좋음"*
+              -  **좋은 작성 예시**: *"좋아하는 대상을 먼저 부르고 '니가 좋아'라고 고백한 뒤 특징을 나열하는 SNS 바이럴 밈. 대표 상품명과 입력 특징을 좋아하는 이유로 연결하는 카피 생성에 적합."*
+              -  **잘못된 작성 예시**: *"Good meme"*, *"좋음"*
             - **반려 (`reject`) 시**:
               - 팀원 간 공유를 위해 반려 사유를 남깁니다. (예: *"저작권/인물 패러디 위험"*, *"유행이 지난 밈"*, *"브랜드 톤앤매너 불일치"*)
             - **보류 (`hold`) 시**:
@@ -380,7 +385,7 @@ def main() -> None:
 
             ---
 
-            #### 4. 💡 버저닝 정책 참고 (`Dataset Version` vs `Schema Version`)
+            #### 4. 버저닝 정책 참고 (`Dataset Version` vs `Schema Version`)
             - **Dataset Release Version (`version: "v3"`)**: Phase 5 대시보드/릴리스 시스템이 방출하는 데이터셋 위치입니다 (`data/processed/sns_trend/v3/`).
             - **Schema Version (`schema_version: "2.0"`)**: 후속 AI 광고 생성기(LLM API)가 호환성을 갖고 읽어들이는 개별 카드 포맷 버전입니다. 하위 호환을 위해 2.0으로 기재됩니다.
             """
@@ -687,6 +692,29 @@ def trigger_airflow_release_dag(week: str) -> None:
     except Exception as err:
         st.warning(f"Airflow 연결 실패 (로컬 개발 모드 또는 Airflow 미기동): {err}")
         st.info(f"💡 CLI 수동 트리거 명령예시: `PYTHONPATH=gather_data python -m review_queue.release_cli --week {week}`")
+
+
+def reset_review_decisions(week: str) -> None:
+    """Resets all decisions in session state and removes saved decision files on disk."""
+    st.session_state["decisions"] = {}
+
+    for k in list(st.session_state.keys()):
+        if "_decision_" in k or k.startswith("decision_"):
+            st.session_state[k] = "pending"
+        elif "_note_" in k or k.startswith("note_"):
+            st.session_state[k] = ""
+
+    out_dir = DECISIONS_ROOT / f"week={week}"
+    json_path = out_dir / "sns_trend_review_decisions.json"
+    csv_path = out_dir / "sns_trend_review_decisions.csv"
+
+    if json_path.exists():
+        json_path.unlink()
+    if csv_path.exists():
+        csv_path.unlink()
+
+    st.success("🗑️ 검수 내역이 성공적으로 초기화되었습니다! (디스크 파일 및 세션 리셋 완료)")
+    st.rerun()
 
 
 if __name__ == "__main__":
