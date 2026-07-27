@@ -55,15 +55,26 @@ class PlateSegmentationService:
         # 접시는 한 장의 큰 인스턴스여야 하므로 가장 넓은 마스크만 사용한다.
         return max(resized, key=lambda mask: int(np.count_nonzero(mask))).astype(np.uint8)
 
+    def _resolve_device(self) -> str | int:
+        device = self.config.get("device", "auto")
+        if isinstance(device, str) and device.strip().lower() == "auto":
+            try:
+                import torch
+            except ImportError:
+                return "cpu"
+            return 0 if torch.cuda.is_available() else "cpu"
+        return device
+
     def segment(self, image: np.ndarray) -> PlateSegmentationResult:
         self._load()
         assert self._model is not None
+        device = self._resolve_device()
         result = self._model.predict(
             source=image,
             conf=float(self.config.get("confidence_threshold", 0.25)),
             iou=float(self.config.get("iou_threshold", 0.45)),
             imgsz=int(self.config.get("image_size", 1024)),
-            device=self.config.get("device", "auto"),
+            device=device,
             verbose=False,
         )[0]
         if result.masks is None or result.boxes is None:
@@ -96,5 +107,6 @@ class PlateSegmentationService:
                 "plate_instances": len(plate_masks),
                 "food_instances": len(food_masks),
                 "mean_confidence": round(float(scores.mean()), 4) if len(scores) else None,
+                "device": str(device),
             },
         )

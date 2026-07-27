@@ -23,7 +23,15 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--models",
         nargs="+",
-        choices=[*MODEL_URLS, "openclip", "birefnet", "flux", "sana", "grounding-dino"],
+        choices=[
+            *MODEL_URLS,
+            "openclip",
+            "birefnet",
+            "flux",
+            "sana",
+            "grounding-dino",
+            "hq-sam",
+        ],
     )
     parser.add_argument("--all", action="store_true", help="download all configured models")
     parser.add_argument("--model-dir", default="models")
@@ -84,7 +92,7 @@ def download_huggingface_model(repo_id: str, destination: Path, completion_file:
 def main() -> int:
     args = parse_args()
     selected = (
-        list(MODEL_URLS) + ["openclip", "sana", "grounding-dino"]
+        list(MODEL_URLS) + ["openclip", "sana", "grounding-dino", "hq-sam"]
         if args.all
         else (args.models or [])
     )
@@ -112,6 +120,12 @@ def main() -> int:
             download_huggingface_model(
                 "IDEA-Research/grounding-dino-tiny",
                 model_dir / "grounding-dino",
+                "config.json",
+            )
+        elif name == "hq-sam":
+            download_huggingface_model(
+                "syscv-community/sam-hq-vit-base",
+                model_dir / "hq-sam",
                 "config.json",
             )
         else:

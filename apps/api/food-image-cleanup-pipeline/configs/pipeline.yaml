@@ -54,6 +54,35 @@ models:
     # Tiny보다 경계 품질이 높은 SAM 2.1 Small을 기본 사용한다.
     weights: models/sam2.1_s.pt
     device: auto
+  hq_sam:
+    # Optional SAM-HQ candidate masks. The stable SAM2 mask remains the base;
+    # SAM-HQ only patches small missing boundary pieces by default.
+    enabled: true
+    provider: transformers-sam-hq
+    model_id: models/hq-sam
+    device: auto
+    selection_mode: patch_missing
+    minimum_score_gain: 0.0
+    multimask_output: true
+    hq_token_only: true
+    patch_missing:
+      enabled: true
+      max_patch_area_ratio: 0.03
+      max_total_patch_area_ratio: 0.03
+      only_inside_boxes: true
+      only_near_sam_boundary: true
+      boundary_dilation: 15
+      min_component_area: 128
+      food:
+        max_patch_area_ratio: 0.03
+        max_total_patch_area_ratio: 0.03
+        boundary_dilation: 15
+        min_component_area: 128
+      container:
+        max_patch_area_ratio: 0.015
+        max_total_patch_area_ratio: 0.015
+        boundary_dilation: 9
+        min_component_area: 192
   grounding_dino_detector:
     # 음식·접시의 1차 개방형 어휘 탐지기. YOLO는 이 단계의 무검출만 보완한다.
     enabled: true
@@ -74,6 +103,8 @@ models:
     - fork
     - knife
     - spoon
+    - cup
+    - bowl
   inpainter:
     enabled: true
     provider: big-lama
@@ -126,6 +157,105 @@ models:
     minimum_coverage: 0.995
     maximum_internal_gap_ratio: 0.002
     validation_erosion_px: 2
+  preserved_container_blur:
+    # preserve_original_plate mode only. Blurs visible plate/container pixels while protecting food pixels.
+    enabled: true
+    blur_kernel: 9
+    sigma: 0.0
+    opacity: 1.0
+    mask_feather_kernel: 9
+    food_protection_dilation: 11
+  foreground_cleanup:
+    # Removes detached foreground islands such as cutlery that SAM sometimes keeps in alpha.
+    enabled: true
+    anchor_dilation: 15
+    min_component_area: 128
+  plate_edge_repair:
+    # preserve_original_plate mode only. Repairs small food/skewer intrusions
+    # on the preserved plate rim so the plate edge does not look cut.
+    enabled: true
+    ring_width: 28
+    food_core_erosion: 17
+    close_kernel: 5
+    max_component_area: 24000
+    inpaint_radius: 7.0
+    method: telea
+    restore_rim_line: true
+    rim_line_width: 5
+    restore_inner_rim_line: true
+    inner_rim_line_width: 5
+    inner_rim_line_inset: 22
+    color_aligned_rim_enabled: true
+    color_aligned_rim_line_width: 5
+    color_aligned_rim_inset_min: 4
+    color_aligned_rim_inset_max: 42
+    color_aligned_rim_inset_step: 2
+    color_aligned_rim_top_ratio: 0.36
+    color_aligned_rim_allow_food_overlap: false
+    color_aligned_rim_min_overlap_pixels: 32
+    rim_line_target_dilation: 9
+    rim_line_min_samples: 128
+    rim_line_opacity: 0.0
+    rim_line_feather_kernel: 7
+    rim_line_bridge_occlusions: true
+    rim_line_bridge_dilation: 65
+    rim_line_bridge_top_ratio: 0.34
+    rim_line_bridge_horizontal_margin: 42
+    rim_missing_detection_enabled: true
+    rim_missing_top_ratio: 0.34
+    rim_missing_color_distance: 42.0
+    rim_missing_anchor_dilation: 95
+    rim_missing_close_kernel: 11
+    rim_missing_min_component_area: 12
+    rim_color_interpolation_enabled: true
+    rim_color_interpolation_distance: 48.0
+    rim_color_interpolation_observed_dilation: 5
+    rim_color_interpolation_inpaint_radius: 5.0
+    rim_color_interpolation_min_pixels: 96
+    rim_missing_surface_fill_enabled: true
+    rim_missing_surface_top_ratio: 0.34
+    rim_missing_surface_dilation: 17
+    rim_missing_surface_close_kernel: 9
+    rim_missing_surface_sample_dilation: 37
+    rim_missing_surface_inpaint_radius: 9.0
+    rim_missing_surface_min_pixels: 256
+    rim_missing_surface_opacity: 0.92
+    rim_missing_surface_feather_kernel: 7
+    rim_missing_core_blend_enabled: false
+    rim_missing_core_opacity: 0.94
+    rim_missing_core_feather_kernel: 3
+    synthetic_rim_bridge_enabled: true
+    synthetic_rim_bridge_top_ratio: 0.30
+    synthetic_rim_bridge_dilation: 95
+    synthetic_rim_bridge_horizontal_margin: 64
+    synthetic_rim_bridge_connect_full_top: true
+    synthetic_rim_bridge_dilate: true
+    synthetic_rim_bridge_extra_width: 3
+    synthetic_rim_bridge_opacity: 0.98
+    synthetic_rim_bridge_feather_kernel: 3
+    synthetic_rim_band_enabled: false
+    synthetic_rim_band_width: 5
+    synthetic_rim_band_top_ratio: 0.30
+    synthetic_rim_band_opacity: 0.62
+    synthetic_rim_band_feather_kernel: 7
+    synthetic_rim_band_allow_food_overlap: false
+    synthetic_rim_color_min_samples: 48
+    synthetic_rim_color_saturation_min: 45
+    synthetic_rim_color_value_min: 30
+    synthetic_rim_color_value_max: 210
+    synthetic_rim_color_hue_window: 14
+    synthetic_rim_color_hue_min: 35
+    synthetic_rim_color_hue_max: 95
+    plate_mask_rim_completion_enabled: false
+    plate_mask_rim_completion_top_ratio: 0.30
+    plate_mask_rim_completion_observed_dilation: 7
+    plate_mask_rim_completion_close_kernel: 9
+    plate_mask_rim_completion_expand: true
+    plate_mask_rim_completion_width: 5
+    plate_mask_rim_completion_opacity: 0.88
+    plate_mask_rim_completion_feather_kernel: 5
+    plate_mask_rim_completion_allow_food_overlap: false
+    plate_mask_rim_completion_food_core_erosion: 31
   generated_plate_composition:
     # 기본 모드(generated_plate): 원본 접시·식탁보는 제거하고 음식만 생성 배경의 빈 접시에 배치한다.
     # 기존 원본 접시를 유지해야 하면 mode를 preserve_original_plate로 바꾼다.
