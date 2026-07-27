@@ -4,7 +4,10 @@
 from __future__ import annotations
 
 import argparse
+import json
 from datetime import date
+from datetime import datetime
+from datetime import timezone
 import logging
 from pathlib import Path
 import re
@@ -19,6 +22,7 @@ from youtube_trends.collector import (
 from youtube_trends.config import (
     DEFAULT_REGION_CODE,
     HISTORY_V2_DIR,
+    REPO_ROOT,
     CollectionOptions,
     ConfigurationError,
     collection_options_from_env,
@@ -27,7 +31,9 @@ from youtube_trends.config import (
     current_run_date,
     env_text,
     load_environment,
+    parse_iso_week,
     parse_run_date,
+    parse_run_id,
     require_api_key,
 )
 from youtube_trends.csv_io import DataFileError, atomic_write_csv
@@ -44,6 +50,8 @@ TOTAL_VIDEOS = 100
 HISTORY_DIR = HISTORY_V2_DIR
 STOPWORDS = DEFAULT_STOPWORDS
 KEYWORD_FIELDS = ["keyword", "count"]
+DEFAULT_CURATED_ROOT = REPO_ROOT / "data" / "curated" / "sns_trend"
+DEFAULT_CURATED_VERSION = "v3"
 RAW_FILENAME_PATTERN = re.compile(
     r"^youtube_trending_[A-Z]{2}_(\d{4})(\d{2})(\d{2})\.csv$"
 )
@@ -75,6 +83,30 @@ def build_parser(defaults: CollectionOptions | None = None) -> argparse.Argument
         "--fail-if-exists",
         action="store_true",
         help="do not replace an existing output file",
+    )
+    parser.add_argument(
+        "--week",
+        help="ISO week in YYYY-Www format for curated sns_trend artifacts",
+    )
+    parser.add_argument(
+        "--run-id",
+        help="landing run id used as curated artifact provenance",
+    )
+    parser.add_argument(
+        "--emit-curated-meme-card-candidates",
+        action="store_true",
+        help="write curated/sns_trend/vN/meme_card_candidates/youtube JSON",
+    )
+    parser.add_argument(
+        "--curated-version",
+        default=DEFAULT_CURATED_VERSION,
+        help="curated sns_trend dataset version, e.g. v3",
+    )
+    parser.add_argument(
+        "--curated-root",
+        type=Path,
+        default=DEFAULT_CURATED_ROOT,
+        help="root directory for curated sns_trend artifacts",
     )
     parser.add_argument(
         "--log-level",
@@ -125,6 +157,93 @@ def _keyword_count_rows(rows: Iterable[dict[str, object]]) -> list[dict[str, obj
     ]
     keyword_rows.sort(key=lambda row: (-int(row["count"]), str(row["keyword"])))
     return keyword_rows
+
+
+def _parse_dataset_version(value: str) -> str:
+    normalized = value.strip().lower()
+    if not re.fullmatch(r"v[1-9]\d*", normalized):
+        raise ConfigurationError("curated-version must use vN format")
+    return normalized
+
+
+def _utc_now_z() -> str:
+    return datetime.now(timezone.utc).isoformat(timespec="seconds").replace(
+        "+00:00", "Z"
+    )
+
+
+def curated_meme_card_candidates_path(
+    *,
+    week: str,
+    version: str = DEFAULT_CURATED_VERSION,
+    root: Path = DEFAULT_CURATED_ROOT,
+) -> Path:
+    return (
+        root
+        / version
+        / "meme_card_candidates"
+        / "youtube"
+        / f"youtube_meme_card_candidates_{week}.json"
+    )
+
+
+def build_curated_meme_card_candidates_document(
+    *,
+    keyword_rows: Sequence[dict[str, object]],
+    week: str,
+    run_id: str,
+    run_date: date,
+    region: str,
+    source_keyword_csv: Path,
+    source_video_count: int,
+    version: str = DEFAULT_CURATED_VERSION,
+) -> dict[str, object]:
+    # [Design Intent] Keep this artifact explicitly pre-review so it cannot be
+    # mistaken for the official processed TrendCard payload.
+    terms = [str(row["keyword"]) for row in keyword_rows]
+    return {
+        "schema_version": "1.0",
+        "dataset_name": "sns_trend",
+        "version": version,
+        "stage": "curated",
+        "artifact_name": "meme_card_candidates",
+        "source_family": "youtube",
+        "curation_status": "rule_filtered",
+        "review_status": "pending",
+        "promotion_requirement": "human_review_and_cross_platform_evidence",
+        "auto_promote_to_processed": False,
+        "collected_week": week,
+        "run_date": run_date.isoformat(),
+        "source_landing_run_id": run_id,
+        "region": region,
+        "source_keyword_csv": str(source_keyword_csv),
+        "source_video_count": source_video_count,
+        "term_count": len(terms),
+        "terms": terms,
+        "term_scores": [
+            {"keyword": str(row["keyword"]), "count": int(row["count"])}
+            for row in keyword_rows
+        ],
+        "created_at_utc": _utc_now_z(),
+    }
+
+
+def write_curated_meme_card_candidates(
+    payload: dict[str, object],
+    *,
+    output_path: Path,
+    overwrite: bool,
+) -> Path:
+    if output_path.exists() and not overwrite:
+        raise DataFileError(f"curated output already exists: {output_path}")
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = output_path.with_suffix(output_path.suffix + ".tmp")
+    temporary.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    temporary.replace(output_path)
+    return output_path
 
 
 def get_trending_videos(
@@ -233,12 +352,43 @@ def main(argv: Sequence[str] | None = None) -> int:
             tokenizer_name=tokenizer_name,
             provenance=provenance,
         )
+        keyword_rows = _keyword_count_rows(rows)
         atomic_write_csv(
             output,
             KEYWORD_FIELDS,
-            _keyword_count_rows(rows),
+            keyword_rows,
             overwrite=not args.fail_if_exists,
         )
+        curated_output: Path | None = None
+        if args.emit_curated_meme_card_candidates:
+            if not args.week or not args.run_id:
+                raise ConfigurationError(
+                    "--week and --run-id are required with "
+                    "--emit-curated-meme-card-candidates"
+                )
+            week = parse_iso_week(args.week)
+            run_id = parse_run_id(args.run_id)
+            version = _parse_dataset_version(args.curated_version)
+            curated_output = curated_meme_card_candidates_path(
+                week=week,
+                version=version,
+                root=args.curated_root,
+            )
+            payload = build_curated_meme_card_candidates_document(
+                keyword_rows=keyword_rows,
+                week=week,
+                run_id=run_id,
+                run_date=run_date,
+                region=region,
+                source_keyword_csv=output,
+                source_video_count=len({video.video_id for video in videos}),
+                version=version,
+            )
+            write_curated_meme_card_candidates(
+                payload,
+                output_path=curated_output,
+                overwrite=not args.fail_if_exists,
+            )
     except ConfigurationError as exc:
         logging.error("configuration error: %s", exc)
         return 2
@@ -250,6 +400,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         f"saved {len(rows)} keywords from {len({video.video_id for video in videos})} "
         f"videos to {output}"
     )
+    if curated_output is not None:
+        print(f"saved YouTube curated meme card candidates to {curated_output}")
     return 0
 
 

@@ -89,6 +89,7 @@ def test_resolve_youtube_landing_config_uses_manual_values(
         logical_date=datetime(2026, 7, 27, 0, 0, tzinfo=timezone.utc),
         landing_root=tmp_path / "landing" / "sns_trend",
         youtube_dir=tmp_path / "gather_data" / "youtube",
+        curated_root=tmp_path / "curated" / "sns_trend",
     )
 
     assert config["week"] == "2026-W31"
@@ -102,6 +103,12 @@ def test_resolve_youtube_landing_config_uses_manual_values(
     assert config["keyword_csv"].endswith(
         "week=2026-W31/raw/youtube/run_id=manual__youtube_smoke/"
         "youtube_keywords_2026-07-27.csv"
+    )
+    assert config["emit_curated_meme_card_candidates"] is True
+    assert config["curated_version"] == "v3"
+    assert config["curated_candidates_json"].endswith(
+        "curated/sns_trend/v3/meme_card_candidates/youtube/"
+        "youtube_meme_card_candidates_2026-W31.json"
     )
 
 
@@ -117,6 +124,7 @@ def test_resolve_youtube_landing_config_defaults_to_kst_iso_week(
         logical_date=datetime(2026, 7, 26, 15, 10, tzinfo=timezone.utc),
         landing_root=tmp_path,
         youtube_dir=tmp_path / "youtube",
+        curated_root=tmp_path / "curated",
     )
 
     assert config["week"] == "2026-W31"
@@ -145,6 +153,33 @@ def test_collector_command_keeps_landing_run_directory(
     assert "--fail-if-exists" not in command
 
 
+def test_keyword_command_emits_curated_candidates_by_default(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    module = _load_dag_module_with_fake_airflow(monkeypatch)
+    config = {
+        "week": "2026-W31",
+        "run_id": "manual__youtube_smoke",
+        "run_date": "2026-07-27",
+        "raw_csv": str(tmp_path / "youtube_trending_KR_2026-W31.csv"),
+        "keyword_csv": str(tmp_path / "youtube_keywords_2026-07-27.csv"),
+        "tokenizer": "regex",
+        "fail_if_exists": False,
+        "emit_curated_meme_card_candidates": True,
+        "curated_version": "v3",
+        "curated_root": str(tmp_path / "curated" / "sns_trend"),
+    }
+
+    command = module._keyword_command(config)
+
+    assert "daily_keyword_tracker.py" in command
+    assert "--emit-curated-meme-card-candidates" in command
+    assert command[command.index("--week") + 1] == "2026-W31"
+    assert command[command.index("--run-id") + 1] == "manual__youtube_smoke"
+    assert command[command.index("--curated-version") + 1] == "v3"
+
+
 def test_verify_youtube_landing_artifacts_accepts_keyword_count(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -153,6 +188,7 @@ def test_verify_youtube_landing_artifacts_accepts_keyword_count(
     raw_csv = tmp_path / "youtube_trending_KR_2026-W31.csv"
     keyword_csv = tmp_path / "youtube_keywords_2026-07-27.csv"
     summary_json = tmp_path / "crawler_run_summary.json"
+    curated_json = tmp_path / "youtube_meme_card_candidates_2026-W31.json"
     raw_csv.write_text("video_id,title\nvideo-1,test\n", encoding="utf-8")
     with keyword_csv.open("w", encoding="utf-8", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=["keyword", "count"])
@@ -162,13 +198,31 @@ def test_verify_youtube_landing_artifacts_accepts_keyword_count(
         json.dumps({"status": "success", "collected_count": 1}),
         encoding="utf-8",
     )
+    curated_json.write_text(
+        json.dumps(
+            {
+                "stage": "curated",
+                "artifact_name": "meme_card_candidates",
+                "source_family": "youtube",
+                "review_status": "pending",
+                "collected_week": "2026-W31",
+                "source_landing_run_id": "manual__youtube_smoke",
+                "term_count": 1,
+            }
+        ),
+        encoding="utf-8",
+    )
 
     result = module._verify_youtube_landing_artifacts(
         {
+            "week": "2026-W31",
+            "run_id": "manual__youtube_smoke",
             "run_dir": str(tmp_path),
             "raw_csv": str(raw_csv),
             "keyword_csv": str(keyword_csv),
             "crawler_run_summary": str(summary_json),
+            "emit_curated_meme_card_candidates": True,
+            "curated_candidates_json": str(curated_json),
         }
     )
 
@@ -179,6 +233,8 @@ def test_verify_youtube_landing_artifacts_accepts_keyword_count(
         "crawler_run_summary": str(summary_json),
         "collected_count": 1,
         "keyword_row_count": 1,
+        "curated_candidates_json": str(curated_json),
+        "curated_term_count": 1,
     }
 
 
@@ -204,6 +260,7 @@ def test_verify_youtube_landing_artifacts_rejects_wrong_keyword_schema(
                 "raw_csv": str(raw_csv),
                 "keyword_csv": str(keyword_csv),
                 "crawler_run_summary": str(summary_json),
+                "emit_curated_meme_card_candidates": False,
             }
         )
 

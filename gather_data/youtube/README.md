@@ -115,6 +115,28 @@ python daily_keyword_tracker.py \
   --fail-if-exists
 ```
 
+검수 전 후보 JSON까지 만들 때는 `--emit-curated-meme-card-candidates`를 명시한다.
+
+```bash
+# [Design Intent] landing keyword,count 결과를 검수 전 후보 JSON으로 승격하되,
+# 공식 processed 입력으로는 자동 승격하지 않는다.
+python daily_keyword_tracker.py \
+  --input-csv data/landing/sns_trend/week=2026-W31/raw/youtube/run_id=<run_id>/youtube_trending_KR_2026-W31.csv \
+  --date 2026-07-27 \
+  --output-file data/landing/sns_trend/week=2026-W31/raw/youtube/run_id=<run_id>/youtube_keywords_2026-07-27.csv \
+  --tokenizer regex \
+  --week 2026-W31 \
+  --run-id <run_id> \
+  --emit-curated-meme-card-candidates
+```
+
+curated 출력:
+
+```text
+data/curated/sns_trend/v3/meme_card_candidates/youtube/
+  youtube_meme_card_candidates_2026-W31.json
+```
+
 `regex`가 기본 tokenizer이며 모든 팀 환경에서 동일하게 동작한다. `okt`를 선택했는데 KoNLPy 또는 Java가 없으면 조용히 다른 알고리즘으로 전환하지 않고 실패한다.
 
 ### 3. 트렌드 비교
@@ -215,6 +237,9 @@ data/landing/sns_trend/week=2026-W31/raw/youtube/run_id=manual__youtube_2026w31/
   youtube_keywords_YYYY-MM-DD.csv
   crawler_run_summary.json
   error.json  # 실패 시에만 생성
+
+data/curated/sns_trend/v3/meme_card_candidates/youtube/
+  youtube_meme_card_candidates_2026-W31.json
 ```
 
 파일 역할:
@@ -223,11 +248,14 @@ data/landing/sns_trend/week=2026-W31/raw/youtube/run_id=manual__youtube_2026w31/
 | --- | --- | --- |
 | `youtube_trending_KR_2026-W31.csv` | YouTube에서 가져온 원본 영상 목록 | `video_id`, `title`, `tags`, `view_count`, `url` |
 | `youtube_keywords_YYYY-MM-DD.csv` | 원본 영상 목록에서 키워드만 뽑아 count로 집계한 결과 | `keyword`, `count` |
+| `youtube_meme_card_candidates_2026-W31.json` | 사람이 검수하기 전 YouTube 밈 카드 후보 | `terms`, `term_scores`, `review_status=pending` |
 | `crawler_run_summary.json` | 이번 수집 실행 로그 | 수집 개수, 실행 시간, 저장 경로 |
 | `error.json` | 실패 시 원인 추적용 로그 | `status`, `exit_code`, `error_type`, `message` |
 
 `youtube_keywords_YYYY-MM-DD.csv`는 `youtube_trending_KR_YYYY-Www.csv`를 입력으로
-`daily_keyword_tracker.py`가 생성한다.
+`daily_keyword_tracker.py`가 생성한다. `youtube_meme_card_candidates_YYYY-Www.json`도
+같은 keyword snapshot에서 생성하며, 아직 사람이 검수하지 않은 `pending` 후보라서
+processed payload로 자동 승격하지 않는다.
 
 - `--week`는 `Asia/Seoul` 기준 ISO week를 `YYYY-Www` 형식으로 전달한다.
 - `--week`와 `--run-id` 중 하나만 전달하면 설정 오류(`exit 2`)다.

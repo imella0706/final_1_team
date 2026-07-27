@@ -23,12 +23,14 @@ DAG_ID = "sns_trend_youtube_landing_collection"
 SOURCE_NAME = "youtube"
 DEFAULT_REGION = "KR"
 DEFAULT_LIMIT = 100
+DEFAULT_CURATED_VERSION = "v3"
 KST = ZoneInfo("Asia/Seoul")
 
 AIRFLOW_ROOT = Path(__file__).resolve().parents[1]
 REPO_ROOT = Path(os.getenv("BRANDMATE_REPO_ROOT", AIRFLOW_ROOT.parent))
 YOUTUBE_DIR = REPO_ROOT / "gather_data" / "youtube"
 LANDING_ROOT = REPO_ROOT / "data" / "landing" / "sns_trend"
+CURATED_ROOT = REPO_ROOT / "data" / "curated" / "sns_trend"
 YOUTUBE_LANDING_SCHEDULE = (
     os.getenv("BRANDMATE_SNS_TREND_YOUTUBE_LANDING_SCHEDULE", "").strip() or None
 )
@@ -65,6 +67,13 @@ def _int_conf(value: Any, *, default: int) -> int:
     return result
 
 
+def _dataset_version_conf(value: Any, *, default: str) -> str:
+    version = str(value or default).strip().lower()
+    if not re.fullmatch(r"v[1-9]\d*", version):
+        raise AirflowException("curated_version must use vN format")
+    return version
+
+
 def _date_from_logical_date(value: Any) -> datetime:
     if value is None:
         return datetime.now(timezone.utc).astimezone(KST)
@@ -89,6 +98,7 @@ def _resolve_youtube_landing_config(
     logical_date: Any,
     landing_root: Path = LANDING_ROOT,
     youtube_dir: Path = YOUTUBE_DIR,
+    curated_root: Path = CURATED_ROOT,
 ) -> dict[str, Any]:
     run_datetime = _date_from_logical_date(logical_date)
     run_date = str(conf.get("run_date") or conf.get("date") or run_datetime.date())
@@ -97,6 +107,14 @@ def _resolve_youtube_landing_config(
     run_id = _safe_path_fragment(str(conf.get("run_id") or dag_run_id))
     limit = _int_conf(conf.get("limit"), default=YOUTUBE_LANDING_LIMIT)
     fail_if_exists = _bool_conf(conf.get("fail_if_exists"), default=False)
+    emit_curated = _bool_conf(
+        conf.get("emit_curated_meme_card_candidates"),
+        default=True,
+    )
+    curated_version = _dataset_version_conf(
+        conf.get("curated_version"),
+        default=DEFAULT_CURATED_VERSION,
+    )
     tokenizer = str(conf.get("tokenizer") or "regex").strip()
 
     if not re.fullmatch(r"\d{4}-W\d{2}", week):
@@ -116,6 +134,13 @@ def _resolve_youtube_landing_config(
     raw_csv = run_dir / f"youtube_trending_{region}_{week}.csv"
     keyword_csv = run_dir / f"youtube_keywords_{run_date}.csv"
     summary_json = run_dir / "crawler_run_summary.json"
+    curated_candidates_json = (
+        curated_root
+        / curated_version
+        / "meme_card_candidates"
+        / SOURCE_NAME
+        / f"youtube_meme_card_candidates_{week}.json"
+    )
 
     return {
         "source": SOURCE_NAME,
@@ -126,11 +151,15 @@ def _resolve_youtube_landing_config(
         "limit": limit,
         "tokenizer": tokenizer,
         "fail_if_exists": fail_if_exists,
+        "emit_curated_meme_card_candidates": emit_curated,
+        "curated_version": curated_version,
         "youtube_dir": str(youtube_dir),
         "run_dir": str(run_dir),
         "raw_csv": str(raw_csv),
         "keyword_csv": str(keyword_csv),
         "crawler_run_summary": str(summary_json),
+        "curated_root": str(curated_root),
+        "curated_candidates_json": str(curated_candidates_json),
     }
 
 
@@ -189,6 +218,20 @@ def _keyword_command(config: dict[str, Any]) -> list[str]:
         "--tokenizer",
         str(config["tokenizer"]),
     ]
+    if config.get("emit_curated_meme_card_candidates"):
+        command.extend(
+            [
+                "--week",
+                str(config["week"]),
+                "--run-id",
+                str(config["run_id"]),
+                "--emit-curated-meme-card-candidates",
+                "--curated-version",
+                str(config["curated_version"]),
+                "--curated-root",
+                str(config["curated_root"]),
+            ]
+        )
     if config.get("fail_if_exists"):
         command.append("--fail-if-exists")
     return command
@@ -201,9 +244,13 @@ def _verify_youtube_landing_artifacts(config: dict[str, Any]) -> dict[str, Any]:
     summary_json = Path(config["crawler_run_summary"])
     error_json = run_dir / "error.json"
 
+    required_paths = [raw_csv, keyword_csv, summary_json]
+    if config.get("emit_curated_meme_card_candidates"):
+        curated_candidates_json = Path(config["curated_candidates_json"])
+        required_paths.append(curated_candidates_json)
     missing = [
         str(path)
-        for path in (raw_csv, keyword_csv, summary_json)
+        for path in required_paths
         if not path.is_file()
     ]
     if missing:
@@ -225,16 +272,44 @@ def _verify_youtube_landing_artifacts(config: dict[str, Any]) -> dict[str, Any]:
             f"YouTube keyword CSV must use keyword,count columns. Got: {fields}"
         )
 
+    artifact_check = {
+        "status": "passed",
+        "raw_csv": str(raw_csv),
+        "keyword_csv": str(keyword_csv),
+        "crawler_run_summary": str(summary_json),
+        "collected_count": summary.get("collected_count"),
+        "keyword_row_count": keyword_rows,
+    }
+    if config.get("emit_curated_meme_card_candidates"):
+        curated_candidates_json = Path(config["curated_candidates_json"])
+        curated_payload = json.loads(
+            curated_candidates_json.read_text(encoding="utf-8")
+        )
+        expected = {
+            "stage": "curated",
+            "artifact_name": "meme_card_candidates",
+            "source_family": SOURCE_NAME,
+            "review_status": "pending",
+            "collected_week": config["week"],
+            "source_landing_run_id": config["run_id"],
+        }
+        mismatches = {
+            key: {"expected": value, "actual": curated_payload.get(key)}
+            for key, value in expected.items()
+            if curated_payload.get(key) != value
+        }
+        if mismatches:
+            raise AirflowException(
+                f"YouTube curated candidate metadata mismatch: {mismatches}"
+            )
+        if int(curated_payload.get("term_count") or 0) <= 0:
+            raise AirflowException("YouTube curated candidates must contain terms")
+        artifact_check["curated_candidates_json"] = str(curated_candidates_json)
+        artifact_check["curated_term_count"] = curated_payload.get("term_count")
+
     return {
         **config,
-        "artifact_check": {
-            "status": "passed",
-            "raw_csv": str(raw_csv),
-            "keyword_csv": str(keyword_csv),
-            "crawler_run_summary": str(summary_json),
-            "collected_count": summary.get("collected_count"),
-            "keyword_row_count": keyword_rows,
-        },
+        "artifact_check": artifact_check,
     }
 
 
@@ -256,7 +331,8 @@ def _verify_youtube_landing_artifacts(config: dict[str, Any]) -> dict[str, Any]:
       "week": "2026-W31",
       "run_date": "2026-07-27",
       "run_id": "manual__youtube_phase4_smoke",
-      "limit": 5
+      "limit": 5,
+      "emit_curated_meme_card_candidates": true
     }
     ```
     """,
