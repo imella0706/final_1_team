@@ -28,6 +28,7 @@ def score_background_candidate(
     object_detections: int | None = None,
     center_object_detections: int | None = None,
     camera_angle: str = "45",
+    placement_region: tuple[float, float, float, float] | None = None,
     minimum_geometry_score: float = 0.72,
     requires_generated_plate: bool = False,
     generated_plate_score: float | None = None,
@@ -40,8 +41,13 @@ def score_background_candidate(
     equally suitable food-free candidate.
     """
     height, width = background.shape[:2]
-    x1, x2 = int(width * 0.25), int(width * 0.75)
-    y1, y2 = int(height * 0.25), int(height * 0.75)
+    if placement_region is None:
+        placement_region = (0.25, 0.25, 0.75, 0.75)
+    left, top, right, bottom = placement_region
+    left, right = sorted((float(np.clip(left, 0.0, 1.0)), float(np.clip(right, 0.0, 1.0))))
+    top, bottom = sorted((float(np.clip(top, 0.0, 1.0)), float(np.clip(bottom, 0.0, 1.0))))
+    x1, x2 = int(width * left), max(int(width * right), 1)
+    y1, y2 = int(height * top), max(int(height * bottom), 1)
     centre = background[y1:y2, x1:x2]
     edges = cv2.Canny(cv2.cvtColor(centre, cv2.COLOR_BGR2GRAY), 70, 140)
     edge_density = float(np.count_nonzero(edges)) / max(edges.size, 1)

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -69,6 +70,36 @@ class GroundingDINODetector:
                 f"GroundingDINO 모델을 준비할 수 없습니다: {self.model_id}"
             ) from exc
 
+    def _post_process(
+        self,
+        outputs: Any,
+        input_ids: Any,
+        *,
+        target_sizes: list[tuple[int, int]],
+    ) -> list[dict[str, Any]]:
+        assert self._processor is not None
+        method = self._processor.post_process_grounded_object_detection
+        box_threshold = float(self.config.get("box_threshold", 0.28))
+        text_threshold = float(self.config.get("text_threshold", 0.22))
+        kwargs: dict[str, Any] = {"target_sizes": target_sizes}
+
+        try:
+            parameters = inspect.signature(method).parameters
+        except (TypeError, ValueError):
+            parameters = {}
+
+        if not parameters or "box_threshold" in parameters:
+            kwargs["box_threshold"] = box_threshold
+        elif "threshold" in parameters:
+            kwargs["threshold"] = box_threshold
+
+        if not parameters or "text_threshold" in parameters:
+            kwargs["text_threshold"] = text_threshold
+
+        if not parameters or "input_ids" in parameters:
+            return method(outputs, input_ids=input_ids, **kwargs)
+        return method(outputs, **kwargs)
+
     def detect(self, image_bgr: np.ndarray) -> list[GroundingDetection]:
         self._load()
         assert self._processor is not None and self._model is not None
@@ -85,11 +116,9 @@ class GroundingDINODetector:
             with torch.no_grad():
                 outputs = self._model(**inputs)
             height, width = image_bgr.shape[:2]
-            results = self._processor.post_process_grounded_object_detection(
+            results = self._post_process(
                 outputs,
                 inputs["input_ids"],
-                box_threshold=float(self.config.get("box_threshold", 0.28)),
-                text_threshold=float(self.config.get("text_threshold", 0.22)),
                 target_sizes=[(height, width)],
             )[0]
         except Exception as exc:
