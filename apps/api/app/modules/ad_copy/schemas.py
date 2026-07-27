@@ -112,6 +112,7 @@ class AdCopyRequest(BaseModel):
     age_groups: list[AgeGroup] = Field(default_factory=list, max_length=5)
     target_audiences: list[TargetAudience] = Field(default_factory=list, max_length=6)
     tone: CopyTone
+    desired_mood: str | None = Field(default=None, max_length=100)
     product_names: list[str] = Field(min_length=1, max_length=10)
     features: list[str] = Field(default_factory=list, max_length=10)
     channel: AdChannel

@@ -6,7 +6,7 @@ services:
       POSTGRES_USER: brandmate
       POSTGRES_PASSWORD: brandmate-local-only
     ports:
-      - "127.0.0.1:5433:5432"
+      - "127.0.0.1:${BRANDMATE_POSTGRES_PORT:-5433}:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U brandmate -d brandmate"]
       interval: 5s
@@ -23,7 +23,7 @@ services:
       POSTGRES_USER: brandmate_test
       POSTGRES_PASSWORD: brandmate-test-only
     ports:
-      - "127.0.0.1:5434:5432"
+      - "127.0.0.1:${BRANDMATE_TEST_POSTGRES_PORT:-5434}:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U brandmate_test -d brandmate_test"]
       interval: 2s

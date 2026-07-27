@@ -3,6 +3,12 @@ import asyncio
 from fastapi import APIRouter, HTTPException, status
 
 from app.core.config import settings
+from app.extensions.ad_content.audio_service import (
+    AudioModelNotConfiguredError,
+    AudioModelProviderError,
+    generate_ad_audio,
+    list_audio_provider_statuses,
+)
 from app.extensions.ad_content.artifact_store import save_ad_content_artifacts
 from app.extensions.ad_content.image_validator import validate_generated_image
 from app.extensions.ad_content.image_service import (
@@ -31,8 +37,11 @@ from app.extensions.ad_content.prompt_normalizer import (
 from app.extensions.ad_content.schemas import (
     AdContentRequest,
     AdContentResponse,
+    AdAudioRequest,
+    AdAudioResponse,
     AdImageRequest,
     AdImageResponse,
+    AudioProviderStatus,
     ImageModelOption,
     VisionModelOption,
 )
@@ -82,6 +91,27 @@ def _uploaded_blog_image_response(request: AdContentRequest) -> AdImageResponse:
 @router.get("/image-models", response_model=list[ImageModelOption])
 async def image_models() -> list[ImageModelOption]:
     return list_image_model_options()
+
+
+@router.post("/audio/generate", response_model=AdAudioResponse)
+async def generate_audio(request: AdAudioRequest) -> AdAudioResponse:
+    try:
+        return await generate_ad_audio(request)
+    except AudioModelNotConfiguredError as error:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=str(error),
+        ) from error
+    except AudioModelProviderError as error:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(error),
+        ) from error
+
+
+@router.get("/audio/providers", response_model=list[AudioProviderStatus])
+async def audio_providers() -> list[AudioProviderStatus]:
+    return await list_audio_provider_statuses()
 
 
 @router.get("/vision-models", response_model=list[VisionModelOption])

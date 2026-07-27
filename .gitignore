@@ -58,12 +58,21 @@ Thumbs.db
 outputs
 /runtime/
 
+# Local CosyVoice runtime and disabled voice references
+/services/cosyvoice/.runtime/
+/services/cosyvoice/.venv/
+/services/cosyvoice/voices/man_whisper.wav
+/services/cosyvoice/voices/man_whisper2.wav
+
 # Airflow local runtime artifacts
 airflow/logs/
 airflow/mock_gcs/logs/
 airflow/gcs_data_cache/
 # Added by code-review-graph
 .code-review-graph/
+.codegraph/
+repomix-output.md
+repomix-output.xml
 
 # AIHub 학습 모델은 대용량 바이너리이므로 저장소에 포함하지 않는다.
 /apps/api/food-image-cleanup-pipeline/3-021.AI모델/

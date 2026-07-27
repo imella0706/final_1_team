@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Run L1-5 multi-clip YOLO evaluation for matched AIHub video/label pairs."""
+"""Archived L1-5 multi-clip YOLO evaluation wrapper.
+
+Use scripts/visitor_flow_yolo_config_compare.py for active L2-3/L2-3b experiments.
+This file is kept only to reproduce the earlier L1-5 batch evaluation artifact.
+"""
 
 from __future__ import annotations
 
@@ -246,7 +250,7 @@ def main() -> None:
     pairs = matched_pairs(args.sample_dir)
     args.output_dir.mkdir(parents=True, exist_ok=True)
 
-    evaluator = Path(__file__).with_name("visitor_flow_yolo_evaluate.py")
+    evaluator = Path(__file__).parents[3] / "visitor_flow_yolo_evaluate.py"
     clip_rows: list[dict[str, Any]] = []
 
     for video, label in pairs:

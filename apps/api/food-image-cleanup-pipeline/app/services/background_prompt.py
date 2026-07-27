@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import re
 from typing import Any
 
 
@@ -10,6 +11,8 @@ class BackgroundPrompt:
     placement: str
     light_direction: str
     camera_angle: str
+    generated_plate: bool = False
+    plate_policy: str = "empty_table_no_plate"
 
 
 def build_background_prompt(metadata: dict[str, Any]) -> BackgroundPrompt:
@@ -19,6 +22,7 @@ def build_background_prompt(metadata: dict[str, Any]) -> BackgroundPrompt:
         angle_label = "45"
     placement = "center" if angle_label == "top" else "center_lower"
     generated_plate = bool(metadata.get("generated_plate", False))
+    plate_policy = _plate_policy(generated_plate)
     supplied_prompt = str(
         metadata.get("background_prompt_base", metadata.get("background_prompt", ""))
     ).strip()
@@ -31,6 +35,8 @@ def build_background_prompt(metadata: dict[str, Any]) -> BackgroundPrompt:
             placement=placement,
             light_direction=str(metadata.get("light_direction", "left")),
             camera_angle=angle_label,
+            generated_plate=generated_plate,
+            plate_policy=plate_policy,
         )
     if supplied_prompt:
         # 기존 업종 프롬프트에는 "no plate"가 포함될 수 있다. 생성 접시 모드에서는
@@ -46,13 +52,19 @@ def build_background_prompt(metadata: dict[str, Any]) -> BackgroundPrompt:
             placement=placement,
             light_direction=str(metadata.get("light_direction", "left")),
             camera_angle=angle_label,
+            generated_plate=generated_plate,
+            plate_policy=plate_policy,
         )
     business = str(metadata.get("business_type", "modern cafe"))
     category = str(metadata.get("food_category", "food"))
     mood = str(metadata.get("desired_mood", "warm natural"))
     light = str(metadata.get("light_direction", "left"))
-    colors = ", ".join(str(value).replace("_", " ") for value in metadata.get("food_color", []))
-    complement = f"palette complementing {colors}," if colors else "balanced neutral palette,"
+    colors = ", ".join(
+        str(value).replace("_", " ") for value in metadata.get("food_color", [])
+    )
+    complement = (
+        f"palette complementing {colors}," if colors else "balanced neutral palette,"
+    )
     prompt = (
         f"Photorealistic {business} interior for {category} advertising, "
         "clean empty table surface, "
@@ -66,6 +78,8 @@ def build_background_prompt(metadata: dict[str, Any]) -> BackgroundPrompt:
         placement=placement,
         light_direction=light,
         camera_angle=angle_label,
+        generated_plate=generated_plate,
+        plate_policy=plate_policy,
     )
 
 
@@ -94,17 +108,19 @@ def _plate_constraint(generated_plate: bool) -> str:
     return "empty table, no plate"
 
 
+def _plate_policy(generated_plate: bool) -> str:
+    return "generated_empty_plate_required" if generated_plate else "empty_table_no_plate"
+
+
 def _allow_generated_plate(prompt: str) -> str:
     """생성 접시 모드와 충돌하는 사용자 프롬프트의 접시 금지 문구만 제거한다."""
-    cleaned = prompt
-    for phrase in (
-        "no plate,",
-        "no plate",
-        "no plates,",
-        "no plates",
-    ):
-        cleaned = cleaned.replace(phrase, "")
-    return cleaned
+    cleaned = re.sub(
+        r"\b(?:no|without)\s+plates?\b,?",
+        "",
+        prompt,
+        flags=re.IGNORECASE,
+    )
+    return re.sub(r"\s{2,}", " ", cleaned).strip(" ,")
 
 
 def _apply_camera_angle_constraint(base_prompt: str, angle_label: str) -> str:

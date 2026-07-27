@@ -317,6 +317,7 @@ node --check ..\web\app.js
 - 로컬 Qwen + ComfyUI FLUX 온보딩: [docs/LOCAL_AI_PIPELINE_ONBOARDING.md](docs/LOCAL_AI_PIPELINE_ONBOARDING.md)
 - API 실행 문서: [apps/api/README.md](apps/api/README.md)
 - 브라우저 실행 문서: [apps/web/README.md](apps/web/README.md)
+- AI 음성 광고 서비스: [services/cosyvoice/README.md](services/cosyvoice/README.md)
 - 광고 콘텐츠 확장 모듈: [apps/api/app/extensions/ad_content/README.md](apps/api/app/extensions/ad_content/README.md)
 - 광고 문구 모듈: [apps/api/app/modules/ad_copy/README.md](apps/api/app/modules/ad_copy/README.md)
 - 모델 런타임 구조: [apps/api/app/modules/model_runtime/README.md](apps/api/app/modules/model_runtime/README.md)

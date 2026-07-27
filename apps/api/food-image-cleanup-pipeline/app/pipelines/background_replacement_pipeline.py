@@ -13,6 +13,7 @@ from app.services.background_generation import FluxBackgroundGenerator
 from app.services.background_candidate_selection import score_background_candidate
 from app.services.background_prompt import build_background_prompt
 from app.services.camera_angle import CameraAngleClassifier
+from app.services.container_blur import apply_container_blur
 from app.services.contact_shadow import add_contact_shadow
 from app.services.detection import (
     DetectorRuntimeError,
@@ -31,6 +32,7 @@ from app.services.grounding_dino import (
 from app.services.harmonization import harmonize_foreground
 from app.services.inpainting import BigLaMaInpainter, removal_mask_from_boxes
 from app.services.matting import BiRefNetMattingService
+from app.services.plate_edge_repair import repair_plate_edge
 from app.services.plate_mask import PlateMaskService
 from app.services.plate_preservation import (
     build_plate_preservation_alpha,
@@ -39,7 +41,11 @@ from app.services.plate_preservation import (
 from app.services.plate_segmentation import PlateSegmentationService
 from app.services.quality import analyze_quality
 from app.services.removal_detection import RemovalTargetDetector
-from app.services.segmentation import SAM2Segmenter
+from app.services.segmentation import (
+    HQSAMSegmenter,
+    SAM2Segmenter,
+    select_segmentation_result,
+)
 from app.services.semantic_validation import OpenCLIPSemanticValidator
 from app.services.validation import validate_result
 from app.utils.image_io import load_image, resize_for_processing, save_image
@@ -243,12 +249,56 @@ class BackgroundReplacementPipeline:
                 food_boxes = [(margin_x, margin_y, width - margin_x, height - margin_y)]
 
         segmenter = SAM2Segmenter(dict(self.config.models.get("segmenter", {})))
-        food_segmentation = segmenter.segment(original, food_boxes)
-        container_segmentation = segmenter.segment(original, container_boxes)
+        sam2_food_segmentation = segmenter.segment(original, food_boxes)
+        sam2_container_segmentation = segmenter.segment(original, container_boxes)
+        hq_sam_config = dict(self.config.models.get("hq_sam", {}))
+        hq_food_segmentation = None
+        hq_container_segmentation = None
+        hq_sam_stage: dict[str, Any]
+        if hq_sam_config.get("enabled", False):
+            try:
+                hq_segmenter = HQSAMSegmenter(hq_sam_config)
+                hq_food_segmentation = hq_segmenter.segment(original, food_boxes)
+                hq_container_segmentation = hq_segmenter.segment(original, container_boxes)
+                hq_sam_stage = {
+                    "status": "completed",
+                    "model_id": hq_sam_config.get("model_id"),
+                    "selection_mode": hq_sam_config.get("selection_mode", "box_coverage"),
+                }
+            except (ValueError, RuntimeError, ImportError) as exc:
+                hq_sam_stage = {"status": "fallback", "reason": str(exc)}
+        else:
+            hq_sam_stage = {"status": "disabled"}
+
+        food_segmentation, food_selection_metrics = select_segmentation_result(
+            sam2_food_segmentation,
+            hq_food_segmentation,
+            food_boxes,
+            hq_sam_config,
+            "food",
+        )
+        container_segmentation, container_selection_metrics = select_segmentation_result(
+            sam2_container_segmentation,
+            hq_container_segmentation,
+            container_boxes,
+            hq_sam_config,
+            "container",
+        )
+        hq_sam_stage["food_selection"] = food_selection_metrics
+        hq_sam_stage["container_selection"] = container_selection_metrics
         structural_foreground = foreground_mask(food_segmentation.mask, container_segmentation.mask)
         sam_path = self.config.paths.mask_dir / f"{input_path.stem}_sam_structural_mask.png"
         save_image(structural_foreground, sam_path)
         debug_artifacts["sam_structural_mask"] = str(sam_path)
+        if hq_food_segmentation is not None:
+            hq_food_path = self.config.paths.mask_dir / f"{input_path.stem}_hq_sam_food_mask.png"
+            save_image(hq_food_segmentation.mask, hq_food_path)
+            debug_artifacts["hq_sam_food_mask"] = str(hq_food_path)
+        if hq_container_segmentation is not None:
+            hq_container_path = self.config.paths.mask_dir / f"{input_path.stem}_hq_sam_container_mask.png"
+            save_image(hq_container_segmentation.mask, hq_container_path)
+            debug_artifacts["hq_sam_container_mask"] = str(hq_container_path)
+        stages["step_2b_hq_sam_segmentation"] = hq_sam_stage
 
         matting = BiRefNetMattingService(dict(self.config.models.get("matting", {})))
         stabilized_food, food_stabilization_metrics = matting.stabilize_sam_mask(
@@ -305,6 +355,13 @@ class BackgroundReplacementPipeline:
         generated_plate_config = dict(
             self.config.models.get("generated_plate_composition", {})
         )
+        metadata_composition_mode = str(metadata.get("composition_mode", "")).strip().lower()
+        if metadata_composition_mode in {"generated_plate", "preserve_original_plate"}:
+            generated_plate_config["mode"] = metadata_composition_mode
+        if "require_food_visible_mask" in metadata:
+            generated_plate_config["require_food_visible_mask"] = bool(
+                metadata["require_food_visible_mask"]
+            )
         generated_plate_mode = bool(generated_plate_config.get("enabled", True)) and str(
             generated_plate_config.get("mode", "generated_plate")
         ).lower() == "generated_plate"
@@ -315,12 +372,28 @@ class BackgroundReplacementPipeline:
         )
         # 생성 접시 모드에서는 원본 접시·식탁보를 최종 전경에서 제외한다.
         # 음식 마스크가 비어 있는 예외 상황만 기존 구조 마스크로 되돌려 안전하게 중단한다.
-        food_only_mask = (
-            stabilized_food_source
-            if np.any(stabilized_food_source)
-            else stabilized_food
-        )
-        active_foreground_mask = food_only_mask if generated_plate_mode else stabilized_foreground
+        if generated_plate_mode and has_learned_food_visible_mask:
+            food_only_mask = learned_food_mask_for_merge
+            plate_segmenter_stage["generated_plate_food_alpha_source"] = (
+                "plate_segmenter_food_visible"
+            )
+        else:
+            # Preserve mode can keep a generous SAM+learned food mask. For
+            # generated_plate, this branch is a fallback and may include the
+            # original plate/container, so require_food_visible_mask stays true
+            # by default.
+            food_only_mask = (
+                stabilized_food_source
+                if np.any(stabilized_food_source)
+                else stabilized_food
+            )
+            plate_segmenter_stage["generated_plate_food_alpha_source"] = (
+                "sam_fallback"
+                if generated_plate_mode
+                else "sam_plus_plate_segmenter"
+            )
+        food_alpha_gate = np.where(food_only_mask > 0, 255, 0).astype(np.uint8)
+        active_foreground_mask = food_alpha_gate if generated_plate_mode else stabilized_foreground
         stabilization_metrics = {
             "food": food_stabilization_metrics,
             "container": container_stabilization_metrics,
@@ -348,6 +421,9 @@ class BackgroundReplacementPipeline:
         food_mask_path = self.config.paths.mask_dir / f"{input_path.stem}_food_sam_mask.png"
         save_image(stabilized_food_source, food_mask_path)
         debug_artifacts["food_sam_mask"] = str(food_mask_path)
+        active_food_mask_path = self.config.paths.mask_dir / f"{input_path.stem}_food_active_mask.png"
+        save_image(food_alpha_gate, active_food_mask_path)
+        debug_artifacts["food_active_mask"] = str(active_food_mask_path)
 
         if (
             generated_plate_mode
@@ -451,8 +527,14 @@ class BackgroundReplacementPipeline:
 
         protect_kernel = int(self.config.models.get("foreground_protection", {}).get("dilation", 11))
         protect_kernel = protect_kernel + 1 if protect_kernel % 2 == 0 else protect_kernel
-        protected = cv2.dilate(
-            alpha,
+        removal_protection_source = (
+            food_alpha_gate
+            if generated_plate_mode
+            else plate_alpha
+        )
+        removal_protection = ((removal_protection_source > 0).astype(np.uint8) * 255)
+        removal_protection = cv2.dilate(
+            removal_protection,
             cv2.getStructuringElement(
                 cv2.MORPH_ELLIPSE, (max(1, protect_kernel), max(1, protect_kernel))
             ),
@@ -460,6 +542,11 @@ class BackgroundReplacementPipeline:
         stages["step_4_foreground_protection"] = {
             "status": "completed",
             "dilation": protect_kernel,
+            "source": (
+                "food_only_mask"
+                if generated_plate_mode
+                else "plate_alpha"
+            ),
         }
 
         cleaned = original.copy()
@@ -470,16 +557,166 @@ class BackgroundReplacementPipeline:
             removal_mask = removal_mask_from_boxes(
                 original.shape[:2], removal.boxes, int(inpainter_config.get("mask_dilation", 9))
             )
-            safe_removal = cv2.bitwise_and(removal_mask, cv2.bitwise_not(protected))
+            safe_removal = cv2.bitwise_and(
+                removal_mask, cv2.bitwise_not(removal_protection)
+            )
+            removal_mask_path = self.config.paths.mask_dir / f"{input_path.stem}_removal_mask.png"
+            safe_removal_mask_path = (
+                self.config.paths.mask_dir / f"{input_path.stem}_safe_removal_mask.png"
+            )
+            save_image(removal_mask, removal_mask_path)
+            save_image(safe_removal, safe_removal_mask_path)
+            debug_artifacts["removal_mask"] = str(removal_mask_path)
+            debug_artifacts["safe_lama_removal_mask"] = str(safe_removal_mask_path)
             if np.any(safe_removal):
                 cleaned = BigLaMaInpainter(inpainter_config).inpaint(original, safe_removal)
+                alpha = cv2.bitwise_and(alpha, cv2.bitwise_not(safe_removal))
+                if not generated_plate_mode:
+                    alpha = np.maximum(alpha, plate_alpha).astype(np.uint8)
+                save_image(alpha, alpha_path)
+            if generated_plate_mode:
+                alpha = cv2.bitwise_and(alpha, food_alpha_gate)
+                save_image(alpha, alpha_path)
             stages["step_5_safe_lama_removal"] = {
                 "status": "completed",
                 "detections": len(removal.boxes),
                 "applied": bool(np.any(safe_removal)),
+                "removal_mask_path": str(removal_mask_path),
+                "safe_removal_mask_path": str(safe_removal_mask_path),
             }
         else:
             stages["step_5_safe_lama_removal"] = {"status": "skipped"}
+            if generated_plate_mode:
+                alpha = cv2.bitwise_and(alpha, food_alpha_gate)
+                save_image(alpha, alpha_path)
+
+        cleanup_config = dict(self.config.models.get("foreground_cleanup", {}))
+        detached_foreground_mask = np.zeros_like(alpha, dtype=np.uint8)
+        if cleanup_config.get("enabled", True):
+            anchor_source = food_alpha_gate if generated_plate_mode else plate_alpha
+            anchor_dilation = int(cleanup_config.get("anchor_dilation", 15))
+            anchor_dilation = anchor_dilation + 1 if anchor_dilation % 2 == 0 else anchor_dilation
+            anchor = ((anchor_source > 0).astype(np.uint8) * 255)
+            anchor = cv2.dilate(
+                anchor,
+                cv2.getStructuringElement(
+                    cv2.MORPH_ELLIPSE,
+                    (max(1, anchor_dilation), max(1, anchor_dilation)),
+                ),
+            )
+            binary_alpha = ((alpha > 0).astype(np.uint8) * 255)
+            component_count, labels, stats, _ = cv2.connectedComponentsWithStats(
+                binary_alpha, connectivity=8
+            )
+            min_component_area = int(cleanup_config.get("min_component_area", 128))
+            removed_components = 0
+            for component_id in range(1, component_count):
+                component = labels == component_id
+                area = int(stats[component_id, cv2.CC_STAT_AREA])
+                if area < min_component_area:
+                    continue
+                if np.any(anchor[component]):
+                    continue
+                detached_foreground_mask[component] = 255
+                removed_components += 1
+            if np.any(detached_foreground_mask):
+                alpha = cv2.bitwise_and(alpha, cv2.bitwise_not(detached_foreground_mask))
+                if not generated_plate_mode:
+                    alpha = np.maximum(alpha, plate_alpha).astype(np.uint8)
+                else:
+                    alpha = cv2.bitwise_and(alpha, food_alpha_gate)
+                save_image(alpha, alpha_path)
+            detached_foreground_path = (
+                self.config.paths.mask_dir / f"{input_path.stem}_detached_foreground_mask.png"
+            )
+            save_image(detached_foreground_mask, detached_foreground_path)
+            debug_artifacts["detached_foreground_mask"] = str(detached_foreground_path)
+            stages["step_5c_detached_foreground_cleanup"] = {
+                "status": "completed",
+                "anchor": "food_active_mask" if generated_plate_mode else "plate_alpha",
+                "anchor_dilation": anchor_dilation,
+                "min_component_area": min_component_area,
+                "removed_components": removed_components,
+                "removed_pixels": int(np.count_nonzero(detached_foreground_mask)),
+                "mask_path": str(detached_foreground_path),
+            }
+        else:
+            stages["step_5c_detached_foreground_cleanup"] = {"status": "disabled"}
+
+        if not generated_plate_mode:
+            alpha = np.maximum(alpha, plate_alpha).astype(np.uint8)
+            final_plate_validation = validate_plate_preservation_alpha(
+                plate_result.mask,
+                alpha,
+                minimum_coverage=float(plate_preservation_config.get("minimum_coverage", 0.995)),
+                maximum_internal_gap_ratio=float(
+                    plate_preservation_config.get("maximum_internal_gap_ratio", 0.002)
+                ),
+                validation_erosion_px=int(
+                    plate_preservation_config.get("validation_erosion_px", 2)
+                ),
+            )
+            save_image(alpha, alpha_path)
+            stages["step_3_plate_preservation"][
+                "final_alpha_after_safe_removal"
+            ] = final_plate_validation.metrics
+            if not final_plate_validation.metrics["passed"]:
+                return self._rejected_result(
+                    report_path,
+                    input_path=input_path,
+                    foreground_path=None,
+                    stages=stages,
+                    validation=None,
+                    status="plate_preservation_failed_after_removal",
+                    reason="Plate preservation validation failed after safe removal.",
+                    debug_artifacts=debug_artifacts,
+                )
+
+        container_blur_config = dict(self.config.models.get("preserved_container_blur", {}))
+        if generated_plate_mode:
+            stages["step_5b_preserved_container_blur"] = {
+                "status": "skipped_generated_plate_mode"
+            }
+        else:
+            cleaned, container_blur_metrics, container_blur_mask = apply_container_blur(
+                cleaned,
+                plate_result.mask,
+                food_alpha_gate,
+                container_blur_config,
+            )
+            container_blur_mask_path = (
+                self.config.paths.mask_dir / f"{input_path.stem}_container_blur_mask.png"
+            )
+            save_image(container_blur_mask, container_blur_mask_path)
+            debug_artifacts["container_blur_mask"] = str(container_blur_mask_path)
+            stages["step_5b_preserved_container_blur"] = {
+                **container_blur_metrics,
+                "mask_path": str(container_blur_mask_path),
+            }
+
+        plate_edge_repair_config = dict(self.config.models.get("plate_edge_repair", {}))
+        if generated_plate_mode:
+            stages["step_5d_plate_edge_repair"] = {
+                "status": "skipped_generated_plate_mode"
+            }
+        else:
+            plate_edge_repair = repair_plate_edge(
+                cleaned,
+                plate_result.mask,
+                food_alpha_gate,
+                plate_edge_repair_config,
+            )
+            cleaned = plate_edge_repair.image
+            plate_edge_repair_mask_path = (
+                self.config.paths.mask_dir / f"{input_path.stem}_plate_edge_repair_mask.png"
+            )
+            save_image(plate_edge_repair.mask, plate_edge_repair_mask_path)
+            debug_artifacts["plate_edge_repair_mask"] = str(plate_edge_repair_mask_path)
+            stages["step_5d_plate_edge_repair"] = {
+                **plate_edge_repair.metrics,
+                "mask_path": str(plate_edge_repair_mask_path),
+                "after_container_blur": True,
+            }
 
         foreground_path = self.config.paths.intermediate_dir / f"{input_path.stem}_foreground_rgba.png"
         save_image(extract_rgba(cleaned, alpha), foreground_path)
@@ -528,6 +765,8 @@ class BackgroundReplacementPipeline:
             "light_direction": prompt_info.light_direction,
             "camera_angle": prompt_info.camera_angle,
             "placement": prompt_info.placement,
+            "generated_plate": prompt_info.generated_plate,
+            "plate_policy": prompt_info.plate_policy,
         }
         generator_config = dict(self.config.models.get("background_generator", {}))
         generator = FluxBackgroundGenerator(generator_config)
@@ -553,21 +792,26 @@ class BackgroundReplacementPipeline:
         # 생성 접시 모드에서는 후보마다 탐지된 접시 중심을 실제 배치 기준으로 쓴다.
         # 기존 모드에서는 화면 중앙의 배치 영역만 감사한다.
         region_half_size = min(0.38, max(0.24, planned_width_ratio * 0.5 + 0.08))
+        placement_center_y = 0.5 if selected_angle == "top" else 0.62
         placement_region = (
             0.5 - region_half_size,
-            0.5 - region_half_size,
+            max(0.0, placement_center_y - region_half_size),
             0.5 + region_half_size,
-            0.5 + region_half_size,
+            min(1.0, placement_center_y + region_half_size),
         )
 
         def count_detections_in_placement_region(detections: list[Any], image_width: int, image_height: int) -> int:
+            """보호 배치 영역과 경계 상자가 겹치는 주변 소품 수를 반환한다."""
             rx1, ry1, rx2, ry2 = placement_region
             count = 0
             for detection in detections:
                 x1, y1, x2, y2 = detection.box_xyxy
-                box_center_x = ((x1 + x2) * 0.5) / max(image_width, 1)
-                box_center_y = ((y1 + y2) * 0.5) / max(image_height, 1)
-                if rx1 <= box_center_x <= rx2 and ry1 <= box_center_y <= ry2:
+                box_x1, box_x2 = sorted((x1 / max(image_width, 1), x2 / max(image_width, 1)))
+                box_y1, box_y2 = sorted((y1 / max(image_height, 1), y2 / max(image_height, 1)))
+                overlaps_protected_region = (
+                    box_x1 < rx2 and box_x2 > rx1 and box_y1 < ry2 and box_y2 > ry1
+                )
+                if overlaps_protected_region:
                     count += 1
             return count
 
@@ -612,6 +856,7 @@ class BackgroundReplacementPipeline:
                 object_detections=detected_object_count,
                 center_object_detections=center_object_count,
                 camera_angle=selected_angle,
+                placement_region=placement_region,
                 requires_generated_plate=generated_plate_mode,
                 generated_plate_score=(
                     generated_plate_region.score
