@@ -25,7 +25,7 @@
 /home/imella0707/miniconda3/envs/ssakda/bin/python -m streamlit run apps/visitor_flow_l2_dashboard/app.py --server.port 8503
 ```
 
-이 연결은 로컬 개발/발표용입니다. 상권분석 Streamlit은 아직 개발 중이므로 팀원 기본 실행에서는 띄우지 않습니다. 상권분석 담당 개발자가 직접 확인할 때만 `START_DASHBOARD=true`로 실행합니다.
+이 연결은 로컬 개발/발표용입니다. 기본 서비스 실행 명령으로 Streamlit 대시보드가 8503 포트로 자동 함께 시작됩니다.
 
 ## 실행
 
@@ -36,20 +36,19 @@ cd /home/imella0707/personal/final_1_team
 ./scripts/manage_brandmate_services_gcp.sh restart
 ```
 
-이 스크립트는 Postgres, DB migration, FastAPI, 정적 웹 서버, ComfyUI를 함께 확인/실행합니다. 상권분석 Streamlit은 아직 개발 중이므로 기본 실행에서는 제외합니다.
+이 스크립트는 Postgres, DB migration, FastAPI, 정적 웹 서버, ComfyUI, Streamlit 상권분석 대시보드를 함께 확인/실행합니다.
 
 팀원 로컬에 FLUX/ComfyUI가 없어도 같은 명령을 사용합니다. ComfyUI가 설치되어 있으면 실행하고, 없으면 자동으로 건너뜁니다.
 
 ```bash
-# [Design Intent] GCP/로컬 모두 같은 진입점을 사용한다. ComfyUI는 자동 감지하고, 개발 중인 Streamlit은 기본 비활성화한다.
+# [Design Intent] GCP/로컬 모두 같은 진입점을 사용하며, Postgres/FastAPI/Web/ComfyUI/Streamlit을 원스톱으로 관리한다.
 ./scripts/manage_brandmate_services_gcp.sh restart
 ```
 
 주의:
 
 - ComfyUI가 없는 환경에서는 FLUX 이미지 생성만 동작하지 않습니다.
-- 상권분석 Streamlit은 개발 중이므로 기본 실행에서는 뜨지 않습니다.
-- 상권분석 담당 개발자가 대시보드를 직접 확인할 때만 `START_DASHBOARD=true ./scripts/manage_brandmate_services_gcp.sh restart`로 실행합니다.
+- 상권분석 Streamlit 대시보드는 8503 포트로 자동 실행되며, Web 메인(5501 포트)의 상권분석 카드에서 바로 진입할 수 있습니다.
 - 로그인, 서비스 선택, 광고 생성 화면 진입, FastAPI 기본 연동은 확인할 수 있습니다.
 - GCP 시연 환경에서는 전체 스크립트를 기본 옵션으로 실행하고, 팀원은 GCP web URL로 접속합니다.
 

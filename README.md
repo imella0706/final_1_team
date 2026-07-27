@@ -118,29 +118,28 @@ FastAPI, 정적 프론트엔드, Postgres, DB migration, ComfyUI를 같은 명�
 
 | 대상 | 명령어 | 실행 범위 |
 | --- | --- | --- |
-| 팀원 기본 실행 | `./scripts/manage_brandmate_services_gcp.sh restart` | Postgres, DB migration, FastAPI, web, ComfyUI 자동 감지. 상권분석 Streamlit은 제외 |
-| 상권분석 담당 개발자 | `START_DASHBOARD=true ./scripts/manage_brandmate_services_gcp.sh restart` | 팀원 기본 실행 범위 + `apps/visitor_flow_l2_dashboard` Streamlit 대시보드 |
+| 서비스 통합 실행 | `./scripts/manage_brandmate_services_gcp.sh restart` | Postgres, DB migration, FastAPI, web, ComfyUI(자동감지), Streamlit 상권분석 대시보드(포트 8503) |
 
 ### 팀원 로컬 확인
 
-팀원 PC에 FLUX/ComfyUI가 없어도 같은 명령을 사용합니다. ComfyUI가 설치되어 있으면 실행하고, 없으면 자동으로 skip합니다. 상권분석 Streamlit은 개발 중이므로 팀원 로컬에서는 기본적으로 실행하지 않습니다.
+팀원 PC에 FLUX/ComfyUI가 없어도 같은 명령을 사용합니다. ComfyUI가 설치되어 있으면 실행하고, 없으면 자동으로 skip합니다. Streamlit 상권분석 대시보드는 8503 포트로 자동 함께 실행됩니다.
 
 ```bash
-# [Design Intent] GCP/로컬 모두 같은 진입점을 사용한다. ComfyUI는 환경에 따라 자동 감지하고, 개발 중인 Streamlit은 기본 비활성화한다.
+# [Design Intent] GCP/로컬 모두 같은 진입점을 사용한다. ComfyUI는 환경에 따라 자동 감지하고, Streamlit 상권분석 대시보드는 자동 실행한다.
 ./scripts/manage_brandmate_services_gcp.sh restart
 ```
 
 접속:
 
 ```text
-http://127.0.0.1:5501
+BrandMate web: http://127.0.0.1:5501
+Visitor-flow dashboard: http://127.0.0.1:8503
 ```
 
 주의:
 
 - ComfyUI가 없는 환경에서는 FLUX 이미지 생성만 사용할 수 없습니다.
-- 상권분석 Streamlit은 개발 중이므로 기본 실행에서는 뜨지 않습니다.
-- 상권분석 대시보드를 상권분석 담당 개발자가 직접 확인할 때만 `START_DASHBOARD=true ./scripts/manage_brandmate_services_gcp.sh restart`로 실행합니다.
+- 상권분석 Streamlit 대시보드는 기본 실행 스크립트로 자동 실행되어 8503 포트 및 Web(5501 포트) 카드에서 진입 가능합니다.
 - 전체 광고 이미지 생성은 GCP/시연 머신에서 `./scripts/manage_brandmate_services_gcp.sh restart`로 확인합니다.
 
 ### 팀원에게 공유할 로그인 방식

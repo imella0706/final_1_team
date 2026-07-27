@@ -51,7 +51,7 @@ COMFYUI_HOST="${COMFYUI_HOST:-127.0.0.1}"
 COMFYUI_PORT="${COMFYUI_PORT:-8188}"
 RUN_DB_MIGRATIONS="${RUN_DB_MIGRATIONS:-true}"
 START_COMFYUI="${START_COMFYUI:-auto}"
-START_DASHBOARD="${START_DASHBOARD:-false}"
+START_DASHBOARD="${START_DASHBOARD:-auto}"
 
 API_URL="http://127.0.0.1:${API_PORT}"
 WEB_URL="http://127.0.0.1:${WEB_PORT}"
@@ -66,8 +66,8 @@ mkdir -p "$LOG_DIR" "$PID_DIR"
 usage() {
   cat <<'USAGE'
 Usage:
-  scripts/manage_brandmate_services_gcp.sh             Start Postgres, migrations, FastAPI, frontend, and ComfyUI when available.
-  scripts/manage_brandmate_services_gcp.sh serve       Start Postgres, migrations, FastAPI, frontend, and ComfyUI when available.
+  scripts/manage_brandmate_services_gcp.sh             Start Postgres, migrations, FastAPI, frontend, ComfyUI, and Streamlit dashboard when available.
+  scripts/manage_brandmate_services_gcp.sh serve       Start Postgres, migrations, FastAPI, frontend, ComfyUI, and Streamlit dashboard when available.
   scripts/manage_brandmate_services_gcp.sh status      Check service readiness.
   scripts/manage_brandmate_services_gcp.sh logs        Tail service logs.
   scripts/manage_brandmate_services_gcp.sh stop        Stop processes started by this script.
@@ -84,7 +84,7 @@ Environment overrides:
   COMFYUI_PORT=8188
   RUN_DB_MIGRATIONS=true
   START_COMFYUI=auto      # auto | true | false
-  START_DASHBOARD=false   # true | false. Keep false while visitor-flow Streamlit is under development.
+  START_DASHBOARD=auto     # auto | true | false. Auto-starts Streamlit visitor-flow dashboard when available.
   BRANDMATE_SERVICE_LOG_DIR=outputs/brandmate_services
 USAGE
 }
