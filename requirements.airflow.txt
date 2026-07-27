@@ -4,3 +4,4 @@ google-cloud-storage==2.18.2
 google-api-python-client>=2.0,<3
 httplib2>=0.22,<1
 python-dotenv>=1.0,<2
+beautifulsoup4>=4.12,<5
