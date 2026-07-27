@@ -32,6 +32,12 @@ DEFAULT_TRACKING_QA_DIR = (
     / "visitor_flow_mvp"
     / "c0241_20210802_20210803_l3_4_tracking_qa"
 )
+DEFAULT_CROSSING_RESULTS_DIR = (
+    REPO_ROOT
+    / "outputs"
+    / "visitor_flow_mvp"
+    / "c0241_20210802_20210803_l3_5_line_crossing"
+)
 
 REQUIRED_FILES = {
     "analysis": "analysis.json",
@@ -59,6 +65,12 @@ REQUIRED_TRACKING_QA_FILES = {
     "events": Path("tracks") / "track_events.csv",
 }
 TRACKING_VIDEO_PATH = Path("media") / "tracking_id_qa.webm"
+
+REQUIRED_CROSSING_FILES = {
+    "summary": Path("qa") / "crossing_summary.json",
+    "events": Path("crossings") / "crossing_events.csv",
+}
+CROSSING_VIDEO_PATH = Path("media") / "line_crossing_qa.webm"
 
 PREVIEW_EXTENSIONS = {".webm", ".mp4"}
 ALL_TIME_BUCKET = "__all_time_buckets__"
@@ -173,6 +185,27 @@ def load_tracking_qa(results_dir: Path) -> tuple[dict[str, Any], Path, Path]:
     summary = json.loads(summary_path.read_text(encoding="utf-8"))
     events_path = results_dir / REQUIRED_TRACKING_QA_FILES["events"]
     video_path = results_dir / TRACKING_VIDEO_PATH
+    return summary, video_path, events_path
+
+
+def validate_crossing_dir(results_dir: Path) -> list[Path]:
+    """Return required L3-5 line crossing artifacts that are missing."""
+    missing = [
+        results_dir / filename
+        for filename in REQUIRED_CROSSING_FILES.values()
+        if not (results_dir / filename).is_file()
+    ]
+    if not (results_dir / CROSSING_VIDEO_PATH).is_file():
+        missing.append(results_dir / CROSSING_VIDEO_PATH)
+    return missing
+
+
+def load_crossing_results(results_dir: Path) -> tuple[dict[str, Any], Path, Path]:
+    """Load L3-5 line crossing metadata and artifact paths."""
+    summary_path = results_dir / REQUIRED_CROSSING_FILES["summary"]
+    summary = json.loads(summary_path.read_text(encoding="utf-8"))
+    events_path = results_dir / REQUIRED_CROSSING_FILES["events"]
+    video_path = results_dir / CROSSING_VIDEO_PATH
     return summary, video_path, events_path
 
 
@@ -609,8 +642,9 @@ def render_video_validation(
         )
         st.code(command, language="bash")
     else:
-        st.video(str(preview_video), format="video/webm")
-        st.caption(f"검증 영상 artifact: {preview_video}")
+        with st.expander("6x4 Grid 보행 관측 검증 영상 (L2 디버깅용)", expanded=False):
+            st.video(str(preview_video), format="video/webm")
+            st.caption(f"검증 영상 artifact: {preview_video}")
 
     st.info(
         "영상 속 초록 박스는 YOLO가 사람으로 탐지한 위치입니다. "
@@ -732,6 +766,118 @@ def render_operator_roi_video(
     )
 
 
+def render_operator_integrated_qa(
+    tracking_summary: dict[str, Any] | None,
+    tracking_video_path: Path | None,
+    track_events_path: Path | None,
+    tracking_qa_dir: Path,
+    missing_tracking_files: list[Path],
+    crossing_summary: dict[str, Any] | None,
+    crossing_video_path: Path | None,
+    crossing_events_path: Path | None,
+    crossing_dir: Path,
+    missing_crossing_files: list[Path],
+) -> None:
+    st.markdown("#### 운영자용 ROI · 개인정보 마스킹 · Tracking · Line Crossing 통합 QA")
+    st.caption(
+        "L3-4/L3-5 통합 QA입니다. ROI, 개인정보 마스킹, 연속 frame track ID, 수동 기준선(Line Crossing) 통과 이벤트를 "
+        "단일 비디오 플레이어로 함께 검수합니다. (고유 방문자 수나 매장 입장객 수를 의미하지 않습니다)"
+    )
+
+    # 1개의 통합 비디오 플레이어: L3-5 비디오(ROI + 마스킹 + Tracking + Line Crossing + 카운터)를 최우선 재생
+    primary_video_path = None
+    video_title = ""
+    if crossing_video_path is not None and crossing_video_path.is_file():
+        primary_video_path = crossing_video_path
+        video_title = "L3-5 Line Crossing & Tracking 통합 영상"
+    elif tracking_video_path is not None and tracking_video_path.is_file():
+        primary_video_path = tracking_video_path
+        video_title = "L3-4 Tracking QA 영상"
+
+    if primary_video_path is not None:
+        st.video(str(primary_video_path), format=video_format(primary_video_path))
+        st.caption(f"통합 QA 비디오 ({video_title}): {primary_video_path}")
+    else:
+        st.warning("통합 QA 비디오 산출물(L3-4 / L3-5)이 아직 없거나 로드되지 않았습니다.")
+        if missing_crossing_files:
+            st.code("\n".join(str(path) for path in missing_crossing_files), language="text")
+
+    # Line Crossing 지표 카드
+    if crossing_summary is not None:
+        st.markdown("##### 1. L3-5 Line Crossing 보행 방향 지표")
+        results = crossing_summary.get("results", {})
+        direction_counts = results.get("direction_event_counts", {})
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric(
+            "총 crossing 이벤트",
+            f"{int(results.get('total_crossing_events', 0))}건",
+        )
+        c2.metric(
+            "화면 하향 (downward)",
+            f"{int(direction_counts.get('screen_downward_event', 0))}건",
+        )
+        c3.metric(
+            "화면 상향 (upward)",
+            f"{int(direction_counts.get('screen_upward_event', 0))}건",
+        )
+        c4.metric(
+            "통과 track ID 수",
+            f"{int(results.get('unique_track_ids_crossed', 0))}개",
+        )
+
+    # Tracking 지표 카드
+    if tracking_summary is not None:
+        st.markdown("##### 2. L3-4 Person Tracking 추적 지표")
+        t_results = tracking_summary.get("results", {})
+        t_settings = tracking_summary.get("settings", {})
+        t1, t2, t3, t4 = st.columns(4)
+        t1.metric("처리 frame", f"{int(t_results.get('processed_frames', 0))}장")
+        t2.metric(
+            "활성 track 최대",
+            f"{int(t_results.get('max_active_tracks_per_frame', 0))}",
+        )
+        t3.metric(
+            "clip-local track ID",
+            f"{int(t_results.get('unique_clip_track_ids', 0))}개",
+        )
+        t4.metric(
+            "fragment 후보",
+            f"{int(t_results.get('fragmentation_gap_count', 0))}건",
+        )
+        st.caption(
+            "tracking 설정: "
+            f"{float(t_results.get('source_fps', 0.0)):.1f} FPS · "
+            f"tracker {t_settings.get('tracker', '-')} · "
+            f"privacy mask {'on' if t_settings.get('privacy_mask_enabled') else 'off'}"
+        )
+
+    # 로그 상세
+    if crossing_events_path is not None and crossing_events_path.is_file():
+        with st.expander("L3-5 Crossing Event 상세 로그 (CSV)", expanded=False):
+            try:
+                crossing_df = pd.read_csv(crossing_events_path)
+                st.dataframe(crossing_df, hide_index=True, use_container_width=True)
+            except Exception as err:
+                st.warning(f"Crossing CSV 읽기 실패: {err}")
+
+    if track_events_path is not None and track_events_path.is_file():
+        with st.expander("L3-4 Track Event 로그 샘플 (CSV)", expanded=False):
+            try:
+                track_events = pd.read_csv(track_events_path)
+                st.dataframe(track_events.head(50), hide_index=True, use_container_width=True)
+            except Exception as err:
+                st.warning(f"Track events CSV 읽기 실패: {err}")
+
+    with st.expander("QA Summary JSON 탐색기 (L3-4 & L3-5)", expanded=False):
+        j_col1, j_col2 = st.columns(2)
+        with j_col1:
+            st.markdown("**L3-4 Tracking QA Summary**")
+            st.json(tracking_summary or {})
+        with j_col2:
+            st.markdown("**L3-5 Crossing Summary**")
+            st.json(crossing_summary or {})
+
+
 def render_operator_tracking_qa(
     tracking_summary: dict[str, Any] | None,
     tracking_video_path: Path | None,
@@ -739,83 +885,213 @@ def render_operator_tracking_qa(
     tracking_qa_dir: Path,
     missing_files: list[Path],
 ) -> None:
-    st.markdown("#### 운영자용 ROI·마스킹·Tracking ID 통합 QA")
-    st.caption(
-        "L3-4는 같은 사람이 연속 프레임에서 같은 track ID로 유지되는지 확인하는 "
-        "내부 QA입니다. ROI와 마스킹 위에 clip-local track ID와 이동 궤적을 함께 "
-        "표시하지만, 고유 방문자 수나 통행량을 뜻하지 않습니다."
+    render_operator_integrated_qa(
+        tracking_summary=tracking_summary,
+        tracking_video_path=tracking_video_path,
+        track_events_path=track_events_path,
+        tracking_qa_dir=tracking_qa_dir,
+        missing_tracking_files=missing_files,
+        crossing_summary=None,
+        crossing_video_path=None,
+        crossing_events_path=None,
+        crossing_dir=tracking_qa_dir,
+        missing_crossing_files=[],
     )
 
-    if missing_files or tracking_summary is None or tracking_video_path is None:
-        st.warning(
-            "L3-4 tracking QA 산출물이 아직 없거나 일부 파일이 누락됐습니다. "
-            "아래 명령으로 GPU 산출물을 만든 뒤 새로고침하세요."
+
+def render_operator_crossing_qa(
+    crossing_summary: dict[str, Any] | None,
+    crossing_video_path: Path | None,
+    crossing_events_path: Path | None,
+    crossing_dir: Path,
+    missing_files: list[Path],
+) -> None:
+    render_operator_integrated_qa(
+        tracking_summary=None,
+        tracking_video_path=None,
+        track_events_path=None,
+        tracking_qa_dir=crossing_dir,
+        missing_tracking_files=[],
+        crossing_summary=crossing_summary,
+        crossing_video_path=crossing_video_path,
+        crossing_events_path=crossing_events_path,
+        crossing_dir=crossing_dir,
+        missing_crossing_files=missing_files,
+    )
+
+
+def render_scope_notice() -> None:
+    st.warning(
+        "이 화면은 CCTV 화면에서 사람이 얼마나 자주 보였는지 비교하는 POC입니다. "
+        "표시 값은 정확한 방문객 수가 아니라, 시간대별 붐빔 정도를 보는 관측량입니다. "
+        "ROI와 화면 구역 정보는 원근 보정 전의 화면 좌표 기준 관측 분포입니다."
+    )
+
+
+def render_metric_cards(
+    analysis: dict[str, Any],
+    *,
+    show_validation_details: bool = True,
+) -> None:
+    st.subheader("1. 분석 범위 및 정량 지표 개요")
+
+    peak_bucket = analysis.get("peak_time_bucket", {})
+    clip_count = int(analysis.get("clip_count", 0))
+    sampled_frames = int(analysis.get("sampled_frames", 0))
+
+    if show_validation_details:
+        val_m1, val_m2, val_m3, val_m4 = st.columns(4)
+        val_m1.metric("분석 영상 수", f"{clip_count}개 clips")
+        val_m2.metric("총 sampled frame", f"{sampled_frames}장")
+        val_m3.metric("sampling 간격", f"{analysis.get('sample_every_sec', 10.0)}초")
+        val_m4.metric(
+            "총 person observations",
+            f"{int(analysis.get('person_detection_observations', 0))}건",
         )
-        if missing_files:
-            st.code("\n".join(str(path) for path in missing_files), language="text")
-        command = (
-            "python scripts/visitor_flow_l3_tracking_qa.py \\\n"
-            "  --video data/curated/aihub_cctv_visitor_flow/v1/c0241_20210802/videos/"
-            "2021-08-02_12-51-00_mon_sunny_out_ju-ja_C0241.mp4 \\\n"
-            "  --model /home/imella0707/yolo11s.pt \\\n"
-            "  --roi-config configs/visitor_flow/c0241_roi_config.json \\\n"
-            f"  --output-dir {display_path_for_command(tracking_qa_dir)} \\\n"
-            "  --device 0 \\\n"
-            "  --imgsz 960 \\\n"
-            "  --conf 0.50 \\\n"
-            "  --tracker bytetrack.yaml \\\n"
-            "  --start-sec 60 \\\n"
-            "  --max-seconds 60 \\\n"
-            "  --trail-length 30 \\\n"
-            "  --max-gap-frames 3"
+
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric(
+        "분석 장면당 평균 관측",
+        f"{analysis.get('mean_persons_per_sampled_frame', 0.0):.3f}명",
+    )
+    m2.metric(
+        "피크 시간대 (10분 기준)",
+        str(peak_bucket.get("time_bucket", "-")),
+    )
+    m3.metric(
+        "피크 장면당 관측",
+        f"{peak_bucket.get('mean_persons_per_sampled_frame', 0.0):.3f}명",
+    )
+    m4.metric(
+        "단일 장면 최대 관측",
+        f"{int(analysis.get('max_persons_in_single_sampled_frame', 0))}명",
+    )
+
+    st.caption(
+        "※ 프레임당 관측 인원은 0명 frame을 포함한 평균입니다. 피크 시간대는 10초 간격 "
+        "sampled frame 기준 프레임당 평균 관측 인원이 가장 높은 시간대입니다."
+    )
+
+
+def render_time_trend(dashboard_summary: pd.DataFrame) -> None:
+    st.subheader("3. 시간대별 보행 관측 추이 및 날짜 비교")
+
+    dates = sorted(dashboard_summary["date_id"].unique())
+    selected_metric = st.radio(
+        "비교 지표",
+        options=["mean_persons_per_sampled_frame", "person_observations"],
+        format_func=lambda value: (
+            "프레임당 평균 관측 인원 (0명 frame 포함)"
+            if value == "mean_persons_per_sampled_frame"
+            else "총 observation 수 (단순 합계)"
+        ),
+        horizontal=True,
+    )
+
+    col1, col2 = st.columns([2, 1])
+
+    with col1:
+        st.markdown("#### 시간대별 관측 추이")
+        pivot_df = dashboard_summary.pivot(
+            index="time_bucket",
+            columns="date_id",
+            values=selected_metric,
         )
-        with st.expander("L3-4 tracking QA 생성 명령", expanded=False):
-            st.code(command, language="bash")
+        pivot_df.index = [
+            t.split(" ")[1][:5] if isinstance(t, str) and " " in t else str(t)
+            for t in pivot_df.index
+        ]
+        st.line_chart(pivot_df, use_container_width=True)
+
+    with col2:
+        st.markdown("#### 날짜별 비교 요약")
+        for date_id in dates:
+            date_df = dashboard_summary[dashboard_summary["date_id"] == date_id]
+            avg_val = date_df["mean_persons_per_sampled_frame"].mean()
+            max_val = date_df["mean_persons_per_sampled_frame"].max()
+            st.metric(
+                f"{date_id} 평균",
+                f"{avg_val:.3f}명",
+                delta=f"최대 {max_val:.3f}명",
+            )
+
+
+def render_video_validation(analysis: dict[str, Any], results_dir: Path) -> None:
+    st.subheader("4. 영상별 분석 결과 검증")
+
+    clip_summaries = analysis.get("clip_summaries", [])
+    if not clip_summaries:
+        st.info("clip summary 정보가 없습니다.")
         return
 
-    if tracking_video_path.is_file():
-        st.video(str(tracking_video_path), format=video_format(tracking_video_path))
-    else:
-        st.error(f"L3-4 tracking QA 영상을 찾지 못했습니다: {tracking_video_path}")
-        return
+    df_clips = pd.DataFrame(clip_summaries)
 
-    results = tracking_summary.get("results", {})
-    settings = tracking_summary.get("settings", {})
-    first, second, third, fourth = st.columns(4)
-    first.metric("처리 frame", f"{int(results.get('processed_frames', 0))}장")
-    second.metric(
-        "활성 track 최대",
-        f"{int(results.get('max_active_tracks_per_frame', 0))}",
+    if "video_path" in df_clips.columns:
+        df_clips["clip_name"] = df_clips["video_path"].apply(
+            lambda value: Path(str(value)).name
+        )
+
+    cols_to_show = [
+        col
+        for col in [
+            "clip_name",
+            "time_bucket",
+            "sampled_frames",
+            "person_observations",
+            "mean_persons_per_sampled_frame",
+            "max_persons_in_sampled_frame",
+        ]
+        if col in df_clips.columns
+    ]
+
+    st.dataframe(
+        df_clips[cols_to_show],
+        use_container_width=True,
+        hide_index=True,
     )
-    third.metric(
-        "clip-local track ID",
-        f"{int(results.get('unique_clip_track_ids', 0))}개",
-    )
-    fourth.metric(
-        "fragment 후보",
-        f"{int(results.get('fragmentation_gap_count', 0))}건",
-    )
+
+
+def render_grid_heatmap(
+    analysis: dict[str, Any],
+    summary: pd.DataFrame,
+    dashboard_summary: pd.DataFrame,
+) -> None:
+    st.subheader("5. 화면 구역별 (6x4 Grid) 관측 분포")
+
     st.caption(
-        "tracking 영상: "
-        f"{float(results.get('source_fps', 0.0)):.1f} FPS · "
-        f"{float(results.get('processing_fps', 0.0)):.3f} processing FPS · "
-        f"tracker {settings.get('tracker', '-')} · "
-        f"privacy mask {'on' if settings.get('privacy_mask_enabled') else 'off'}"
-    )
-    st.info(
-        "긴 이동 궤적은 track ID 유지 여부를 확인하기 위한 내부 QA 표현입니다. "
-        "고객 PDF와 발표 화면에는 기본 노출하지 않고, L3-5에서는 기준선 통과 이벤트만 "
-        "별도로 검증합니다."
+        "CCTV 화면을 6열 x 4행(총 24개 구역)으로 분할하여, "
+        "어느 구역에 사람 bbox가 가장 자주 보였는지 상대적 비중을 나타냅니다."
     )
 
-    if track_events_path is not None and track_events_path.is_file():
-        with st.expander("track event 로그 샘플", expanded=False):
-            track_events = pd.read_csv(track_events_path)
-            st.dataframe(track_events.head(50), hide_index=True, width="stretch")
-            st.caption(f"현재 읽는 L3-4 track events: {track_events_path}")
-    with st.expander("tracking QA summary", expanded=False):
-        st.json(tracking_summary)
-        st.caption(f"현재 읽는 L3-4 결과 폴더: {tracking_qa_dir}")
+    grid_info = analysis.get("grid_heatmap_summary", {})
+    total_obs = grid_info.get("total_observations", 0)
+    top_zone = grid_info.get("top_zone", {})
+
+    if top_zone:
+        st.info(
+            f"가장 붐비는 구역: **{format_zone_id(top_zone.get('zone_id', ''))}** "
+            f"(관측 비중: {top_zone.get('observation_share', 0.0) * 100:.1f}%, "
+            f"총 {top_zone.get('observation_count', 0)}건)"
+        )
+
+
+def render_raw_tables(
+    analysis: dict[str, Any],
+    frames: pd.DataFrame,
+    events: pd.DataFrame,
+    summary: pd.DataFrame,
+    results_dir: Path,
+) -> None:
+    st.subheader("6. 개발/검증용 원본 artifact")
+    with st.expander("analysis.json", expanded=False):
+        st.json(analysis)
+    with st.expander("summary.parquet sample", expanded=False):
+        st.dataframe(summary.head(50), hide_index=True, width="stretch")
+    with st.expander("frames.parquet sample", expanded=False):
+        st.dataframe(frames.head(50), hide_index=True, width="stretch")
+    with st.expander("events.parquet sample", expanded=False):
+        st.dataframe(events.head(50), hide_index=True, width="stretch")
+    st.caption(f"현재 읽는 L2 결과 폴더: {results_dir}")
 
 
 def render_scope_notice() -> None:
@@ -1386,6 +1662,10 @@ def main() -> None:
             "L3-4 tracking QA 폴더",
             value=str(DEFAULT_TRACKING_QA_DIR.relative_to(REPO_ROOT)),
         )
+        crossing_path_text = st.text_input(
+            "L3-5 line crossing 폴더",
+            value=str(DEFAULT_CROSSING_RESULTS_DIR.relative_to(REPO_ROOT)),
+        )
         st.caption("절대 경로 또는 저장소 루트 기준 상대 경로를 사용할 수 있습니다.")
         st.divider()
         st.header("고객 보고서 정보")
@@ -1462,6 +1742,20 @@ def main() -> None:
             st.warning(f"L3-4 tracking QA 산출물을 읽지 못했습니다: {error}")
             missing_tracking_files = [tracking_qa_dir / "qa" / "tracking_qa_summary.json"]
 
+    crossing_dir = resolve_results_dir(crossing_path_text)
+    missing_crossing_files = validate_crossing_dir(crossing_dir)
+    crossing_summary: dict[str, Any] | None = None
+    crossing_video_path: Path | None = None
+    crossing_events_path: Path | None = None
+    if not missing_crossing_files:
+        try:
+            crossing_summary, crossing_video_path, crossing_events_path = (
+                load_crossing_results(crossing_dir)
+            )
+        except (json.JSONDecodeError, OSError, KeyError) as error:
+            st.warning(f"L3-5 line crossing 산출물을 읽지 못했습니다: {error}")
+            missing_crossing_files = [crossing_dir / "qa" / "crossing_summary.json"]
+
     report_tab, operator_tab, artifact_tab = st.tabs(
         ["고객 PDF 리포트", "운영 QA", "개발 artifact"]
     )
@@ -1501,12 +1795,17 @@ def main() -> None:
             show_operator_debug=False,
         )
         st.divider()
-        render_operator_tracking_qa(
+        render_operator_integrated_qa(
             tracking_summary=tracking_summary,
             tracking_video_path=tracking_video_path,
             track_events_path=track_events_path,
             tracking_qa_dir=tracking_qa_dir,
-            missing_files=missing_tracking_files,
+            missing_tracking_files=missing_tracking_files,
+            crossing_summary=crossing_summary,
+            crossing_video_path=crossing_video_path,
+            crossing_events_path=crossing_events_path,
+            crossing_dir=crossing_dir,
+            missing_crossing_files=missing_crossing_files,
         )
         st.divider()
         render_time_trend(dashboard_summary)
