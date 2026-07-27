@@ -186,9 +186,11 @@ Task graph:
 ```text
 # [Design Intent] 공식 pipeline input인 processed package를 read-only로 검증하고 실패한 payload가 API/DVC gate를 통과하지 못하게 한다.
 resolve_processed_package
+  -> check_new_processed_release
   -> sync_processed_package_from_gcs
   -> validate_package
   -> write_validation_summary
+  -> record_validated_version
 ```
 
 manual trigger config:
@@ -216,9 +218,42 @@ gcloud auth application-default print-access-token
 {
   "version": "v2",
   "source_gcs_prefix": "gs://ssakda/projects/brandmate/data/processed/sns_trend/v2/cross_platform_signal_top_candidates/",
-  "write_gcs_summary": true
+  "write_gcs_summary": true,
+  "force_revalidate": false,
+  "same_version_policy": "skip"
 }
 ```
+
+`check_new_processed_release`는 latest discovery로 선택된 `vN`이 Airflow Variable에 저장된 마지막 성공 검증 version과 같은지 확인합니다. 기본 정책은 `skip`입니다. 새 release가 없으면 validator를 다시 돌리지 않고 downstream task가 skipped 됩니다.
+
+같은 version을 의도적으로 다시 검증할 때는 manual trigger config에 아래 값을 넣습니다.
+
+```json
+{
+  "force_revalidate": true
+}
+```
+
+같은 version을 skip이 아니라 실패로 보고 싶으면 `same_version_policy`를 `fail`로 넘기거나 `.env.airflow`의 `BRANDMATE_SNS_TREND_SAME_VERSION_POLICY`를 `fail`로 바꿉니다. 현재 MVP 기본값은 알람 피로도를 줄이기 위해 `skip`입니다.
+
+실패 알림은 기본 비활성화입니다. Discord webhook URL은 secret이므로 Git에 올리지 않습니다.
+
+```bash
+# [Design Intent] 로컬/VM에서 실패 알림을 켤 때만 private .env.airflow에 실제 webhook URL을 넣는다.
+BRANDMATE_AIRFLOW_ALERTS_ENABLED=true
+BRANDMATE_AIRFLOW_DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/...
+BRANDMATE_AIRFLOW_ALERT_TIMEOUT_SECONDS=5
+```
+
+알림 기준:
+
+| 상태 | Discord 알림 |
+| --- | --- |
+| task `failed` | 전송 |
+| same-version `skipped` | 전송 안 함 |
+| local 개발에서 webhook 미설정 | 조용히 skip |
+
+알림 payload에는 `dag_id`, `task_id`, `run_id`, `version`, `source_gcs_prefix`, `exception`, `log_url`을 포함합니다. Discord 전송 실패는 원래 Airflow task 실패를 덮어쓰지 않습니다.
 
 같은 검증을 CLI로 실행할 때는 아래 스크립트를 사용합니다. 로컬과 VM smoke test에서 같은 진입점을 쓰기 위한 명령입니다.
 
@@ -232,6 +267,22 @@ gcloud auth application-default print-access-token
 ```bash
 AIRFLOW_SNS_TREND_VERSION=v3 \
 AIRFLOW_SNS_TREND_GCS_PREFIX=gs://ssakda/projects/brandmate/data/processed/sns_trend/v3/cross_platform_signal_top_candidates/ \
+./scripts/airflow/trigger_sns_trend_gcs_validation.sh
+```
+
+Phase 3 latest discovery 경로를 검증할 때는 `source_gcs_prefix`를 직접 넘기면 안 됩니다. 같은 스크립트에서 `AIRFLOW_SNS_TREND_SELECTION_MODE=latest`를 주면 `source_gcs_prefix`와 `version`을 빼고 trigger해서, DAG가 `BRANDMATE_SNS_TREND_PROCESSED_GCS_ROOT` 아래에서 최신 `vN`을 직접 찾게 합니다.
+
+```bash
+# [Design Intent] source_gcs_prefix 없이 latest processed vN discovery 경로를 실제 Airflow DAG로 검증한다.
+AIRFLOW_SNS_TREND_SELECTION_MODE=latest \
+./scripts/airflow/trigger_sns_trend_gcs_validation.sh
+```
+
+기본값은 `force_revalidate=true`입니다. 이미 같은 version이 검증된 상태에서도 smoke test가 validator까지 지나가도록 하기 위한 설정입니다. same-version skip 정책 자체를 확인하고 싶을 때만 아래처럼 끕니다.
+
+```bash
+AIRFLOW_SNS_TREND_SELECTION_MODE=latest \
+AIRFLOW_FORCE_REVALIDATE=false \
 ./scripts/airflow/trigger_sns_trend_gcs_validation.sh
 ```
 
@@ -258,14 +309,31 @@ PermissionError: [Errno 13] Permission denied: '/opt/airflow/gcs_data_cache/...'
 GCP VM에서 처음 실행할 때 Docker가 없으면 Airflow를 띄울 수 없습니다. VM을 운영 서버처럼 재현 가능하게 관리하기 위해 수동 `apt-get install` 대신 Docker setup 스크립트를 사용합니다.
 
 ```bash
-# [Design Intent] VM에 Docker와 compose plugin을 반복 가능한 방식으로 설치하고 Airflow smoke test 전제 조건을 맞춘다.
+# [Design Intent] VM에 Docker와 Docker Compose v2를 반복 가능한 방식으로 설치하고 Airflow smoke test 전제 조건을 맞춘다.
 cd ~/final_1_team
 ./scripts/airflow/setup_gcp_vm_docker.sh
 ```
 
-스크립트가 사용자를 `docker` group에 추가했다면 SSH를 끊고 다시 접속합니다. 재접속 후 확인합니다.
+이 스크립트는 `sudo` 권한이 있는 계정에서만 실행할 수 있습니다. `sudo` 권한이 없으면 VM 관리자에게 먼저 권한을 요청합니다.
+
+Ubuntu 이미지마다 Compose v2 패키지명이 다를 수 있습니다. 스크립트는 아래 순서로 설치를 시도합니다.
+
+```text
+docker-compose-plugin
+-> docker-compose-v2
+-> docker-compose
+```
+
+스크립트가 사용자를 `docker` group에 추가했다면 SSH/JupyterLab 세션을 끊고 다시 접속합니다. 바로 같은 터미널에서 이어가야 하면 임시로 아래를 실행합니다.
 
 ```bash
+newgrp docker
+```
+
+재접속 또는 `newgrp docker` 후 확인합니다.
+
+```bash
+groups
 docker --version
 docker compose version
 docker ps

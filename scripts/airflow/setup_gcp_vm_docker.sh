@@ -41,9 +41,18 @@ elif ! docker compose version >/dev/null 2>&1; then
 fi
 
 if [[ "${install_docker}" == "true" ]]; then
-  echo "[install] docker.io and docker-compose-plugin"
+  echo "[install] docker.io and Docker Compose v2"
   sudo apt-get update
-  sudo apt-get install -y docker.io docker-compose-plugin
+  # [Design Intent] GCP Ubuntu images do not expose the same Compose v2
+  # package name across apt repositories, so try the Docker repo name first
+  # and fall back to Ubuntu package names.
+  if sudo apt-get install -y docker.io docker-compose-plugin; then
+    :
+  elif sudo apt-get install -y docker.io docker-compose-v2; then
+    :
+  else
+    sudo apt-get install -y docker.io docker-compose
+  fi
 else
   echo "[ok] Docker and docker compose plugin already installed"
 fi

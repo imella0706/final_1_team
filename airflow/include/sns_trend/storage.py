@@ -1,12 +1,16 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path, PurePosixPath
 from typing import Any
 
 
 class StorageError(RuntimeError):
     """Raised when a storage operation cannot be completed safely."""
+
+
+_VERSION_PATTERN = re.compile(r"^v([1-9]\d*)$")
 
 
 def parse_gcs_uri(uri: str) -> tuple[str, str]:
@@ -46,6 +50,88 @@ def _safe_relative_path(blob_name: str, prefix: str) -> Path:
     if relative.is_absolute() or ".." in relative.parts:
         raise StorageError(f"Unsafe GCS object path: {blob_name}")
     return Path(*relative.parts)
+
+
+def _version_number(version: str) -> int | None:
+    match = _VERSION_PATTERN.fullmatch(version)
+    if not match:
+        return None
+    return int(match.group(1))
+
+
+def discover_latest_gcs_processed_version(
+    *,
+    gcs_root: str,
+    artifact_name: str,
+    client: Any | None = None,
+) -> dict[str, Any]:
+    bucket_name, root_prefix = parse_gcs_uri(gcs_root)
+    active_client = client or _storage_client()
+    root_prefix = root_prefix.rstrip("/")
+    root_prefix_with_slash = f"{root_prefix}/"
+
+    try:
+        blobs = list(active_client.list_blobs(bucket_name, prefix=root_prefix_with_slash))
+    except Exception as error:  # pragma: no cover - external GCS/auth path
+        raise StorageError(
+            "Failed to list GCS processed root. "
+            "Check ADC with `gcloud auth application-default login` and bucket access: "
+            f"{gcs_root}"
+        ) from error
+
+    versions: dict[str, dict[str, Any]] = {}
+    for blob in blobs:
+        blob_name = getattr(blob, "name", "")
+        if not blob_name or not blob_name.startswith(root_prefix_with_slash):
+            continue
+
+        relative = PurePosixPath(blob_name.removeprefix(root_prefix_with_slash))
+        if not relative.parts:
+            continue
+
+        version = relative.parts[0]
+        number = _version_number(version)
+        if number is None:
+            continue
+
+        info = versions.setdefault(
+            version,
+            {
+                "version": version,
+                "version_number": number,
+                "object_count": 0,
+                "artifact_object_count": 0,
+            },
+        )
+        if not blob_name.endswith("/"):
+            info["object_count"] += 1
+            if len(relative.parts) >= 2 and relative.parts[1] == artifact_name:
+                info["artifact_object_count"] += 1
+
+    if not versions:
+        raise StorageError(f"No processed version directories found under {gcs_root}")
+
+    latest = max(versions.values(), key=lambda item: item["version_number"])
+    source_gcs_prefix = (
+        f"gs://{bucket_name}/{root_prefix}/{latest['version']}/{artifact_name}/"
+    )
+
+    return {
+        "status": "discovered",
+        "source_gcs_root": gcs_root.rstrip("/") + "/",
+        "source_gcs_prefix": source_gcs_prefix,
+        "version": latest["version"],
+        "version_number": latest["version_number"],
+        "discovered_versions": [
+            item["version"]
+            for item in sorted(versions.values(), key=lambda item: item["version_number"])
+        ],
+        "object_count_by_version": {
+            item["version"]: item["object_count"]
+            for item in sorted(versions.values(), key=lambda item: item["version_number"])
+        },
+        "artifact_object_count": latest["artifact_object_count"],
+    }
 
 
 def sync_gcs_prefix_to_local(
