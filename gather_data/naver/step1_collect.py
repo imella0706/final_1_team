@@ -12,9 +12,11 @@
 필요 라이브러리:  pip install requests pandas python-dotenv
 """
 import html
+import argparse
 import os
 import re
 import time
+from pathlib import Path
 
 import pandas as pd
 import requests
@@ -28,6 +30,7 @@ load_dotenv(ENV_FILE)
 CLIENT_ID = os.getenv("NAVER_CLIENT_ID")
 CLIENT_SECRET = os.getenv("NAVER_CLIENT_SECRET")
 KEYWORD = "카페"          # 분석할 키워드로 변경
+DEFAULT_SOURCES = ("blog", "news")
 # ============================================
 
 HEADERS = {
@@ -43,13 +46,17 @@ def clean_text(text):
     return text.strip()
 
 
-def collect(source):
+def collect(source, *, keyword=KEYWORD, limit=1000):
     """source: 'blog' 또는 'news'. 최신순으로 최대 1,000건 수집"""
+    if source not in DEFAULT_SOURCES:
+        raise ValueError(f"unsupported source: {source}")
+    limit = max(1, min(int(limit), 1000))
     url = f"https://openapi.naver.com/v1/search/{source}.json"
     all_items = []
     # start는 1~1000까지만 허용 → 100건씩 10번 = 최대 1,000건
-    for start in range(1, 1001, 100):
-        params = {"query": KEYWORD, "display": 100, "start": start, "sort": "date"}
+    for start in range(1, limit + 1, 100):
+        display = min(100, limit - len(all_items))
+        params = {"query": keyword, "display": display, "start": start, "sort": "date"}
         res = requests.get(url, headers=HEADERS, params=params)
         if res.status_code != 200:
             print(f"[{source}] 오류 {res.status_code}: {res.text}")
@@ -58,7 +65,10 @@ def collect(source):
         if not items:          # 더 이상 결과가 없으면 종료
             break
         all_items.extend(items)
+        all_items = all_items[:limit]
         print(f"[{source}] {len(all_items)}건 수집 중...")
+        if len(all_items) >= limit:
+            break
         time.sleep(0.2)        # 과도한 호출 방지
     return all_items
 
@@ -80,17 +90,36 @@ def to_dataframe(items, source):
     return df
 
 
+def parse_args():
+    parser = argparse.ArgumentParser(
+        description="Collect Naver blog/news search results."
+    )
+    parser.add_argument("--keyword", default=KEYWORD)
+    parser.add_argument("--limit", type=int, default=1000)
+    parser.add_argument(
+        "--sources",
+        default="blog,news",
+        help="Comma-separated sources: blog,news",
+    )
+    parser.add_argument("--output-dir", default=BASE_DIR)
+    return parser.parse_args()
+
+
 if __name__ == "__main__":
+    args = parse_args()
     if not CLIENT_ID or not CLIENT_SECRET:
         raise SystemExit(
             "NAVER_CLIENT_ID 또는 NAVER_CLIENT_SECRET이 없습니다. "
             "apps/api/.env 파일을 확인하세요."
         )
 
-    for source in ["blog", "news"]:
-        items = collect(source)
+    output_dir = Path(args.output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    sources = tuple(source.strip() for source in args.sources.split(",") if source.strip())
+    for source in sources:
+        items = collect(source, keyword=args.keyword, limit=args.limit)
         df = to_dataframe(items, source)
-        filename = os.path.join(BASE_DIR, f"naver_{source}_{KEYWORD}.csv")
+        filename = output_dir / f"naver_{source}_{args.keyword}.csv"
         df.to_csv(filename, index=False, encoding="utf-8-sig")
         print(f"[{source}] 총 {len(df)}건 저장 완료 → {filename}\n")
 
