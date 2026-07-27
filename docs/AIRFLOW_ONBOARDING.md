@@ -349,6 +349,54 @@ cd ~/final_1_team
 
 VM에서는 로컬 ADC 대신 VM service account 권한으로 GCS에 접근하는 것이 기준입니다. service account에 processed prefix read/list와 logs prefix write 권한이 없으면 `sync_processed_package_from_gcs` 또는 `write_validation_summary`에서 실패합니다.
 
+### YouTube landing collection DAG
+
+Phase 4의 첫 DAG는 `sns_trend_youtube_landing_collection`입니다. 아직 GCS 업로드나
+processed 승격을 하지 않습니다. 역할은 YouTube 원본 영상 목록을 landing run 폴더에
+저장하고, 같은 raw CSV에서 `keyword,count` 파일을 만든 뒤 산출물이 맞는지 확인하는
+것까지입니다.
+
+Airflow 컨테이너에서 실행하려면 private `.env.airflow`에 YouTube API key를 넣어야
+합니다.
+
+```bash
+# [Design Intent] YouTube API key는 secret이므로 tracked example이 아니라 private env에만 둔다.
+YOUTUBE_API_KEY=...
+```
+
+수동 실행 config 예시는 아래와 같습니다.
+
+```json
+{
+  "week": "2026-W31",
+  "run_date": "2026-07-27",
+  "run_id": "manual__youtube_phase4_smoke",
+  "limit": 5
+}
+```
+
+생성되는 로컬 landing 산출물:
+
+```text
+data/landing/sns_trend/week=2026-W31/raw/youtube/run_id=manual__youtube_phase4_smoke/
+  youtube_trending_KR_2026-W31.csv
+  youtube_keywords_2026-07-27.csv
+  crawler_run_summary.json
+```
+
+task 의미:
+
+| Task | 역할 |
+| --- | --- |
+| `resolve_youtube_landing_context` | 이번 run의 `week`, `run_date`, `run_id`, landing 경로 결정 |
+| `collect_youtube_trending_raw` | `youtube_trending_collector.py` 실행 후 raw video CSV와 `crawler_run_summary.json` 생성 |
+| `build_youtube_keyword_snapshot` | raw CSV를 입력으로 `daily_keyword_tracker.py` 실행 후 `keyword,count` CSV 생성 |
+| `verify_youtube_landing_contract` | raw CSV, keyword CSV, summary 존재 여부와 keyword CSV header 확인 |
+
+`BRANDMATE_SNS_TREND_YOUTUBE_LANDING_SCHEDULE`은 기본값이 비어 있으므로 manual trigger
+전용입니다. 매주 자동 실행은 YouTube/고구마팜/캐릿/네이버 CLI 계약을 모두 확인한 뒤
+별도 단계에서 켭니다.
+
 ## 8. Airflow Metadata DB 정책
 
 Airflow metadata DB에는 실행 상태만 저장합니다.

@@ -296,10 +296,14 @@ YouTube `videos.list(chart="mostPopular")` 결과를 페이지 단위로 수집�
 
 #### `daily_keyword_tracker.py`
 
-raw 영상 CSV 또는 live API 응답에서 v2 키워드 스냅샷을 만든다.
+raw 영상 CSV 또는 live API 응답에서 `keyword,count` 키워드 스냅샷을 만든다.
 
 - 권장 입력: `--input-csv data/raw/youtube_trending_*.csv`. collector 결과를 재사용해 서로 다른 시점의 API 중복 호출을 피한다.
 - 기본 출력: `data/history/keywords_YYYY-MM-DD.csv`
+- sns_trend landing 공유용도 기존 채빈님 `youtube_keywords_YYYY-MM-DD.csv`
+  형식과 동일하게 `keyword,count` 두 컬럼으로 출력한다.
+- 내부 집계는 v2 snapshot 기준으로 수행하고, 외부 CSV에는 `display_keyword` -> `keyword`,
+  `occurrence_count` -> `count`만 남긴다.
 - 기본 tokenizer: 환경 간 재현성이 있는 `regex`.
 - 선택 tokenizer: `okt`. 선택했는데 KoNLPy/Java가 없으면 regex로 조용히 fallback하지 않고 실패한다.
 - 정규화: NFKC, casefold, 불용어 처리. `T1`, `t1`, `Ｔ１`은 canonical `t1`으로 합친다.
