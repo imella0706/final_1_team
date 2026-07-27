@@ -168,7 +168,7 @@ Processed smoke test output:
 실행 스크립트:
 
 ```text
-scripts/visitor_flow_label_smoke_test.py
+scripts/archive/visitor_flow/L0/visitor_flow_label_smoke_test.py
 ```
 
 입력:
@@ -239,7 +239,7 @@ Forbidden:
 - AIHub file key `65983`, `65995`
 - AIHub downloader `aihubshell`
 - 압축 해제된 Validation `ju-ja` 원천/라벨
-- `scripts/visitor_flow_label_smoke_test.py`
+- `scripts/archive/visitor_flow/L0/visitor_flow_label_smoke_test.py`
 
 ### 1. AIHub downloader 준비
 
@@ -313,7 +313,7 @@ data/curated/aihub_cctv_visitor_flow/v1/
 
 ```bash
 # [Design Intent] Rebuild the current label-based smoke-test outputs from the selected C0241 MVP sample.
-python scripts/visitor_flow_label_smoke_test.py \
+python scripts/archive/visitor_flow/L0/visitor_flow_label_smoke_test.py \
   --sample-dir data/curated/aihub_cctv_visitor_flow/v1/c0241_20210802 \
   --output-dir outputs/visitor_flow_mvp/c0241_20210802_label_smoke
 ```

@@ -10,19 +10,19 @@
     {
       "id": "trendcard",
       "label": "니가 좋아",
-      "path": "../../../gather_data/trendcard.json",
+      "path": "../../../data/curated/sns_trend/v2/meme_cards_reviewed/gogumafarm/gogumafarm_1bf390d89536004b.json",
       "enabled": true
     },
     {
       "id": "trendcard1",
       "label": "파라파라나 춰야지",
-      "path": "../../../gather_data/trendcard1.json",
+      "path": "../../../data/curated/sns_trend/v2/meme_cards_reviewed/gogumafarm/gogumafarm_d4e6309980c15a81.json",
       "enabled": true
     },
     {
       "id": "trendcard2",
       "label": "감옥에서 누가 돌아왔게",
-      "path": "../../../gather_data/trendcard2.json",
+      "path": "../../../data/curated/sns_trend/v2/meme_cards_reviewed/manual/manual_prison-comeback.json",
       "enabled": true
     }
   ],

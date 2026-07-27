@@ -259,10 +259,11 @@ app/modules/model_runtime/docs/CHANGES_FROM_AD_COPY_MODEL_BRANCH.md
 
 ## 수동 TrendCard 설정
 
-현재 TrendCard는 자동 생성하지 않고 `gather_data/trendcard.json`을 사람이 직접 작성하고
-검수합니다. Instagram 광고 생성 요청은 클라이언트가 `meme_id`를 하드코딩하지 않아도 이
-활성 카드 한 장을 서버에서 읽어 사용합니다. 따라서 카드를 교체할 때는 JSON의 내용과
-`meme_id`만 함께 수정하면 됩니다.
+현재 TrendCard는 공식 processed 데이터셋인
+`data/processed/sns_trend/v2/cross_platform_signal_top_candidates/cross_platform_signal_top_candidates.json`을
+기본 입력으로 사용합니다. Instagram 광고 생성 요청은 클라이언트가 `meme_id`를
+하드코딩하지 않아도 payload의 첫 번째 usable 카드를 active default로 사용하고,
+명시적인 `trend_card_id`가 들어오면 payload 안에서 해당 `meme_id`를 찾아 사용합니다.
 
 광고 생성에 사용하는 카드에는 다음 값이 필요합니다.
 
@@ -272,14 +273,14 @@ app/modules/model_runtime/docs/CHANGES_FROM_AD_COPY_MODEL_BRANCH.md
 - `is_mock`: 효용 검증용 가공 카드이면 `true`
 
 소스 체크아웃에서는 기본 경로를 자동으로 찾습니다. API를 wheel 또는 별도 디렉터리에서
-실행할 때는 수동 JSON을 배포 환경에 복사하거나 마운트하고 경로를 지정하세요.
+실행할 때는 processed v2 payload를 배포 환경에 복사하거나 마운트하고 경로를 지정하세요.
 
 ```env
-BRANDMATE_TREND_CARD_PATH=gather_data/trendcard.json
+BRANDMATE_TREND_CARD_PAYLOAD_PATH=data/processed/sns_trend/v2/cross_platform_signal_top_candidates/cross_platform_signal_top_candidates.json
 ```
 
-상대 경로는 저장소 루트를 기준으로 해석됩니다. JSON은 요청마다 다시 읽기 때문에 내용만
-수정한 경우 API 재시작은 필요하지 않습니다.
+상대 경로는 저장소 루트를 기준으로 해석됩니다. TrendCard artifact는 프로세스 안에서
+캐시되므로 payload를 교체한 경우 API 프로세스를 재시작하세요.
 
 ## 테스트
 

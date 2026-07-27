@@ -30,11 +30,14 @@ from youtube_trends.config import (
     configure_console,
     configure_logging,
     current_run_date,
+    landing_run_directory,
     load_environment,
+    parse_iso_week,
+    parse_run_id,
     parse_run_date,
     require_api_key,
 )
-from youtube_trends.csv_io import DataFileError
+from youtube_trends.csv_io import DataFileError, atomic_write_json
 
 
 REGION_CODE = DEFAULT_REGION_CODE
@@ -77,10 +80,17 @@ def build_parser(defaults: CollectionOptions | None = None) -> argparse.Argument
     )
     parser.add_argument("--date", dest="run_date", help="output date in YYYY-MM-DD format")
     parser.add_argument(
+        "--week",
+        help="landing partition in Asia/Seoul ISO week format (YYYY-Www)",
+    )
+    parser.add_argument(
+        "--run-id",
+        help="Airflow or local run identifier used to isolate landing artifacts",
+    )
+    parser.add_argument(
         "--output-dir",
         type=Path,
-        default=RAW_DATA_DIR,
-        help="directory for the default output name",
+        help="output directory; landing mode defaults to the canonical data/landing path",
     )
     parser.add_argument("--output-file", type=Path, help="explicit output CSV path")
     parser.add_argument(
@@ -98,6 +108,47 @@ def build_parser(defaults: CollectionOptions | None = None) -> argparse.Argument
 
 def _collected_at() -> str:
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def _landing_context(args: argparse.Namespace) -> tuple[str, str] | None:
+    if args.week is None and args.run_id is None:
+        return None
+    if args.week is None or args.run_id is None:
+        raise ConfigurationError("--week and --run-id must be provided together")
+    if args.output_file is not None:
+        raise ConfigurationError(
+            "--output-file cannot be used with --week/--run-id landing mode"
+        )
+    return parse_iso_week(args.week), parse_run_id(args.run_id)
+
+
+def _write_error_artifact(
+    *,
+    run_directory: Path | None,
+    week: str | None,
+    run_id: str | None,
+    started_at: str,
+    exit_code: int,
+    error: Exception,
+) -> None:
+    if run_directory is None:
+        return
+    payload = {
+        "schema_version": "1.0",
+        "source": "youtube",
+        "status": "failed",
+        "week": week,
+        "run_id": run_id,
+        "started_at": started_at,
+        "ended_at": _collected_at(),
+        "exit_code": exit_code,
+        "error_type": type(error).__name__,
+        "message": str(error),
+    }
+    try:
+        atomic_write_json(run_directory / "error.json", payload)
+    except (DataFileError, OSError) as artifact_error:
+        logging.error("failed to write landing error artifact: %s", artifact_error)
 
 
 def get_trending_videos(
@@ -167,8 +218,19 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
     load_environment()
     configure_logging(args.log_level)
+    started_at = _collected_at()
+    landing_week: str | None = None
+    landing_run_id: str | None = None
+    run_directory: Path | None = None
 
     try:
+        landing = _landing_context(args)
+        if landing is not None:
+            landing_week, landing_run_id = landing
+            run_directory = args.output_dir or landing_run_directory(
+                week=landing_week,
+                run_id=landing_run_id,
+            )
         options = collection_options_from_env(
             region_code=args.region,
             total_videos=args.limit,
@@ -181,10 +243,18 @@ def main(argv: Sequence[str] | None = None) -> int:
             if args.run_date
             else current_run_date()
         )
-        output = args.output_file or (
-            args.output_dir
-            / f"youtube_trending_{options.region_code}_{run_date.strftime('%Y%m%d')}.csv"
+        if landing_week is not None:
+            output_name = (
+                f"youtube_trending_{options.region_code}_{landing_week}.csv"
+            )
+        else:
+            output_name = (
+                f"youtube_trending_{options.region_code}_{run_date.strftime('%Y%m%d')}.csv"
+            )
+        output_base = run_directory if landing_week is not None else (
+            args.output_dir or RAW_DATA_DIR
         )
+        output = args.output_file or (output_base / output_name)
         if args.fail_if_exists and output.exists():
             raise DataFileError(f"output already exists: {output}")
         api_key = require_api_key()
@@ -199,10 +269,54 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
     except ConfigurationError as exc:
         logging.error("configuration error: %s", exc)
+        _write_error_artifact(
+            run_directory=run_directory,
+            week=landing_week,
+            run_id=landing_run_id,
+            started_at=started_at,
+            exit_code=2,
+            error=exc,
+        )
         return 2
     except (CollectionError, DataFileError, OSError) as exc:
         logging.error("collection failed: %s", exc)
+        _write_error_artifact(
+            run_directory=run_directory,
+            week=landing_week,
+            run_id=landing_run_id,
+            started_at=started_at,
+            exit_code=1,
+            error=exc,
+        )
         return 1
+
+    if run_directory is not None:
+        summary = {
+            "schema_version": "1.0",
+            "source": "youtube",
+            "status": "success",
+            "week": landing_week,
+            "run_id": landing_run_id,
+            "started_at": started_at,
+            "ended_at": _collected_at(),
+            "region_code": options.region_code,
+            "requested_count": options.total_videos,
+            "collected_count": len(videos),
+            "output_file": str(output),
+        }
+        try:
+            atomic_write_json(run_directory / "run_summary.json", summary)
+        except (DataFileError, OSError) as exc:
+            logging.error("failed to write landing run summary: %s", exc)
+            _write_error_artifact(
+                run_directory=run_directory,
+                week=landing_week,
+                run_id=landing_run_id,
+                started_at=started_at,
+                exit_code=1,
+                error=exc,
+            )
+            return 1
 
     print(f"saved {len(videos)} videos to {output}")
     return 0

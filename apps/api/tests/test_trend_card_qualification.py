@@ -11,7 +11,6 @@ import pytest
 from app.evaluation.meme_arm_runner import MemeEvalCase
 from app.evaluation.trend_card_runner import (
     CardWorkItem,
-    LoadedTrendCardCandidate,
     TrendCardCandidateSpec,
     build_work_items,
     candidate_preflight,
@@ -66,9 +65,16 @@ def test_runtime_request_overrides_legacy_case_card_id() -> None:
 
 def test_draft_card_is_parsed_without_production_activation(tmp_path: Path) -> None:
     source = json.loads(
-        (API_ROOT.parents[1] / "gather_data" / "trendcard.json").read_text(
-            encoding="utf-8"
-        )
+        (
+            API_ROOT.parents[1]
+            / "data"
+            / "curated"
+            / "sns_trend"
+            / "v2"
+            / "meme_cards_reviewed"
+            / "gogumafarm"
+            / "gogumafarm_1bf390d89536004b.json"
+        ).read_text(encoding="utf-8")
     )
     source["curation_meta"]["status"] = "draft"
     draft_path = tmp_path / "draft-card.json"

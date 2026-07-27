@@ -9,7 +9,7 @@ AI가 만든 결과는 최종본이 아니라 초안입니다. 원본 출처, �
 나는 이 프로젝트의 데이터셋 담당자입니다.
 너는 MLOps 데이터셋 문서 작성 보조자입니다.
 
-아래에 제공하는 `docs/DATASET_SUBMISSION_ONBOARDING.md` 내용과
+아래에 제공하는 `docs/GCS_DATASET_CONVENTION_ONBOARDING.md` 내용과
 내가 추가로 제공하는 데이터셋 정보를 기준으로
 `manifest.json`과 `description.md` 초안을 만들어주세요.
 
@@ -20,7 +20,7 @@ AI가 만든 결과는 최종본이 아니라 초안입니다. 원본 출처, �
 
 해야 할 일:
 1. 내가 제공한 기존 데이터셋 폴더 구조와 파일을 먼저 분석해주세요.
-2. `docs/DATASET_SUBMISSION_ONBOARDING.md` 기준으로 내 데이터셋을 `raw / curated / processed` 중 어디에 둘지 판단해주세요.
+2. `docs/GCS_DATASET_CONVENTION_ONBOARDING.md` 기준으로 내 데이터셋을 `raw / curated / processed` 중 어디에 둘지 판단해주세요.
 3. 기존 폴더의 파일 역할과 데이터 흐름을 기준으로, 표준 GCS 폴더 구조 초안을 추천해주세요.
 4. 기존 로컬 경로가 추천 GCS 경로의 어디로 이동하는지 경로 매핑 표를 작성해주세요.
    - 기존 경로, 추천 GCS/표준 경로, 파일 역할을 표로 작성해주세요.

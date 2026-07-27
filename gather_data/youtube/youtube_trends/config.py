@@ -14,8 +14,10 @@ from dotenv import load_dotenv
 
 YOUTUBE_DIR = Path(__file__).resolve().parent.parent
 GATHER_DATA_DIR = YOUTUBE_DIR.parent
-ENV_FILE = GATHER_DATA_DIR / ".env"
+REPO_ROOT = GATHER_DATA_DIR.parent
+ENV_FILE = REPO_ROOT / "apps" / "api" / ".env"
 RAW_DATA_DIR = YOUTUBE_DIR / "data" / "raw"
+LANDING_DATA_ROOT = REPO_ROOT / "data" / "landing" / "sns_trend"
 HISTORY_V2_DIR = YOUTUBE_DIR / "data" / "history"
 REPORT_DIR = YOUTUBE_DIR / "reports"
 
@@ -82,7 +84,7 @@ def require_api_key() -> str:
     api_key = os.getenv("YOUTUBE_API_KEY", "").strip()
     if not api_key:
         raise ConfigurationError(
-            "YOUTUBE_API_KEY is missing. Set it in gather_data/.env."
+            "YOUTUBE_API_KEY is missing. Set it in apps/api/.env."
         )
     return api_key
 
@@ -92,6 +94,39 @@ def parse_run_date(value: str) -> date:
         return date.fromisoformat(value)
     except ValueError as exc:
         raise ConfigurationError("date must use YYYY-MM-DD format") from exc
+
+
+def parse_iso_week(value: str) -> str:
+    normalized = value.strip().upper()
+    match = re.fullmatch(r"(\d{4})-W(\d{2})", normalized)
+    if match is None:
+        raise ConfigurationError("week must use YYYY-Www format")
+    year, week = (int(part) for part in match.groups())
+    try:
+        date.fromisocalendar(year, week, 1)
+    except ValueError as exc:
+        raise ConfigurationError(f"invalid ISO week: {normalized}") from exc
+    return normalized
+
+
+def parse_run_id(value: str) -> str:
+    normalized = value.strip()
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.:+@=-]{0,254}", normalized):
+        raise ConfigurationError(
+            "run-id must be 1-255 path-safe ASCII characters"
+        )
+    return normalized
+
+
+def landing_run_directory(
+    *,
+    week: str,
+    run_id: str,
+    root: Path = LANDING_DATA_ROOT,
+) -> Path:
+    # [Design Intent] Keep every Airflow retry/run isolated so raw artifacts are not
+    # silently overwritten by a later crawler execution.
+    return root / f"week={week}" / "raw" / "youtube" / f"run_id={run_id}"
 
 
 def current_run_date() -> date:

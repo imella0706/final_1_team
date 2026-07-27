@@ -2,7 +2,7 @@
   "experiment_id": "single-trendcard-five-arm-v1",
   "description": "현재 수동 TrendCard 한 장에서 prompt 전략과 QLoRA adapter를 비교하는 smoke 평가",
   "base_model": "Qwen/Qwen2.5-7B-Instruct",
-  "trend_card_path": "../../../gather_data/trendcard.json",
+  "trend_card_payload_path": "../../../data/processed/sns_trend/v2/cross_platform_signal_top_candidates/cross_platform_signal_top_candidates.json",
   "dataset_path": "meme_ad_copy_cases.json",
   "few_shot_path": "few_shot_examples.json",
   "fixture_review_path": "meme_fixture_review.json",
