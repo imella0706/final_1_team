@@ -36,6 +36,16 @@ _MEDIA_SUFFIX = {
     "image/webp": ".webp",
 }
 
+_TONE_TO_BACKGROUND_MOOD = {
+    "emotional": "soft, emotional and memorable",
+    "witty": "lively, playful and approachable",
+    "friendly": "friendly, relaxed and approachable",
+    "warm": "warm, comfortable and welcoming",
+    "playful": "bright, playful and energetic",
+    "professional": "clean, polished and trustworthy",
+    "premium": "refined, premium and calm",
+}
+
 
 def _pipeline_root() -> Path:
     configured = Path(settings.naver_image_cleanup_root)
@@ -67,6 +77,15 @@ def _configured_python(root: Path) -> str:
         return str(executable)
     # API와 파이프라인 의존성을 같은 Python 환경에 설치한 경우의 기본값이다.
     return sys.executable
+
+
+def _requested_background_mood(copy_request: "AdCopyRequest") -> str:
+    """직접 입력한 desired_mood를 우선하고, 없으면 광고 톤을 배경 분위기로 변환한다."""
+    explicit_mood = str(getattr(copy_request, "desired_mood", "") or "").strip()
+    if explicit_mood:
+        return explicit_mood
+    tone = str(getattr(copy_request, "tone", "warm")).strip().lower()
+    return _TONE_TO_BACKGROUND_MOOD.get(tone, "warm, welcoming and natural")
 
 
 def enhance_naver_blog_image(
@@ -101,6 +120,7 @@ def enhance_naver_blog_image(
         # 업종 분위기 프롬프트는 보존하고, 파이프라인의 EfficientNet-B0가
         # top/45 카메라 제약과 전경 배치 영역을 추가한다.
         "background_prompt_base": prompt.prompt,
+        "desired_mood": _requested_background_mood(copy_request),
         "camera_angle_manual": False,
         "light_direction": "upper_left" if prompt.template == "pub" else "left",
     }
