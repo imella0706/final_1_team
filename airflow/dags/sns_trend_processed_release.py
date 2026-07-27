@@ -102,25 +102,21 @@ def build_drafts_if_needed_task(**context: Any) -> dict[str, Any]:
                     drafts_json = drafts_dir / "sns_trend_trendcard_drafts.json"
                     break
 
-    if not drafts_json.exists():
-        if not decisions_json.exists():
-            raise ValueError(f"Review decisions not found: {decisions_json}")
-        if not queue_json.exists():
-            raise ValueError(f"Review queue not found: {queue_json}")
+    if not decisions_json.exists():
+        raise ValueError(f"Review decisions not found: {decisions_json}")
+    if not queue_json.exists():
+        raise ValueError(f"Review queue not found: {queue_json}")
 
-        draft_result = build_trendcard_drafts(
-            week=week,
-            run_id=run_id,
-            decisions_path=decisions_json,
-            queue_path=queue_json,
-            output_dir=drafts_dir,
-            overwrite=True,
-        )
-        draft_count = draft_result.draft_count
-    else:
-        with drafts_json.open("r", encoding="utf-8") as f:
-            payload = json.load(f)
-        draft_count = len(payload.get("drafts", []))
+    # Rebuild trendcard drafts from latest decisions_json
+    draft_result = build_trendcard_drafts(
+        week=week,
+        run_id=run_id,
+        decisions_path=decisions_json,
+        queue_path=queue_json,
+        output_dir=drafts_dir,
+        overwrite=True,
+    )
+    draft_count = draft_result.draft_count
 
     return {
         "week": week,
