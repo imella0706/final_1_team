@@ -235,8 +235,21 @@ def main() -> None:
     for k, v in list(st.session_state.items()):
         if "_decision_" in k:
             cand_id = k.rsplit("_decision_", 1)[-1]
-            prefix = k.rsplit("_decision_", 1)[0]
-            note_val = st.session_state.get(f"{prefix}_note_{cand_id}", "")
+            existing_record = st.session_state.get("decisions", {}).get(cand_id, {})
+            existing_note = existing_record.get("review_note", "")
+
+            # Scan any widget note key matching cand_id in session_state
+            typed_notes = [
+                str(st.session_state[nk]).strip()
+                for nk in st.session_state
+                if nk.endswith(f"_note_{cand_id}") and isinstance(st.session_state[nk], str) and str(st.session_state[nk]).strip()
+            ]
+
+            if typed_notes:
+                note_val = typed_notes[-1]
+            else:
+                note_val = existing_note
+
             if v != "pending":
                 st.session_state["decisions"][cand_id] = {
                     "candidate_id": cand_id,
@@ -281,7 +294,7 @@ def main() -> None:
             st.info("💡 **시스템 추천 Top 20 카드**입니다. 3분 이내로 빠르게 검수를 진행하고 우측 버튼으로 영구 저장하세요.")
         with col_save:
             if st.button("💾 검수 내역 영구 저장", type="primary", key="quick_save_top20", use_container_width=True):
-                save_and_validate_decisions(selected_week, top_100_candidates)
+                save_and_validate_decisions(selected_week, raw_candidates)
 
         top_20_candidates = top_100_candidates[:DEFAULT_TOP_COUNT]
         render_candidate_list(top_20_candidates, selected_week, key_prefix="top20")
@@ -328,7 +341,7 @@ def main() -> None:
         with col_save:
             st.markdown("### 1. Decisions 저장")
             if st.button("💾 Save Review Decisions to Artifacts", type="primary", use_container_width=True):
-                save_and_validate_decisions(selected_week, top_100_candidates)
+                save_and_validate_decisions(selected_week, raw_candidates)
 
         with col_trigger:
             st.markdown("### 2. Airflow Event-Driven Trigger")
@@ -521,10 +534,14 @@ def render_candidate_list(candidates: list[dict[str, Any]], week: str, key_prefi
                     if new_decision == "accept":
                         st.error("⚠️ Naver-only / Reference-only 후보는 `accept`할 수 없습니다 (P5-5 Validator 규칙).")
 
+                existing_note = decisions_map.get(cand_id, {}).get("review_note", "")
+                note_key = f"{key_prefix}_note_{cand_id}"
+                if note_key not in st.session_state:
+                    st.session_state[note_key] = existing_note
+
                 review_note = st.text_input(
                     "Review Note",
-                    value=decisions_map.get(cand_id, {}).get("review_note", ""),
-                    key=f"{key_prefix}_note_{cand_id}",
+                    key=note_key,
                     placeholder="검수 메모 작성 (선택)",
                 )
 
@@ -539,12 +556,13 @@ def render_candidate_list(candidates: list[dict[str, Any]], week: str, key_prefi
 
             # Update session state if decision changed
             if new_decision != "pending":
+                final_note = review_note if review_note else existing_note
                 st.session_state["decisions"][cand_id] = {
                     "candidate_id": cand_id,
                     "review_decision": new_decision,
                     "reviewer": st.session_state.get("reviewer_name", "reviewer_1"),
                     "reviewed_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
-                    "review_note": review_note,
+                    "review_note": final_note,
                     "decision_source": "streamlit",
                 }
             elif cand_id in st.session_state["decisions"] and new_decision == "pending":
@@ -553,20 +571,76 @@ def render_candidate_list(candidates: list[dict[str, Any]], week: str, key_prefi
             st.markdown("---")
 
 
+def sync_all_widget_decisions_to_session() -> None:
+    """Scans all Streamlit widget state keys and ensures st.session_state['decisions'] is 100% up-to-date."""
+    if "decisions" not in st.session_state:
+        st.session_state["decisions"] = {}
+
+    cand_decisions: dict[str, str] = {}
+    cand_notes: dict[str, str] = {}
+
+    # Aggregate widget keys by candidate_id, prioritizing non-pending decisions
+    for k, v in list(st.session_state.items()):
+        if "_decision_" in k:
+            cand_id = k.rsplit("_decision_", 1)[-1]
+            if v != "pending" or cand_id not in cand_decisions:
+                cand_decisions[cand_id] = v
+        elif "_note_" in k:
+            cand_id = k.rsplit("_note_", 1)[-1]
+            note_str = str(v).strip()
+            if note_str:
+                cand_notes[cand_id] = note_str
+
+    for cand_id, decision_val in cand_decisions.items():
+        existing_record = st.session_state["decisions"].get(cand_id, {})
+        existing_note = existing_record.get("review_note", "")
+
+        note_val = cand_notes.get(cand_id, existing_note)
+
+        if decision_val != "pending":
+            st.session_state["decisions"][cand_id] = {
+                "candidate_id": cand_id,
+                "review_decision": decision_val,
+                "reviewer": st.session_state.get("reviewer_name", "reviewer_1"),
+                "reviewed_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                "review_note": note_val,
+                "decision_source": "streamlit",
+            }
+        elif cand_id in st.session_state["decisions"] and decision_val == "pending":
+            # Only remove if decision is truly pending across all widget keys
+            active_decisions = [
+                st.session_state[wk] for wk in st.session_state
+                if wk.endswith(f"_decision_{cand_id}") and st.session_state[wk] != "pending"
+            ]
+            if not active_decisions:
+                st.session_state["decisions"].pop(cand_id, None)
+
+
 def save_and_validate_decisions(week: str, queue_candidates: list[dict[str, Any]]) -> None:
+    # Always force sync all widget states in session_state before validation and disk save
+    sync_all_widget_decisions_to_session()
+
     raw_decisions_map = st.session_state.get("decisions", {})
     if not raw_decisions_map:
         st.warning("저장할 검수 내역이 없습니다.")
         return
 
+    valid_ids = {c["candidate_id"] for c in queue_candidates}
     decision_records: list[ReviewDecisionRecord] = []
-    for d_dict in raw_decisions_map.values():
-        try:
-            record = ReviewDecisionRecord.from_dict(d_dict)
-            decision_records.append(record)
-        except ReviewDecisionError as e:
-            st.error(f"결정 객체 변환 오류: {e}")
-            return
+    
+    # Clean and filter decisions to only include candidates existing in the current queue payload
+    cleaned_decisions = {}
+    for cand_id, d_dict in raw_decisions_map.items():
+        if cand_id in valid_ids:
+            cleaned_decisions[cand_id] = d_dict
+            try:
+                record = ReviewDecisionRecord.from_dict(d_dict)
+                decision_records.append(record)
+            except ReviewDecisionError as e:
+                st.error(f"결정 객체 변환 오류: {e}")
+                return
+    
+    st.session_state["decisions"] = cleaned_decisions
 
     # Validate decisions against queue candidates
     try:
