@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "camera_id": "C0241",
+  "primary_line_id": "walkway_up_down_flow",
+  "label": "Walkway up/down pedestrian flow",
+  "coordinate_space": "normalized_image",
+  "position_point": "bbox_bottom_center",
+  "definition_source": "manual_line",
+  "line": [
+    {
+      "x": 0.315104,
+      "y": 0.490809
+    },
+    {
+      "x": 0.627604,
+      "y": 0.47886
+    }
+  ],
+  "direction_labels": {
+    "negative_to_positive": "screen_downward_event",
+    "positive_to_negative": "screen_upward_event"
+  },
+  "notes": [
+    "Manual crossing line selected from a fixed-camera reference frame.",
+    "For C0241 walkway flow, click the left endpoint first and the right endpoint second.",
+    "A crossing event is based on track bbox bottom-center movement across this line.",
+    "This is a movement event signal, not a unique visitor count or store entry count.",
+    "Recalibrate this line if the camera position or crop changes."
+  ]
+}
