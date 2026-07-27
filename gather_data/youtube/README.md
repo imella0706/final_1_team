@@ -85,6 +85,7 @@ python youtube_trending_collector.py `
 ### 2. 같은 원본에서 키워드 스냅샷 생성
 
 수집 결과를 `--input-csv`로 재사용하는 방식을 권장한다. collector와 tracker가 서로 다른 시점에 API를 두 번 호출하는 문제를 피할 수 있다.
+출력 CSV는 기존 채빈님 landing 파일과 동일하게 `keyword,count` 두 컬럼으로 고정한다.
 
 ```powershell
 python daily_keyword_tracker.py `
@@ -100,6 +101,18 @@ python daily_keyword_tracker.py `
 
 ```text
 data/history/keywords_YYYY-MM-DD.csv
+```
+
+팀 공유 landing 산출물은 기존 채빈님 `youtube_keywords_YYYY-MM-DD.csv`와 같은 이름과 컬럼을 사용한다.
+
+```bash
+# [Design Intent] 기존 sns_trend landing의 keyword,count 계약에 맞춘 파일을 생성한다.
+python daily_keyword_tracker.py \
+  --input-csv data/landing/sns_trend/week=2026-W31/raw/youtube/run_id=<run_id>/youtube_trending_KR_2026-W31.csv \
+  --date 2026-07-27 \
+  --output-file data/landing/sns_trend/week=2026-W31/raw/youtube/run_id=<run_id>/youtube_keywords_2026-07-27.csv \
+  --tokenizer regex \
+  --fail-if-exists
 ```
 
 `regex`가 기본 tokenizer이며 모든 팀 환경에서 동일하게 동작한다. `okt`를 선택했는데 KoNLPy 또는 Java가 없으면 조용히 다른 알고리즘으로 전환하지 않고 실패한다.
@@ -137,7 +150,8 @@ python compare_trends.py --history-dir history --no-plot
 
 ## v2 데이터 의미
 
-기존 `keyword,count` 파일은 한 영상 안에서 반복된 제목·태그까지 모두 센 legacy v1 데이터다. v2에서는 다음 순서로 집계한다.
+현재 `daily_keyword_tracker.py`의 외부 산출물은 `keyword,count`로 고정한다.
+내부 집계는 아래 v2 기준으로 수행한 뒤 `display_keyword`와 `occurrence_count`만 출력한다.
 
 1. Unicode NFKC 정규화
 2. 영문 casefold
@@ -163,7 +177,9 @@ v2 비교는 `prevalence` 변화의 퍼센트포인트인 `delta_pp`를 우선�
 
 ## Legacy 호환 정책
 
-- 기존 `keyword,count` CSV는 수정하지 않고 v1으로 자동 인식한다.
+- 기존 `keyword,count` CSV는 수정하지 않고 유지한다.
+- 새 landing 공유용 `keyword,count` 파일도 내부 v2 snapshot에서 `display_keyword`를 `keyword`,
+  `occurrence_count`를 `count`로 축소해 생성한다.
 - v1끼리는 `legacy_raw_count` 방식으로 비교한다.
 - v2끼리는 `prevalence_v2` 방식으로 비교한다.
 - v1과 v2는 표본과 집계 의미가 달라 혼합 비교를 거부한다.
@@ -196,13 +212,26 @@ python youtube_trending_collector.py \
 ```text
 data/landing/sns_trend/week=2026-W31/raw/youtube/run_id=manual__youtube_2026w31/
   youtube_trending_KR_2026-W31.csv
-  run_summary.json
+  youtube_keywords_YYYY-MM-DD.csv
+  crawler_run_summary.json
   error.json  # 실패 시에만 생성
 ```
 
+파일 역할:
+
+| 파일 | 역할 | 예시 컬럼 |
+| --- | --- | --- |
+| `youtube_trending_KR_2026-W31.csv` | YouTube에서 가져온 원본 영상 목록 | `video_id`, `title`, `tags`, `view_count`, `url` |
+| `youtube_keywords_YYYY-MM-DD.csv` | 원본 영상 목록에서 키워드만 뽑아 count로 집계한 결과 | `keyword`, `count` |
+| `crawler_run_summary.json` | 이번 수집 실행 로그 | 수집 개수, 실행 시간, 저장 경로 |
+| `error.json` | 실패 시 원인 추적용 로그 | `status`, `exit_code`, `error_type`, `message` |
+
+`youtube_keywords_YYYY-MM-DD.csv`는 `youtube_trending_KR_YYYY-Www.csv`를 입력으로
+`daily_keyword_tracker.py`가 생성한다.
+
 - `--week`는 `Asia/Seoul` 기준 ISO week를 `YYYY-Www` 형식으로 전달한다.
 - `--week`와 `--run-id` 중 하나만 전달하면 설정 오류(`exit 2`)다.
-- 성공 시 raw CSV와 `run_summary.json`을 기록한다.
+- 성공 시 raw CSV와 `crawler_run_summary.json`을 기록한다.
 - 수집 또는 파일 저장 실패 시 `error.json`을 기록하고 non-zero로 종료한다.
 - API key와 전체 요청 URL은 artifact에 기록하지 않는다.
 - 기존 사용자는 두 인자 없이 기존 raw 출력 방식을 계속 사용할 수 있다.

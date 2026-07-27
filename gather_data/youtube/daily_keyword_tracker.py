@@ -33,7 +33,6 @@ from youtube_trends.config import (
 from youtube_trends.csv_io import DataFileError, atomic_write_csv
 from youtube_trends.keywords import (
     DEFAULT_STOPWORDS,
-    SNAPSHOT_FIELDS,
     KeywordAnalysisError,
     build_keyword_snapshot,
     extract_keyword_occurrences,
@@ -44,6 +43,7 @@ REGION_CODE = DEFAULT_REGION_CODE
 TOTAL_VIDEOS = 100
 HISTORY_DIR = HISTORY_V2_DIR
 STOPWORDS = DEFAULT_STOPWORDS
+KEYWORD_FIELDS = ["keyword", "count"]
 RAW_FILENAME_PATTERN = re.compile(
     r"^youtube_trending_[A-Z]{2}_(\d{4})(\d{2})(\d{2})\.csv$"
 )
@@ -51,7 +51,7 @@ RAW_FILENAME_PATTERN = re.compile(
 
 def build_parser(defaults: CollectionOptions | None = None) -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Create a v2 keyword snapshot from a raw video CSV or the live API."
+        description="Create a keyword,count snapshot from a raw video CSV or the live API."
     )
     parser.add_argument(
         "--input-csv",
@@ -113,6 +113,18 @@ def _limit_unique_videos(
         if len(selected) >= limit:
             break
     return selected
+
+
+def _keyword_count_rows(rows: Iterable[dict[str, object]]) -> list[dict[str, object]]:
+    keyword_rows = [
+        {
+            "keyword": str(row["display_keyword"]),
+            "count": int(row["occurrence_count"]),
+        }
+        for row in rows
+    ]
+    keyword_rows.sort(key=lambda row: (-int(row["count"]), str(row["keyword"])))
+    return keyword_rows
 
 
 def get_trending_videos(
@@ -223,8 +235,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         atomic_write_csv(
             output,
-            SNAPSHOT_FIELDS,
-            rows,
+            KEYWORD_FIELDS,
+            _keyword_count_rows(rows),
             overwrite=not args.fail_if_exists,
         )
     except ConfigurationError as exc:
