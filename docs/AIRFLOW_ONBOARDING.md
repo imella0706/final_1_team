@@ -397,6 +397,48 @@ task 의미:
 전용입니다. 매주 자동 실행은 YouTube/고구마팜/캐릿/네이버 CLI 계약을 모두 확인한 뒤
 별도 단계에서 켭니다.
 
+### Gogumafarm landing collection DAG
+
+`sns_trend_gogumafarm_landing_collection`은 고구마팜 크롤러를 Airflow에서 실행해
+landing 원본과 curated 후보 파일을 생성합니다. 아직 사람이 검수한 processed 패키지를
+만들지는 않습니다.
+
+수동 실행 config 예시는 아래와 같습니다.
+
+```json
+{
+  "week": "2026-W31",
+  "run_date": "2026-07-27",
+  "run_id": "manual__gogumafarm_phase4_smoke",
+  "emit_curated_meme_card_candidates": true
+}
+```
+
+생성되는 로컬 산출물:
+
+```text
+data/landing/sns_trend/week=2026-W31/raw/gogumafarm/run_id=manual__gogumafarm_phase4_smoke/
+  gogumafarm_memes_20260727.json
+  gogumafarm_articles_20260727.csv
+  gogumafarm_meme_terms_20260727.csv
+  gogumafarm_meme_terms_20260727.json
+  crawler_run_summary.json
+
+data/curated/sns_trend/v3/meme_card_candidates/gogumafarm/
+  gogumafarm_meme_card_candidates_2026-W31.json
+```
+
+task 의미:
+
+| Task | 역할 |
+| --- | --- |
+| `resolve_gogumafarm_landing_context` | 이번 run의 `week`, `run_date`, `run_id`, landing/curated 경로 결정 |
+| `collect_gogumafarm_landing` | `gogumafarm_crawler.py` 실행 후 landing 파일과 curated 후보 JSON 생성 |
+| `verify_gogumafarm_landing_contract` | raw JSON, article CSV, term CSV/JSON, summary, curated 후보 파일 존재와 기본 계약 확인 |
+
+`BRANDMATE_SNS_TREND_GOGUMAFARM_LANDING_SCHEDULE`은 기본값이 비어 있으므로 manual trigger
+전용입니다. `BRANDMATE_SNS_TREND_GOGUMAFARM_CURATED_VERSION` 기본값은 `v3`입니다.
+
 ## 8. Airflow Metadata DB 정책
 
 Airflow metadata DB에는 실행 상태만 저장합니다.
