@@ -55,71 +55,82 @@ st.markdown(
     }
     .sub-title {
         font-size: 1.0rem;
-        color: #888888;
+        color: #4B5563;
         margin-bottom: 1.5rem;
     }
     .metric-container {
-        background-color: #1E1E2F;
+        background-color: #F8F9FA;
         border-radius: 10px;
         padding: 12px 18px;
-        border: 1px solid #33334B;
+        border: 1px solid #E9ECEF;
+        color: #1F2937;
     }
     .candidate-card {
-        background-color: #161625;
+        background-color: #FFFFFF;
         border-radius: 12px;
         padding: 18px;
         margin-bottom: 16px;
-        border-left: 5px solid #FF4B4B;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        border: 1px solid #E5E7EB;
+        border-left: 6px solid #FF4B4B;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+        color: #1F2937;
     }
     .candidate-card-accepted {
-        border-left: 5px solid #00C853 !important;
+        border-left: 6px solid #16A34A !important;
+        background-color: #F0FDF4 !important;
     }
     .candidate-card-rejected {
-        border-left: 5px solid #D50000 !important;
+        border-left: 6px solid #DC2626 !important;
+        background-color: #FEF2F2 !important;
     }
     .candidate-card-held {
-        border-left: 5px solid #FFD600 !important;
+        border-left: 6px solid #D97706 !important;
+        background-color: #FFFBEB !important;
     }
     .badge-accept {
-        background-color: #1b5e20;
-        color: #81c784;
-        padding: 3px 8px;
-        border-radius: 4px;
-        font-weight: bold;
+        background-color: #DCFCE7;
+        color: #15803D;
+        padding: 4px 10px;
+        border-radius: 6px;
+        font-weight: 700;
         font-size: 0.8rem;
+        border: 1px solid #86EFAC;
     }
     .badge-reject {
-        background-color: #b71c1c;
-        color: #ef9a9a;
-        padding: 3px 8px;
-        border-radius: 4px;
-        font-weight: bold;
+        background-color: #FEE2E2;
+        color: #B91C1C;
+        padding: 4px 10px;
+        border-radius: 6px;
+        font-weight: 700;
         font-size: 0.8rem;
+        border: 1px solid #FCA5A5;
     }
     .badge-hold {
-        background-color: #f57f17;
-        color: #fff59d;
-        padding: 3px 8px;
-        border-radius: 4px;
-        font-weight: bold;
+        background-color: #FEF3C7;
+        color: #B45309;
+        padding: 4px 10px;
+        border-radius: 6px;
+        font-weight: 700;
         font-size: 0.8rem;
+        border: 1px solid #FDE047;
     }
     .badge-pending {
-        background-color: #424242;
-        color: #e0e0e0;
-        padding: 3px 8px;
-        border-radius: 4px;
-        font-weight: bold;
+        background-color: #F3F4F6;
+        color: #4B5563;
+        padding: 4px 10px;
+        border-radius: 6px;
+        font-weight: 700;
         font-size: 0.8rem;
+        border: 1px solid #E5E7EB;
     }
     .badge-naver {
-        background-color: #03cf5d;
-        color: #ffffff;
-        padding: 3px 8px;
-        border-radius: 4px;
-        font-weight: bold;
+        background-color: #E8F5E9;
+        color: #2E7D32;
+        padding: 4px 10px;
+        border-radius: 6px;
+        font-weight: 700;
         font-size: 0.75rem;
+        border: 1px solid #A5D6A7;
     }
     </style>
     """,
@@ -172,7 +183,10 @@ def init_session_state(week: str) -> None:
 
 def main() -> None:
     st.markdown('<div class="main-title">🔥 BrandMate SNS TrendCard Review Dashboard</div>', unsafe_allow_html=True)
-    st.markdown('<div class="sub-title">Phase 5-6: Cross-Platform Review Queue & Human Approval Gate (Top 100 Cut-off & 2-Tier Review)</div>', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="sub-title">크로스 플랫폼 트렌드 검수 대기열 & 브랜드 마케터 승인 게이트 (Top 100 컷오프 & 2단계 빠른 검수)</div>',
+        unsafe_allow_html=True,
+    )
 
     # Sidebar setup
     st.sidebar.header("⚙️ Context & Dataset Selector")
@@ -208,6 +222,24 @@ def main() -> None:
     # Apply Top-100 Cutoff for safety net & noise reduction
     top_100_candidates = raw_candidates[:TOP_K_CUTOFF]
 
+    # Synchronize session_state decisions with widget inputs before metrics & rendering
+    for k, v in list(st.session_state.items()):
+        if "_decision_" in k:
+            cand_id = k.rsplit("_decision_", 1)[-1]
+            prefix = k.rsplit("_decision_", 1)[0]
+            note_val = st.session_state.get(f"{prefix}_note_{cand_id}", "")
+            if v != "pending":
+                st.session_state["decisions"][cand_id] = {
+                    "candidate_id": cand_id,
+                    "review_decision": v,
+                    "reviewer": st.session_state.get("reviewer_name", "reviewer_1"),
+                    "reviewed_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                    "review_note": note_val,
+                    "decision_source": "streamlit",
+                }
+            elif cand_id in st.session_state["decisions"] and v == "pending":
+                del st.session_state["decisions"][cand_id]
+
     # Metrics Calculations
     decisions_map = st.session_state.get("decisions", {})
     accepted_ids = [cid for cid, d in decisions_map.items() if d.get("review_decision") == "accept"]
@@ -224,16 +256,23 @@ def main() -> None:
 
     st.markdown("---")
 
-    # 2-Tier Review Tabs
-    tab1, tab2, tab3 = st.tabs([
+    # 2-Tier Review Tabs + User Guide Tab
+    tab1, tab2, tab3, tab4 = st.tabs([
         "⚡ Top 20 Default Review (3분 빠른 검수)",
         "🔍 Top 100 Candidate Search & Filter (컷오프 탐색)",
         "🚀 Release & Persistence Gate",
+        "📖 검수 매뉴얼 & 사용 가이드 (SOP)",
     ])
 
     # Tab 1: Top 20 Default View
     with tab1:
-        st.info("💡 **시스템 추천 Top 20 카드**입니다. 주간 트렌드 신호가 가장 강력한 항목이며, 3분 이내로 빠르게 검수를 진행할 수 있습니다.")
+        col_info, col_save = st.columns([3, 1])
+        with col_info:
+            st.info("💡 **시스템 추천 Top 20 카드**입니다. 3분 이내로 빠르게 검수를 진행하고 우측 버튼으로 영구 저장하세요.")
+        with col_save:
+            if st.button("💾 검수 내역 영구 저장", type="primary", key="quick_save_top20", use_container_width=True):
+                save_and_validate_decisions(selected_week, top_100_candidates)
+
         top_20_candidates = top_100_candidates[:DEFAULT_TOP_COUNT]
         render_candidate_list(top_20_candidates, selected_week, key_prefix="top20")
 
@@ -286,6 +325,38 @@ def main() -> None:
             if st.button("🚀 Trigger Airflow Processed Release DAG", use_container_width=True):
                 trigger_airflow_release_dag(selected_week)
 
+    # Tab 4: User Manual & SOP
+    with tab4:
+        st.markdown(
+            """
+            ### 📖 BrandMate 대시보드 검수 매뉴얼 (Standard Operating Procedure)
+
+            #### 1. 2단계 검수 아키텍처 (2-Tier Review)
+            - **⚡ Top 20 Default Review**: Scoring 알고리즘이 선정한 최상위 20개 트렌드 후보입니다. 주간 3분 이내로 빠르게 검수를 완료하는 기본 추천 탭입니다.
+            - **🔍 Top 100 Search & Filter**: 1,975개 전체 수집 데이터 중 상위 100개 컷오프 내에서 키워드/플랫폼별로 탐색하는 안전망 탭입니다.
+
+            ---
+
+            #### 2. 검수 메모 (`Review Note`) 작성 가이드 [★ 중요]
+            `Review Note`는 단순 메모가 아니라 **후속 LLM AI 광고 생성의 품질을 결정짓는 핵심 가이드**입니다.
+
+            - **승인 (`accept`) 시**:
+              - 여기서 입력한 `Review Note`는 최종 **TrendCard의 공식 `meaning` (유래/의미/마케팅 활용법)** 필드로 자동 승격됩니다.
+              - 💡 **좋은 작성 예시**: *"좋아하는 대상을 먼저 부르고 '니가 좋아'라고 고백한 뒤 특징을 나열하는 SNS 바이럴 밈. 대표 상품명과 입력 특징을 좋아하는 이유로 연결하는 카피 생성에 적합."*
+              - ⚠️ **잘못된 작성 예시**: *"Good meme"*, *"좋음"*
+            - **반려 (`reject`) 시**:
+              - 팀원 간 공유를 위해 반려 사유를 남깁니다. (예: *"저작권/인물 패러디 위험"*, *"유행이 지난 밈"*, *"브랜드 톤앤매너 불일치"*)
+            - **보류 (`hold`) 시**:
+              - 보류 사유를 남깁니다. (예: *"네이버 블로그 검색량 추이 주중 재검토 필요"*)
+
+            ---
+
+            #### 3. 검수 완료 및 릴리스 배포 흐름
+            1. **`💾 Save Review Decisions` 클릭**: 작성한 검수 결과가 `review_decisions.json`에 안전하게 저장을 완료합니다.
+            2. **`🚀 Trigger Airflow Processed Release DAG` 클릭**: 승인된 카드들을 최종 `processed/v3/` 패키지로 변환하고 Airflow 무결성 검증을 거쳐 방출합니다.
+            """
+        )
+
 
 def render_candidate_list(candidates: list[dict[str, Any]], week: str, key_prefix: str) -> None:
     if not candidates:
@@ -302,7 +373,10 @@ def render_candidate_list(candidates: list[dict[str, Any]], week: str, key_prefi
         usage_policy = cand.get("usage_policy", "candidate")
         sources = cand.get("source_families", [])
 
-        current_decision = decisions_map.get(cand_id, {}).get("review_decision", "pending")
+        radio_key = f"{key_prefix}_decision_{cand_id}"
+        current_decision = st.session_state.get(
+            radio_key, decisions_map.get(cand_id, {}).get("review_decision", "pending")
+        )
 
         # Card container class
         card_class = "candidate-card"
@@ -323,13 +397,13 @@ def render_candidate_list(candidates: list[dict[str, Any]], week: str, key_prefi
                 f"""
                 <div class="{card_class}">
                     <div style="display: flex; justify-content: space-between; align-items: center;">
-                        <span style="font-size: 1.25rem; font-weight: 700;">Rank #{rank} | {display_term}</span>
+                        <span style="font-size: 1.25rem; font-weight: 700; color: #111827;">Rank #{rank} | {display_term}</span>
                         <div>
                             {badge_html}
-                            <span style="background-color: #333; color: #aaa; padding: 2px 6px; border-radius: 4px; font-size: 0.75rem; margin-left: 6px;">ID: {cand_id}</span>
+                            <span style="background-color: #E5E7EB; color: #374151; padding: 3px 8px; border-radius: 6px; font-size: 0.75rem; margin-left: 6px; font-weight: 600;">ID: {cand_id}</span>
                         </div>
                     </div>
-                    <div style="margin-top: 6px; font-size: 0.85rem; color: #aaa;">
+                    <div style="margin-top: 8px; font-size: 0.88rem; color: #4B5563;">
                         <b>Sources:</b> {', '.join(sources)} | <b>Policy:</b> {usage_policy} | <b>Processed Eligible:</b> {'✅ Yes' if eligible else '❌ No (Reference-only)'}
                     </div>
                 </div>
