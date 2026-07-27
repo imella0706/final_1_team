@@ -123,7 +123,7 @@ st.markdown(
     }
     </style>
     """,
-    unsafe_allow_dict_kwargs=True,
+    unsafe_allow_html=True,
 )
 
 
@@ -334,7 +334,7 @@ def render_candidate_list(candidates: list[dict[str, Any]], week: str, key_prefi
                     </div>
                 </div>
                 """,
-                unsafe_allow_dict_kwargs=True,
+                unsafe_allow_html=True,
             )
 
             # Interactive decision form for candidate

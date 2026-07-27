@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import datetime
+import os
 from pathlib import Path
 import sys
 from typing import Any
@@ -8,18 +9,26 @@ from typing import Any
 from airflow import DAG
 from airflow.operators.python import PythonOperator
 
-# Add project root and gather_data to sys.path
-DAG_DIR = Path(__file__).resolve().parent
-AIRFLOW_DIR = DAG_DIR.parent
-PROJECT_ROOT = AIRFLOW_DIR.parent
-GATHER_DATA_DIR = PROJECT_ROOT / "gather_data"
 
-if str(PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(PROJECT_ROOT))
-if str(AIRFLOW_DIR / "include") not in sys.path:
-    sys.path.insert(0, str(AIRFLOW_DIR / "include"))
-if str(GATHER_DATA_DIR) not in sys.path:
-    sys.path.insert(0, str(GATHER_DATA_DIR))
+def _resolve_repo_root() -> Path:
+    env_value = os.getenv("BRANDMATE_REPO_ROOT")
+    if env_value and Path(env_value).exists():
+        return Path(env_value)
+    current = Path(__file__).resolve()
+    for parent in current.parents:
+        if (parent / "gather_data").exists():
+            return parent
+    return current.parents[2]
+
+
+PROJECT_ROOT = _resolve_repo_root()
+AIRFLOW_DIR = PROJECT_ROOT / "airflow"
+GATHER_DATA_DIR = PROJECT_ROOT / "gather_data"
+INCLUDE_DIR = Path(os.getenv("BRANDMATE_AIRFLOW_INCLUDE_DIR", AIRFLOW_DIR / "include"))
+
+for p in (PROJECT_ROOT, GATHER_DATA_DIR, INCLUDE_DIR):
+    if str(p) not in sys.path and p.exists():
+        sys.path.insert(0, str(p))
 
 from sns_trend.alerts import (  # noqa: E402
     notify_airflow_failure,
