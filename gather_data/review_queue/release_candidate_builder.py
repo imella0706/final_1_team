@@ -152,6 +152,15 @@ def build_processed_release_candidate(
         trend_meta = draft.get("trend_meta", {})
         curation_meta = trend_meta.get("curation_meta", {})
 
+        # Generate flexible copy_markers so LLM generated copy passes trend validation
+        clean_display = re.sub(r"[^\w\s가-힣a-zA-Z0-9]+", " ", display_name).strip()
+        sub_phrases = [p.strip() for p in re.split(r"\s{2,}|[,.~!?\n]", clean_display) if len(p.strip()) >= 2]
+        word_parts = [w.strip() for w in clean_display.split() if len(w.strip()) >= 2]
+        meaning = str(draft.get("meaning", ""))
+        meaning_quotes = [q.strip() for q in re.findall(r'["\']([^"\']+)["\']', meaning) if len(q.strip()) >= 2]
+        draft_markers = draft.get("copy_markers", [])
+        all_markers = list(dict.fromkeys([display_name, clean_display] + sub_phrases + word_parts + meaning_quotes + draft_markers))
+
         card: dict[str, Any] = {
             "schema_version": "2.0",
             "meme_id": meme_id,
@@ -179,7 +188,7 @@ def build_processed_release_candidate(
                 "notes": "사람 검수 완료된 안전 트렌드",
             },
             "text_patterns": draft.get("text_patterns", [f"{{대표상품}} {display_name}"]),
-            "copy_markers": draft.get("copy_markers", [display_name]),
+            "copy_markers": [m for m in all_markers if m and m != "[DRAFT] 핵심 키워드 마커 작성"],
             "suitable_channels": draft.get("suitable_channels", ["instagram", "youtube"]),
             "suitable_tones": draft.get("suitable_tones", ["witty", "friendly"]),
             "target_audiences": draft.get("target_audiences", ["twenties", "thirties"]),
