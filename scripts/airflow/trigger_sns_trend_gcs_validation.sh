@@ -9,12 +9,21 @@ source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/_common.sh"
 airflow_require_env
 
 dag_id="sns_trend_processed_validation"
+selection_mode="${AIRFLOW_SNS_TREND_SELECTION_MODE:-prefix}"
 version="${AIRFLOW_SNS_TREND_VERSION:-v2}"
 source_gcs_prefix="${AIRFLOW_SNS_TREND_GCS_PREFIX:-gs://ssakda/projects/brandmate/data/processed/sns_trend/v2/cross_platform_signal_top_candidates/}"
 write_gcs_summary="${AIRFLOW_WRITE_GCS_SUMMARY:-true}"
-run_label="${AIRFLOW_RUN_LABEL:-phase2_5_smoke}"
+force_revalidate="${AIRFLOW_FORCE_REVALIDATE:-true}"
 run_timestamp="$(date -u +%Y%m%dT%H%M%S)"
-run_id="manual__sns_trend_${version}_gcs_${run_label}_${run_timestamp}"
+
+case "${selection_mode}" in
+  prefix|latest)
+    ;;
+  *)
+    echo "AIRFLOW_SNS_TREND_SELECTION_MODE must be prefix or latest: ${selection_mode}" >&2
+    exit 2
+    ;;
+esac
 
 case "${write_gcs_summary}" in
   true|false)
@@ -25,17 +34,48 @@ case "${write_gcs_summary}" in
     ;;
 esac
 
-conf="$(
-  printf \
-    '{"version":"%s","source_gcs_prefix":"%s","write_gcs_summary":%s}' \
-    "${version}" \
-    "${source_gcs_prefix}" \
-    "${write_gcs_summary}"
-)"
+case "${force_revalidate}" in
+  true|false)
+    ;;
+  *)
+    echo "AIRFLOW_FORCE_REVALIDATE must be true or false: ${force_revalidate}" >&2
+    exit 2
+    ;;
+esac
+
+case "${selection_mode}" in
+  prefix)
+    run_label="${AIRFLOW_RUN_LABEL:-phase2_5_smoke}"
+    run_id="manual__sns_trend_${version}_gcs_${run_label}_${run_timestamp}"
+    conf="$(
+      printf \
+        '{"version":"%s","source_gcs_prefix":"%s","write_gcs_summary":%s}' \
+        "${version}" \
+        "${source_gcs_prefix}" \
+        "${write_gcs_summary}"
+    )"
+    ;;
+  latest)
+    run_label="${AIRFLOW_RUN_LABEL:-phase3_latest_smoke}"
+    run_id="manual__sns_trend_latest_gcs_${run_label}_${run_timestamp}"
+    conf="$(
+      printf \
+        '{"write_gcs_summary":%s,"force_revalidate":%s}' \
+        "${write_gcs_summary}" \
+        "${force_revalidate}"
+    )"
+    ;;
+esac
 
 echo "triggering ${dag_id}"
 echo "run_id=${run_id}"
-echo "source_gcs_prefix=${source_gcs_prefix}"
+echo "selection_mode=${selection_mode}"
+if [[ "${selection_mode}" == "prefix" ]]; then
+  echo "source_gcs_prefix=${source_gcs_prefix}"
+else
+  echo "source_gcs_prefix=<omitted for latest discovery>"
+  echo "force_revalidate=${force_revalidate}"
+fi
 echo "write_gcs_summary=${write_gcs_summary}"
 
 airflow_compose exec -T airflow-scheduler \

@@ -270,6 +270,22 @@ AIRFLOW_SNS_TREND_GCS_PREFIX=gs://ssakda/projects/brandmate/data/processed/sns_t
 ./scripts/airflow/trigger_sns_trend_gcs_validation.sh
 ```
 
+Phase 3 latest discovery 경로를 검증할 때는 `source_gcs_prefix`를 직접 넘기면 안 됩니다. 같은 스크립트에서 `AIRFLOW_SNS_TREND_SELECTION_MODE=latest`를 주면 `source_gcs_prefix`와 `version`을 빼고 trigger해서, DAG가 `BRANDMATE_SNS_TREND_PROCESSED_GCS_ROOT` 아래에서 최신 `vN`을 직접 찾게 합니다.
+
+```bash
+# [Design Intent] source_gcs_prefix 없이 latest processed vN discovery 경로를 실제 Airflow DAG로 검증한다.
+AIRFLOW_SNS_TREND_SELECTION_MODE=latest \
+./scripts/airflow/trigger_sns_trend_gcs_validation.sh
+```
+
+기본값은 `force_revalidate=true`입니다. 이미 같은 version이 검증된 상태에서도 smoke test가 validator까지 지나가도록 하기 위한 설정입니다. same-version skip 정책 자체를 확인하고 싶을 때만 아래처럼 끕니다.
+
+```bash
+AIRFLOW_SNS_TREND_SELECTION_MODE=latest \
+AIRFLOW_FORCE_REVALIDATE=false \
+./scripts/airflow/trigger_sns_trend_gcs_validation.sh
+```
+
 `sync_processed_package_from_gcs`가 아래처럼 실패하면 GCS 인증 문제가 아니라 writable cache 권한 문제입니다.
 
 ```text
