@@ -32,6 +32,8 @@ RETRYABLE_STATUS = {429, 500, 502, 503, 504}
 KST = timezone(timedelta(hours=9))
 REPO_ROOT = Path(__file__).resolve().parents[3]
 LANDING_DATA_ROOT = REPO_ROOT / "data" / "landing" / "sns_trend"
+CURATED_DATA_ROOT = REPO_ROOT / "data" / "curated" / "sns_trend"
+DEFAULT_CURATED_VERSION = "v3"
 CRAWLER_RUN_SUMMARY_FILENAME = "crawler_run_summary.json"
 CRAWLER_ERROR_FILENAME = "error.json"
 
@@ -127,6 +129,13 @@ def parse_iso_week(value: str) -> str:
     return f"{year}-W{week_number:02d}"
 
 
+def parse_dataset_version(value: str) -> str:
+    normalized = clean_text(value).lower()
+    if not re.fullmatch(r"v[1-9]\d*", normalized):
+        raise CrawlerError("dataset version must use vN format, for example v3")
+    return normalized
+
+
 def parse_run_id(value: str) -> str:
     normalized = clean_text(value)
     if not normalized:
@@ -143,6 +152,21 @@ def landing_run_directory(
     root: Path = LANDING_DATA_ROOT,
 ) -> Path:
     return root / f"week={week}" / "raw" / "careet" / f"run_id={run_id}"
+
+
+def curated_meme_card_candidates_path(
+    *,
+    version: str,
+    week: str,
+    root: Path = CURATED_DATA_ROOT,
+) -> Path:
+    return (
+        root
+        / version
+        / "meme_card_candidates"
+        / "careet"
+        / f"careet_meme_card_candidates_{week}.json"
+    )
 
 
 class PoliteSession:
@@ -669,6 +693,65 @@ def emit_landing_suspect_terms(output_root: Path, meme_rows: Iterable[dict[str, 
     return suspect_path
 
 
+def build_curated_meme_card_candidates_document(
+    *,
+    articles: Iterable[dict[str, Any]],
+    meme_rows: Iterable[dict[str, Any]],
+    version: str,
+    week: str,
+    run_id: str,
+) -> dict[str, Any]:
+    article_list = list(articles)
+    meme_list = list(meme_rows)
+    terms = final_meme_terms(meme_list)
+    return {
+        "schema_version": "1.0",
+        "dataset_name": "sns_trend",
+        "version": version,
+        "stage": "curated",
+        "artifact_name": "meme_card_candidates",
+        "source_family": "careet",
+        "curation_status": "rule_filtered",
+        "review_status": "pending",
+        "collected_week": week,
+        "source_landing_run_id": run_id,
+        "generated_at": now_utc_z(),
+        "source_article_count": len(article_list),
+        "source_meme_item_count": len(meme_list),
+        "term_count": len(terms),
+        "terms": terms,
+        "display_terms": terms,
+    }
+
+
+def write_curated_meme_card_candidates(
+    *,
+    articles: Iterable[dict[str, Any]],
+    meme_rows: Iterable[dict[str, Any]],
+    version: str,
+    week: str,
+    run_id: str,
+    root: Path = CURATED_DATA_ROOT,
+    fail_if_exists: bool = False,
+) -> Path:
+    output_path = curated_meme_card_candidates_path(
+        version=version,
+        week=week,
+        root=root,
+    )
+    if fail_if_exists:
+        _ensure_outputs_do_not_exist([output_path])
+    payload = build_curated_meme_card_candidates_document(
+        articles=articles,
+        meme_rows=meme_rows,
+        version=version,
+        week=week,
+        run_id=run_id,
+    )
+    atomic_write_json(output_path, payload)
+    return output_path
+
+
 def read_csv_rows(path: Path) -> list[dict[str, str]]:
     with path.open("r", encoding="utf-8-sig", newline="") as handle:
         return list(csv.DictReader(handle))
@@ -806,6 +889,15 @@ def crawl(args: argparse.Namespace, client: PoliteSession | None = None) -> tupl
         paths = [article_path, meme_path, final_path, suspect_path]
         if landing is not None:
             paths.append(output_root / CRAWLER_RUN_SUMMARY_FILENAME)
+            if getattr(args, "emit_curated_meme_card_candidates", False):
+                week, _ = landing
+                paths.append(
+                    curated_meme_card_candidates_path(
+                        version=args.curated_version,
+                        week=week,
+                        root=args.curated_root,
+                    )
+                )
         _ensure_outputs_do_not_exist(paths)
     previous_articles = read_csv_by_key(article_path, "article_id") if args.resume else {}
     previous_memes = read_csv_by_key(meme_path, "meme_id") if args.resume else {}
@@ -928,6 +1020,23 @@ def crawl(args: argparse.Namespace, client: PoliteSession | None = None) -> tupl
     atomic_write_csv(suspect_path, SUSPECT_TERM_FIELDS, suspect_non_term_rows(meme_rows))
     if landing is not None:
         week, run_id = landing
+        outputs = {
+            "articles_csv": article_path,
+            "memes_csv": meme_path,
+            "meme_terms_json": final_path,
+            "meme_term_suspects_csv": suspect_path,
+        }
+        if getattr(args, "emit_curated_meme_card_candidates", False):
+            curated_path = write_curated_meme_card_candidates(
+                articles=articles,
+                meme_rows=meme_rows,
+                version=args.curated_version,
+                week=week,
+                run_id=run_id,
+                root=args.curated_root,
+                fail_if_exists=False,
+            )
+            outputs["curated_meme_card_candidates"] = curated_path
         clear_landing_error(output_root)
         write_landing_summary(
             output_dir=output_root,
@@ -936,12 +1045,7 @@ def crawl(args: argparse.Namespace, client: PoliteSession | None = None) -> tupl
             started_at=started_at,
             article_count=len(articles),
             meme_count=len(meme_rows),
-            outputs={
-                "articles_csv": article_path,
-                "memes_csv": meme_path,
-                "meme_terms_json": final_path,
-                "meme_term_suspects_csv": suspect_path,
-            },
+            outputs=outputs,
             mode="landing",
         )
     LOG.info(
@@ -968,6 +1072,17 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--date", dest="run_date", help="output date in YYYY-MM-DD format")
     parser.add_argument("--week", help="landing partition in Asia/Seoul ISO week format (YYYY-Www)")
     parser.add_argument("--run-id", help="landing run identifier")
+    parser.add_argument(
+        "--emit-curated-meme-card-candidates",
+        action="store_true",
+        help="also write rule-filtered curated meme_card_candidates JSON for landing runs",
+    )
+    parser.add_argument(
+        "--curated-version",
+        default=DEFAULT_CURATED_VERSION,
+        help="curated dataset version, for example v3",
+    )
+    parser.add_argument("--curated-root", type=Path, default=CURATED_DATA_ROOT)
     parser.add_argument("--fail-if-exists", action="store_true", help="fail if target output files already exist")
     parser.add_argument("--list-only", action="store_true")
     parser.add_argument("--resume", action="store_true")
@@ -995,7 +1110,10 @@ def validate_args(parser: argparse.ArgumentParser, args: argparse.Namespace) -> 
         parser.error("--max-image-bytes는 0보다 커야 합니다")
 
     try:
-        _landing_context(args)
+        landing = _landing_context(args)
+        args.curated_version = parse_dataset_version(args.curated_version)
+        if args.emit_curated_meme_card_candidates and landing is None:
+            parser.error("--emit-curated-meme-card-candidates requires --week and --run-id")
         if args.run_date is not None:
             parse_run_date(args.run_date)
     except CrawlerError as exc:

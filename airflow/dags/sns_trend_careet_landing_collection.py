@@ -1,8 +1,8 @@
-"""Airflow DAG for collecting Careet landing artifacts.
+"""Airflow DAG for collecting Careet landing and curated candidate artifacts.
 
 [Design Intent] Keep Phase 4 orchestration thin: Airflow runs the existing
-Careet crawler CLI and verifies the landing artifact contract. It does not
-promote candidate terms to the official processed package.
+Careet crawler CLI and verifies the landing/curated artifact contract. It does
+not promote candidate terms to the official processed package.
 """
 
 from __future__ import annotations
@@ -27,6 +27,7 @@ AIRFLOW_ROOT = Path(__file__).resolve().parents[1]
 REPO_ROOT = Path(os.getenv("BRANDMATE_REPO_ROOT", AIRFLOW_ROOT.parent))
 CAREET_DIR = REPO_ROOT / "gather_data" / "crawling" / "careet"
 LANDING_ROOT = REPO_ROOT / "data" / "landing" / "sns_trend"
+CURATED_ROOT = REPO_ROOT / "data" / "curated" / "sns_trend"
 
 CAREET_LANDING_SCHEDULE = (
     os.getenv("BRANDMATE_SNS_TREND_CAREET_LANDING_SCHEDULE", "").strip() or None
@@ -34,6 +35,10 @@ CAREET_LANDING_SCHEDULE = (
 CAREET_DELAY_SECONDS = float(os.getenv("BRANDMATE_SNS_TREND_CAREET_DELAY", "1.5"))
 CAREET_TIMEOUT_SECONDS = float(os.getenv("BRANDMATE_SNS_TREND_CAREET_TIMEOUT", "15"))
 CAREET_RETRIES = int(os.getenv("BRANDMATE_SNS_TREND_CAREET_RETRIES", "3"))
+CAREET_CURATED_VERSION = os.getenv(
+    "BRANDMATE_SNS_TREND_CAREET_CURATED_VERSION",
+    "v3",
+).strip()
 
 from airflow.decorators import dag, task  # noqa: E402
 from airflow.exceptions import AirflowException  # noqa: E402
@@ -102,12 +107,20 @@ def _resolve_careet_landing_config(
     dag_run_id: str,
     logical_date: Any,
     landing_root: Path = LANDING_ROOT,
+    curated_root: Path = CURATED_ROOT,
     careet_dir: Path = CAREET_DIR,
 ) -> dict[str, Any]:
     run_datetime = _date_from_logical_date(logical_date)
     run_date = str(conf.get("run_date") or conf.get("date") or run_datetime.date())
     week = str(conf.get("week") or _iso_week(run_datetime)).strip().upper()
     run_id = _safe_path_fragment(str(conf.get("run_id") or dag_run_id))
+    curated_version = str(
+        conf.get("curated_version") or CAREET_CURATED_VERSION
+    ).strip()
+    emit_curated = _bool_conf(
+        conf.get("emit_curated_meme_card_candidates"),
+        default=True,
+    )
     start_page = _int_conf(conf.get("start_page"), default=1, minimum=1)
     end_page = conf.get("end_page")
     end_page_value = (
@@ -133,6 +146,8 @@ def _resolve_careet_landing_config(
         raise AirflowException("week must use YYYY-Www format")
     if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", run_date):
         raise AirflowException("run_date must use YYYY-MM-DD format")
+    if not re.fullmatch(r"v[1-9]\d*", curated_version):
+        raise AirflowException("curated_version must use vN format")
     if end_page_value is not None and start_page > end_page_value:
         raise AirflowException("start_page must be less than or equal to end_page")
     if summary_mode not in {"rule", "off"}:
@@ -148,6 +163,13 @@ def _resolve_careet_landing_config(
         / SOURCE_NAME
         / f"run_id={run_id}"
     )
+    curated_candidates = (
+        curated_root
+        / curated_version
+        / "meme_card_candidates"
+        / SOURCE_NAME
+        / f"careet_meme_card_candidates_{week}.json"
+    )
 
     return {
         "source": SOURCE_NAME,
@@ -155,6 +177,8 @@ def _resolve_careet_landing_config(
         "run_id": run_id,
         "run_date": run_date,
         "stamp": stamp,
+        "curated_version": curated_version,
+        "emit_curated_meme_card_candidates": emit_curated,
         "start_page": start_page,
         "end_page": end_page_value,
         "delay": delay,
@@ -168,12 +192,14 @@ def _resolve_careet_landing_config(
         "log_level": log_level,
         "careet_dir": str(careet_dir),
         "run_dir": str(run_dir),
+        "curated_root": str(curated_root),
         "article_csv": str(run_dir / f"careet_articles_{stamp}.csv"),
         "meme_csv": str(run_dir / f"careet_memes_{stamp}.csv"),
         "term_json": str(run_dir / f"careet_meme_terms_{stamp}.json"),
         "suspect_csv": str(run_dir / f"careet_meme_term_suspects_{stamp}.csv"),
         "crawler_run_summary": str(run_dir / "crawler_run_summary.json"),
         "error_json": str(run_dir / "error.json"),
+        "curated_meme_card_candidates": str(curated_candidates),
     }
 
 
@@ -209,6 +235,10 @@ def _collector_command(config: dict[str, Any]) -> list[str]:
         str(config["run_date"]),
         "--output-dir",
         str(config["run_dir"]),
+        "--curated-version",
+        str(config["curated_version"]),
+        "--curated-root",
+        str(config["curated_root"]),
         "--start-page",
         str(config["start_page"]),
         "--delay",
@@ -232,6 +262,8 @@ def _collector_command(config: dict[str, Any]) -> list[str]:
         command.append("--list-only")
     if config.get("download_thumbnails"):
         command.append("--download-thumbnails")
+    if config.get("emit_curated_meme_card_candidates"):
+        command.append("--emit-curated-meme-card-candidates")
     return command
 
 
@@ -242,8 +274,15 @@ def _verify_careet_landing_artifacts(config: dict[str, Any]) -> dict[str, Any]:
     suspect_csv = Path(config["suspect_csv"])
     summary_json = Path(config["crawler_run_summary"])
     error_json = Path(config["error_json"])
+    curated_candidates = (
+        Path(config["curated_meme_card_candidates"])
+        if config.get("emit_curated_meme_card_candidates")
+        else None
+    )
 
     expected_paths = [article_csv, meme_csv, term_json, suspect_csv, summary_json]
+    if curated_candidates is not None:
+        expected_paths.append(curated_candidates)
     missing = [str(path) for path in expected_paths if not path.is_file()]
     if missing:
         raise AirflowException(f"missing Careet landing artifacts: {missing}")
@@ -273,6 +312,31 @@ def _verify_careet_landing_artifacts(config: dict[str, Any]) -> dict[str, Any]:
     if int(summary.get("meme_count", -1)) != meme_rows:
         raise AirflowException("meme CSV row count does not match summary")
 
+    curated_check: dict[str, Any] | None = None
+    if curated_candidates is not None:
+        curated_payload = json.loads(curated_candidates.read_text(encoding="utf-8"))
+        if curated_payload.get("stage") != "curated":
+            raise AirflowException("curated candidate stage must be curated")
+        if curated_payload.get("artifact_name") != "meme_card_candidates":
+            raise AirflowException(
+                "curated candidate artifact_name must be meme_card_candidates"
+            )
+        if curated_payload.get("source_family") != SOURCE_NAME:
+            raise AirflowException("curated candidate source_family must be careet")
+        if curated_payload.get("source_landing_run_id") != config["run_id"]:
+            raise AirflowException(
+                "curated candidate source_landing_run_id does not match"
+            )
+        if int(curated_payload.get("term_count", -1)) != len(
+            curated_payload.get("terms", [])
+        ):
+            raise AirflowException("curated candidate term_count does not match terms")
+        curated_check = {
+            "path": str(curated_candidates),
+            "term_count": curated_payload.get("term_count"),
+            "review_status": curated_payload.get("review_status"),
+        }
+
     return {
         **config,
         "artifact_check": {
@@ -286,6 +350,7 @@ def _verify_careet_landing_artifacts(config: dict[str, Any]) -> dict[str, Any]:
             "meme_count": meme_rows,
             "term_count": len(terms),
             "suspect_row_count": suspect_rows,
+            "curated_meme_card_candidates": curated_check,
         },
     }
 
@@ -299,7 +364,7 @@ def _verify_careet_landing_artifacts(config: dict[str, Any]) -> dict[str, Any]:
     tags=["brandmate", "sns_trend", "landing", "careet"],
     default_args={"owner": "brandmate-data", "retries": 0},
     doc_md="""
-    Collect Careet `sns_trend` landing artifacts.
+    Collect Careet `sns_trend` landing and curated candidate artifacts.
 
     Manual trigger config:
 
@@ -308,7 +373,9 @@ def _verify_careet_landing_artifacts(config: dict[str, Any]) -> dict[str, Any]:
       "week": "2026-W31",
       "run_date": "2026-07-27",
       "run_id": "manual__careet_phase4_smoke",
-      "end_page": 1
+      "end_page": 1,
+      "curated_version": "v3",
+      "emit_curated_meme_card_candidates": true
     }
     ```
     """,

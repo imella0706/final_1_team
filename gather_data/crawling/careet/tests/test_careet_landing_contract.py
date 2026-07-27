@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import json
 import tempfile
 import unittest
 from argparse import Namespace
@@ -28,6 +29,56 @@ class CareetLandingContractTest(unittest.TestCase):
 
         with self.assertRaises(careet_crawler.CrawlerError):
             careet_crawler._landing_context(Namespace(week=None, run_id="manual__careet"))
+
+    def test_curated_candidate_path_uses_standard_dataset_location(self) -> None:
+        result = careet_crawler.curated_meme_card_candidates_path(
+            version="v3",
+            week="2026-W31",
+            root=Path("/repo/data/curated/sns_trend"),
+        )
+
+        self.assertEqual(
+            result,
+            Path(
+                "/repo/data/curated/sns_trend/v3/meme_card_candidates/careet/"
+                "careet_meme_card_candidates_2026-W31.json"
+            ),
+        )
+
+    def test_write_curated_candidates_records_landing_lineage(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            output_path = careet_crawler.write_curated_meme_card_candidates(
+                articles=[{"article_id": "1"}],
+                meme_rows=[
+                    {"meme_name": "좋좋소", "parent_section": "요즘 뜨는 밈"},
+                    {"meme_name": "좋좋소", "parent_section": "요즘 뜨는 밈"},
+                    {"meme_name": "목차", "parent_section": "요즘 뜨는 밈"},
+                ],
+                version="v3",
+                week="2026-W31",
+                run_id="manual__careet_landing_2026W31",
+                root=Path(temporary),
+            )
+
+            payload = json.loads(output_path.read_text(encoding="utf-8"))
+
+            self.assertEqual(payload["stage"], "curated")
+            self.assertEqual(payload["artifact_name"], "meme_card_candidates")
+            self.assertEqual(payload["source_family"], "careet")
+            self.assertEqual(payload["review_status"], "pending")
+            self.assertEqual(
+                payload["source_landing_run_id"],
+                "manual__careet_landing_2026W31",
+            )
+            self.assertEqual(payload["source_article_count"], 1)
+            self.assertEqual(payload["source_meme_item_count"], 3)
+            self.assertEqual(payload["term_count"], 1)
+            self.assertEqual(payload["terms"], ["좋좋소"])
+            self.assertEqual(payload["display_terms"], ["좋좋소"])
+
+    def test_curated_candidates_require_landing_context(self) -> None:
+        with self.assertRaises(SystemExit):
+            careet_crawler.main(["--emit-curated-meme-card-candidates"])
 
     def test_emit_final_from_csv_writes_flat_landing_json(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

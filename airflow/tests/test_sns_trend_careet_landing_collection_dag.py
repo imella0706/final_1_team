@@ -64,6 +64,7 @@ def _write_careet_artifacts(
     week: str = "2026-W31",
     run_id: str = "manual__careet_smoke",
     stamp: str = "20260727",
+    curated_path: Path | None = None,
 ) -> dict[str, str]:
     run_dir.mkdir(parents=True, exist_ok=True)
 
@@ -107,6 +108,27 @@ def _write_careet_artifacts(
         ),
         encoding="utf-8",
     )
+    if curated_path is not None:
+        curated_path.parent.mkdir(parents=True, exist_ok=True)
+        curated_path.write_text(
+            json.dumps(
+                {
+                    "schema_version": "1.0",
+                    "dataset_name": "sns_trend",
+                    "version": "v3",
+                    "stage": "curated",
+                    "artifact_name": "meme_card_candidates",
+                    "source_family": "careet",
+                    "review_status": "pending",
+                    "source_landing_run_id": run_id,
+                    "term_count": 1,
+                    "terms": ["샘플 밈"],
+                    "display_terms": ["샘플 밈"],
+                },
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
 
     return {
         "article_csv": str(article_csv),
@@ -115,6 +137,9 @@ def _write_careet_artifacts(
         "suspect_csv": str(suspect_csv),
         "crawler_run_summary": str(summary_json),
         "error_json": str(run_dir / "error.json"),
+        "curated_meme_card_candidates": (
+            str(curated_path) if curated_path is not None else ""
+        ),
     }
 
 
@@ -153,6 +178,7 @@ def test_resolve_careet_landing_config_uses_manual_values(
         dag_run_id="manual__unused",
         logical_date=datetime(2026, 7, 27, 0, 0, tzinfo=timezone.utc),
         landing_root=tmp_path / "landing" / "sns_trend",
+        curated_root=tmp_path / "curated" / "sns_trend",
         careet_dir=tmp_path / "gather_data" / "crawling" / "careet",
     )
 
@@ -162,6 +188,8 @@ def test_resolve_careet_landing_config_uses_manual_values(
     assert config["run_id"] == "manual__careet_smoke"
     assert config["end_page"] == 2
     assert config["summary_mode"] == "off"
+    assert config["curated_version"] == "v3"
+    assert config["emit_curated_meme_card_candidates"] is True
     assert config["article_csv"].endswith(
         "week=2026-W31/raw/careet/run_id=manual__careet_smoke/"
         "careet_articles_20260727.csv"
@@ -196,6 +224,9 @@ def test_collector_command_emits_landing_contract(
         "run_id": "manual__careet_smoke",
         "run_date": "2026-07-27",
         "run_dir": str(tmp_path / "landing"),
+        "curated_version": "v3",
+        "curated_root": str(tmp_path / "curated"),
+        "emit_curated_meme_card_candidates": True,
         "start_page": 1,
         "end_page": 1,
         "delay": 1.0,
@@ -214,6 +245,11 @@ def test_collector_command_emits_landing_contract(
     assert "careet_crawler.py" in command
     assert command[command.index("--output-dir") + 1] == str(tmp_path / "landing")
     assert command[command.index("--end-page") + 1] == "1"
+    assert command[command.index("--curated-version") + 1] == "v3"
+    assert command[command.index("--curated-root") + 1] == str(
+        tmp_path / "curated"
+    )
+    assert "--emit-curated-meme-card-candidates" in command
     assert "--fail-if-exists" not in command
     assert "--resume" not in command
 
@@ -223,12 +259,24 @@ def test_verify_careet_landing_artifacts_accepts_expected_contract(
     tmp_path: Path,
 ) -> None:
     module = _load_dag_module_with_fake_airflow(monkeypatch)
-    paths = _write_careet_artifacts(run_dir=tmp_path / "landing-run")
+    curated_path = (
+        tmp_path
+        / "curated"
+        / "v3"
+        / "meme_card_candidates"
+        / "careet"
+        / "careet_meme_card_candidates_2026-W31.json"
+    )
+    paths = _write_careet_artifacts(
+        run_dir=tmp_path / "landing-run",
+        curated_path=curated_path,
+    )
 
     result = module._verify_careet_landing_artifacts(
         {
             "week": "2026-W31",
             "run_id": "manual__careet_smoke",
+            "emit_curated_meme_card_candidates": True,
             **paths,
         }
     )
@@ -238,6 +286,11 @@ def test_verify_careet_landing_artifacts_accepts_expected_contract(
     assert result["artifact_check"]["meme_count"] == 1
     assert result["artifact_check"]["term_count"] == 1
     assert result["artifact_check"]["suspect_row_count"] == 0
+    assert result["artifact_check"]["curated_meme_card_candidates"] == {
+        "path": str(curated_path),
+        "term_count": 1,
+        "review_status": "pending",
+    }
 
 
 def test_verify_careet_landing_artifacts_rejects_error_artifact(

@@ -442,8 +442,8 @@ task 의미:
 ### Careet landing collection DAG
 
 `sns_trend_careet_landing_collection`은 캐릿 크롤러를 Airflow에서 실행해 landing 원본
-파일을 생성하고 산출물 계약을 확인합니다. 아직 curated 후보나 processed 패키지를
-만들지는 않습니다.
+파일과 검수 전 curated 후보를 생성하고 산출물 계약을 확인합니다. 공식 processed
+패키지는 만들지 않습니다.
 
 수동 실행 config 예시는 아래와 같습니다.
 
@@ -452,7 +452,9 @@ task 의미:
   "week": "2026-W31",
   "run_date": "2026-07-27",
   "run_id": "manual__careet_phase4_smoke",
-  "end_page": 1
+  "end_page": 1,
+  "curated_version": "v3",
+  "emit_curated_meme_card_candidates": true
 }
 ```
 
@@ -465,18 +467,22 @@ data/landing/sns_trend/week=2026-W31/raw/careet/run_id=manual__careet_phase4_smo
   careet_meme_terms_20260727.json
   careet_meme_term_suspects_20260727.csv
   crawler_run_summary.json
+
+data/curated/sns_trend/v3/meme_card_candidates/careet/
+  careet_meme_card_candidates_2026-W31.json
 ```
 
 task 의미:
 
 | Task | 역할 |
 | --- | --- |
-| `resolve_careet_landing_context` | 이번 run의 `week`, `run_date`, `run_id`, landing 경로 결정 |
-| `collect_careet_landing` | `careet_crawler.py` 실행 후 landing CSV/JSON과 `crawler_run_summary.json` 생성 |
-| `verify_careet_landing_contract` | article CSV, meme CSV, term JSON, suspect CSV, summary 존재와 row count 계약 확인 |
+| `resolve_careet_landing_context` | 이번 run의 `week`, `run_date`, `run_id`, landing/curated 경로 결정 |
+| `collect_careet_landing` | `careet_crawler.py` 실행 후 landing CSV/JSON, summary, curated 후보 생성 |
+| `verify_careet_landing_contract` | landing row count와 curated 후보의 stage, source, lineage, term count 계약 확인 |
 
 `BRANDMATE_SNS_TREND_CAREET_LANDING_SCHEDULE`은 기본값이 비어 있으므로 manual trigger
-전용입니다. 캐릿은 현재 공개 페이지 기반 수집이라 별도 API key가 필요 없습니다.
+전용입니다. `BRANDMATE_SNS_TREND_CAREET_CURATED_VERSION` 기본값은 `v3`입니다.
+캐릿은 현재 공개 페이지 기반 수집이라 별도 API key가 필요 없습니다.
 
 ## 8. Airflow Metadata DB 정책
 
