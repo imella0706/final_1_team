@@ -293,14 +293,31 @@ PermissionError: [Errno 13] Permission denied: '/opt/airflow/gcs_data_cache/...'
 GCP VM에서 처음 실행할 때 Docker가 없으면 Airflow를 띄울 수 없습니다. VM을 운영 서버처럼 재현 가능하게 관리하기 위해 수동 `apt-get install` 대신 Docker setup 스크립트를 사용합니다.
 
 ```bash
-# [Design Intent] VM에 Docker와 compose plugin을 반복 가능한 방식으로 설치하고 Airflow smoke test 전제 조건을 맞춘다.
+# [Design Intent] VM에 Docker와 Docker Compose v2를 반복 가능한 방식으로 설치하고 Airflow smoke test 전제 조건을 맞춘다.
 cd ~/final_1_team
 ./scripts/airflow/setup_gcp_vm_docker.sh
 ```
 
-스크립트가 사용자를 `docker` group에 추가했다면 SSH를 끊고 다시 접속합니다. 재접속 후 확인합니다.
+이 스크립트는 `sudo` 권한이 있는 계정에서만 실행할 수 있습니다. `sudo` 권한이 없으면 VM 관리자에게 먼저 권한을 요청합니다.
+
+Ubuntu 이미지마다 Compose v2 패키지명이 다를 수 있습니다. 스크립트는 아래 순서로 설치를 시도합니다.
+
+```text
+docker-compose-plugin
+-> docker-compose-v2
+-> docker-compose
+```
+
+스크립트가 사용자를 `docker` group에 추가했다면 SSH/JupyterLab 세션을 끊고 다시 접속합니다. 바로 같은 터미널에서 이어가야 하면 임시로 아래를 실행합니다.
 
 ```bash
+newgrp docker
+```
+
+재접속 또는 `newgrp docker` 후 확인합니다.
+
+```bash
+groups
 docker --version
 docker compose version
 docker ps
