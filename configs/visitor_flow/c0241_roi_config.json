@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "camera_id": "C0241",
+  "primary_roi_id": "in_front_of_shop",
+  "label": "Storefront access ROI",
+  "coordinate_space": "normalized_image",
+  "position_point": "bbox_bottom_center",
+  "definition_source": "manual_polygon",
+  "boundary_inclusive": true,
+  "polygon": [
+    {
+      "x": 0.294792,
+      "y": 0.249081
+    },
+    {
+      "x": 0.583854,
+      "y": 0.237132
+    },
+    {
+      "x": 0.6125,
+      "y": 0.386949
+    },
+    {
+      "x": 0.584896,
+      "y": 0.987132
+    },
+    {
+      "x": 0.003125,
+      "y": 0.993566
+    },
+    {
+      "x": 0.028125,
+      "y": 0.744485
+    }
+  ],
+  "notes": [
+    "Manual ROI selected from a fixed-camera reference frame.",
+    "For C0241, this ROI covers the TOM N TOMS storefront pedestrian lane and stair access path.",
+    "A detection is counted when its bbox bottom-center point is inside this polygon.",
+    "Recalibrate this polygon if the camera position or crop changes."
+  ]
+}
