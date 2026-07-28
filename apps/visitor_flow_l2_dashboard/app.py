@@ -648,6 +648,10 @@ def render_customer_report(
     st.markdown("#### 📝 BrandMate AI 카페 맞춤형 종합 경영 · 마케팅 컨설팅")
     
     formatted_verdict = verdict if verdict else "⚠️ AI 진단 결괏값이 생성되지 않았습니다."
+    if isinstance(formatted_verdict, dict):
+        formatted_verdict = "\n\n".join(f"[{k}]\n{v}" for k, v in formatted_verdict.items())
+    elif not isinstance(formatted_verdict, str):
+        formatted_verdict = str(formatted_verdict)
 
     # Convert newlines to HTML paragraphs with font-size 16.5px matching Streamlit default text
     html_paragraphs = "".join(f"<p style='margin-bottom:16px; line-height:1.7; color:#262730; font-size:16.5px; font-weight:400;'>{p.strip()}</p>" for p in formatted_verdict.split("\n\n") if p.strip())
