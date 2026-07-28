@@ -9,14 +9,18 @@
 ```text
 네이버 블로그 선택 + 음식 사진 업로드
 → API가 업로드 사진을 파이프라인 작업 파일로 저장
-→ GroundingDINO·학습한 YOLO11n·SAM 2.1 Small으로 음식·접시 전경 분리
+→ GroundingDINO·학습한 YOLO11n으로 음식·접시 후보 탐지
+→ SAM 2.1 Small 기본 마스크와 HQ-SAM patch_missing 경계 보완
 → 접시 보존 마스크와 SAM 알파로 원본 접시 외곽 보존
+→ 안전 제거·분리 전경 정리·용기 블러·접시 림 복원
 → 업종별 빈 배경 프롬프트로 Sana 또는 FLUX 배경 생성
 → 그림자·색상 조화·OpenCLIP 차단 검증
 → 합성 JPG를 네이버 광고 문구 응답의 image로 반환
 ```
 
 모델 준비 전이거나 처리 중 오류가 나면 광고 문구 API 전체를 실패시키지 않고 원본 사진을 반환한다. 이때 응답의 `vision_prompt.image_generation`과 `vision_prompt.image_enhancement_reason`에서 원인을 확인한다.
+
+자동 실행 조건은 채널 값이 `naver_blog`이고 `blog_images`에 사진이 한 장 이상 있으며 아래 환경 변수 스위치가 `true`인 경우다. 현재 API는 여러 사진 중 첫 번째 사진만 이미지 보정 파이프라인에 전달한다. 사진이 없으면 파이프라인을 실행하지 않고 업로드 이미지 응답 경로를 사용한다.
 
 음식 탐지 실패 또는 OpenCLIP 검증 실패 시에도 동일하게 원본 사진을 반환한다. 파이프라인은 광고 합성 JPG를 저장하지 않고 `food_detection_failed` 또는 `semantic_validation_failed` 보고서와 디버그 산출물만 남긴다.
 
@@ -50,6 +54,8 @@ BRANDMATE_NAVER_IMAGE_CLEANUP_TIMEOUT_SECONDS=600
 ```
 
 `BRANDMATE_NAVER_IMAGE_CLEANUP_PYTHON`은 API와 파이프라인을 서로 다른 가상환경에서 실행할 때 설정한다. API Python에 파이프라인의 모든 의존성을 설치했다면 비워 둘 수 있다.
+
+환경 변수를 바꾼 뒤에는 API 프로세스를 재시작해야 한다. `BRANDMATE_NAVER_IMAGE_ENHANCEMENT_ENABLED=false`이거나 변수가 없으면 기본값이 `false`이므로 파이프라인은 실행되지 않고 원본 이미지 fallback이 사용된다.
 
 파이프라인 전용 환경은 `food-image-cleanup-pipeline/requirements-local.txt`를 설치하고, `scripts/download_models.py`로 필요한 모델을 받는다. GPU와 모델 파일이 준비되지 않은 상태에서 활성화하면 API는 원본 사진을 반환하며 상태를 `background_replacement_failed_fallback`으로 기록한다.
 

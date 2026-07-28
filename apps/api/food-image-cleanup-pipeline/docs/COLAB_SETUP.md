@@ -2,7 +2,7 @@
 
 `notebooks/01_colab_background_replacement.ipynb`를 GPU 런타임에서 위에서 아래 순서로 실행한다. 노트북은 전역 패키지를 바꾸지 않고 `/content/food-image-cleanup-packages`에 파이프라인 의존성만 설치한다.
 
-기본 코랩 검증은 GroundingDINO Tiny, 학습한 음식 전용 YOLO11n, SAM 2.1 Small, Big-LaMa, EfficientNet-B0, Sana 1.6B, OpenCLIP을 사용한다. GroundingDINO 가중치는 `models/grounding-dino`에 캐시해 다음 실행에서 재사용한다. BiRefNet HR은 현재 기본 파이프라인에서 사용하지 않는다. 기본 배경 생성기는 접근 토큰이 필요 없는 `sana-1.6b`이며, FLUX.1 Schnell은 선택적으로 사용할 수 있다.
+기본 코랩 검증은 GroundingDINO Tiny, 학습한 음식 전용 YOLO11n, SAM 2.1 Small, HQ-SAM, Big-LaMa, EfficientNet-B0, Sana 1.6B, OpenCLIP을 사용한다. GroundingDINO와 HQ-SAM은 각각 `models/grounding-dino`, `models/hq-sam`에 저장해 다음 실행에서 재사용한다. 노트북의 다운로드 셀은 호환성을 위해 BiRefNet도 내려받지만, 현재 CLI는 매팅을 강제로 비활성화하므로 추론에는 사용하지 않는다. 기본 배경 생성기는 `sana-1.6b`이며 FLUX.1 Schnell은 선택 대안이다.
 
 ## 학습한 음식 탐지 모델 사용
 
@@ -22,10 +22,14 @@
 ## 운영과 동일한 안전 정책
 
 - YOLO11n이 음식·용기를 찾지 못하면 중앙 사각형으로 광고 이미지를 만들지 않는다.
-- OpenCLIP 유사도 0.8 미만이면 SAM 기반 알파와 접시 보존 마스크로 재합성하며, 계속 실패하면 광고 JPG를 저장하지 않는다.
-- 재시도도 실패하면 최종 광고 JPG를 저장하지 않고 실패 보고서와 디버그 산출물만 남긴다.
+- OpenCLIP 유사도 0.8 미만이면 현재 코드는 재합성하지 않고 광고 JPG를 저장하지 않는다.
+- 검증 실패 시 실패 보고서와 디버그 산출물만 남긴다.
 
 노트북 마지막 셀에서 실행 보고서의 `debug_artifacts`를 통해 원본·안정화 SAM 구조 마스크, 접시 보존 마스크, SAM 기반 알파 마스크, RGBA 전경, OpenCLIP 전경 비교 이미지, 최종 또는 거부된 합성 이미지를 확인한다.
+
+## 노트북의 모드 덮어쓰기
+
+`configs/pipeline.yaml`의 기본 모드는 `preserve_original_plate`이지만, 현재 `01_colab_background_replacement.ipynb` 위젯 기본값은 `generated_plate`다. 노트북은 선택값을 메타데이터의 `composition_mode`로 전달하므로 YAML보다 위젯 선택이 우선한다. 또한 generated 모드 테스트에서는 `require_food_visible_mask: false`를 전달해 SAM 음식 마스크 fallback을 허용한다. 운영과 같은 엄격한 조건을 검증하려면 위젯에서 preserve 모드를 선택하거나 메타데이터의 해당 값을 직접 확인해야 한다.
 
 ## 각도 분류와 후보 선택 확인
 
