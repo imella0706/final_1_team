@@ -12,7 +12,8 @@
 - 선택 메타데이터 JSON
   - `business_type`: 카페, 베이커리, 디저트, 음식점, 주점 등 업종
   - `food_category`: 음식 분류 또는 메뉴 설명
-  - `camera_angle`: 사용자가 지정하는 촬영 각도(`top`, `45` 등). 없으면 EfficientNet-B0가 예측한다.
+  - `camera_angle_manual`: `true`이면 자동 분류 대신 수동 각도를 사용한다.
+  - `camera_angle_label`: 수동 촬영 각도(`top` 또는 `45`). 수동 모드가 아니면 EfficientNet-B0가 예측한다.
 - 선택 설정 파일: 기본값은 `configs/pipeline.yaml`
 
 ## 3. 무엇을 출력하는가
@@ -34,7 +35,9 @@
   → GroundingDINO 음식·접시 후보 탐지
   → 학습한 음식 전용 YOLO11n(best.pt) 탐지 보강
   → SAM 2.1 Small 음식·접시 구조 마스크
-  → 접시 외곽 보존 마스크·음식 마스크 안정화
+  → HQ-SAM patch_missing 경계 보완
+  → PlateMaskService 접시 외곽 완성과 음식 마스크 안정화
+  → 안전 제거·분리 전경 정리·용기 블러·접시 림 복원
   → SAM 마스크 기반 RGBA 전경 생성
   → EfficientNet-B0 촬영 각도 판별 또는 JSON 각도 사용
   → 업종·각도별 빈 테이블 배경 프롬프트 생성
@@ -59,7 +62,8 @@
 | GroundingDINO Tiny | 음식·접시 후보 상자 탐지 | 텍스트 조건을 이용해 일반 COCO 클래스보다 음식·접시 후보를 폭넓게 찾는다. 가중치는 `models/grounding-dino`에 캐시한다. |
 | 학습한 YOLO11n (`models/best.pt`) | 음식 전용 탐지 보강 | AIHub 음식 사진으로 학습한 전용 모델을 기본 탐지기로 사용해 한식·빵·접시 조합 탐지를 보완한다. 기본 COCO YOLO11n은 선택 프로필이다. |
 | SAM 2.1 Small | 음식·접시 구조 분할 | 탐지 상자를 세밀한 마스크로 확장하며, 현재 전경 알파의 기준이다. |
-| EfficientNet-B0 (`models/efficientnet_best.pt`) | `top`·`45` 촬영 각도 판별 | 입력 시점에 맞는 배경 프롬프트·배치·그림자 모양을 선택한다. JSON `camera_angle`이 있으면 그 값을 우선한다. |
+| HQ-SAM (`models/hq-sam`) | 작은 경계 결손 보완 | `patch_missing` 정책으로 SAM2 경계 근처의 제한된 결손만 추가한다. |
+| EfficientNet-B0 (`models/efficientnet_best.pt`) | `top`·`45` 촬영 각도 판별 | 입력 시점에 맞는 배경 프롬프트·배치·그림자 모양을 선택한다. JSON에서 `camera_angle_manual: true`와 `camera_angle_label`을 함께 지정하면 그 값을 우선한다. |
 | Sana 1.6B | 기본 빈 배경 생성 | 별도 접근 토큰 없이 코랩 GPU에서 실행할 수 있는 기본 생성기다. |
 | FLUX.1 Schnell | 선택 배경 생성기 | 설정에서 제공자를 변경하면 사용할 수 있는 대안이다. |
 | OpenCLIP ViT-B-32 | 전경 의미 보존 검증 | 합성 전후 음식·접시 영역의 의미가 지나치게 달라졌는지 확인한다. |
@@ -112,8 +116,9 @@ python -m scripts.run_background_replacement `
 - EfficientNet-B0 기반 `top`·`45` 각도 자동 판별 및 프롬프트 선택 완료
 - 업종별 배경 프롬프트, 다중 후보 생성·선택, 접지 그림자, 제한적 색 조화 완료
 - 원본 접시 보존 모드와 접시 마스크 디버그 산출물 저장 완료
+- HQ-SAM 경계 보완, Big-LaMA 안전 제거, 분리 전경 제거, 용기 블러와 접시 림 복원 연결 완료
 - OpenCLIP·배경 음식 검출·기하·기본 품질 검증 완료
-- YOLO11-seg 기반 `plate_full` / `food_visible` 전용 접시 분할 모델은 데이터 자동 초안·CVAT 검수·학습 흐름을 마련했고, 최종 학습 가중치 연결은 진행 중이다.
+- YOLO11-seg 기반 `plate_full` / `food_visible` 어댑터와 후보 가중치는 존재하지만 `models.plate_segmenter.enabled: false`이므로 현재 기본 실행에는 참여하지 않는다.
 
 ### 최근 검증 예시
 
@@ -133,7 +138,7 @@ Google Colab L4 환경에서 BiRefNet을 끈 상태로 수행한 최근 예시�
 - 원형 접시에는 기하 보정이 효과적이지만, 사각 접시·유리 그릇·접시가 거의 보이지 않는 경우에는 오검출 가능성이 남아 있다.
 - 생성 배경은 음식·접시·컵을 금지해도 일부 소품이 생길 수 있다. 후보 선택 단계에서 더 강한 객체 검출과 재생성 정책이 필요하다.
 - 조명 방향은 현재 프롬프트와 단순 그림자에 의존한다. 배경과 전경의 물리적 조명 차이를 더 줄이려면 별도 조명 조화 모델을 검증해야 한다.
-- 장기적으로 `plate_full`, `food_visible` 두 클래스를 가진 YOLO11-seg 모델을 학습·평가해 기하 보정을 보조 또는 대체해야 한다.
+- 후보 YOLO11-seg 모델은 더 넓은 평가셋에서 접시 외곽 보존율을 검증한 뒤 기본 활성화 여부를 결정해야 한다.
 - 다양한 업종·촬영 각도·접시 재질에 대해 성공률, 전경 보존율, 사용자 선호도 평가셋을 구축해야 한다.
 
 ## 10. 관련 문서

@@ -188,26 +188,58 @@
 | 서비스 또는 코드 | 역할 | 받는 데이터 | 내보내는 데이터 |
 | --- | --- | --- | --- |
 | `BackgroundReplacementPipeline` | 전체 작업의 반장이다. 모든 단계를 순서대로 호출하고 실패 여부를 기록한다. | 원본 이미지, 메타데이터, 설정 | 최종 이미지, 리포트, 디버그 파일 |
-| `GroundingDinoDetector` | GroundingDINO를 실행하고 음식·접시·그릇 박스를 정리한다. | 이미지, 텍스트 대상 이름 | 탐지 박스와 이름 |
-| `ForegroundDetector` | 일반 YOLO 탐지를 실행하고 GroundingDINO가 놓친 결과를 보완한다. | 이미지, 탐지 프로필 | 음식 또는 용기 박스 |
+| `GroundingDINODetector` | GroundingDINO를 실행하고 음식·접시·그릇 박스를 정리한다. | 이미지, 텍스트 대상 이름 | 탐지 박스와 이름 |
+| `UltralyticsDetector` | 일반 YOLO 탐지를 실행하고 GroundingDINO가 놓친 결과를 보완한다. | 이미지, 탐지 프로필 | 음식 또는 용기 박스 |
 | `SAM2Segmenter` | 박스를 이용해 기본 음식·접시 마스크를 만든다. | 이미지, 박스 | 기본 마스크 |
 | `HQSAMSegmenter` | SAM2 경계 근처의 빠진 부분을 후보 마스크로 보완한다. | 이미지, 박스, SAM2 마스크 | 보완 마스크와 선택 정보 |
 | `PlateMaskService` | 조각난 접시 마스크를 하나의 안정된 접시 모양으로 완성한다. | 구조 마스크, 접시 후보 | 완성된 접시 마스크 |
-| `PlatePreservationService` | 접시 마스크를 부드러운 알파로 만들고 마지막까지 접시가 사라지지 않도록 보호한다. | 접시 마스크 | `plate_alpha` |
-| `RemovalDetectionService` | 수저, 포크, 칼, 컵, 그릇처럼 지울 물체를 찾는다. | 이미지 | 제거 박스와 제거 마스크 |
-| `Inpainter` | Big-LaMA를 실행해 제거 마스크 자리를 주변 픽셀처럼 메운다. | 이미지, 안전 제거 마스크 | 물체가 제거된 이미지 |
-| `DetachedForegroundCleanup` | 접시나 음식과 떨어져 홀로 남은 작은 전경 조각을 알파에서 제거한다. | 알파, 기준 마스크 | 정리된 알파, 제거 조각 마스크 |
-| `ContainerBlurService` | 음식은 보호하고 음식이 아닌 접시·용기 부분에만 설정된 블러를 적용한다. | 이미지, 접시 마스크, 음식 보호 마스크 | 블러된 이미지와 블러 마스크 |
-| `PlateEdgeRepairService` | 접시 테두리의 결손을 찾고 상단 림을 보완한다. | 이미지, 접시 마스크, 음식 마스크, 설정 | 보정된 이미지와 보정 리포트 |
+| `build_plate_preservation_alpha`, `validate_plate_preservation_alpha` | 접시 마스크를 부드러운 알파로 만들고 마지막까지 접시가 사라지지 않도록 보호한다. | 접시 마스크 | `plate_alpha`와 검증 결과 |
+| `RemovalTargetDetector` | 수저, 포크, 칼, 컵, 그릇처럼 지울 물체를 찾는다. | 이미지 | 제거 박스 |
+| `BigLaMaInpainter` | Big-LaMA를 실행해 제거 마스크 자리를 주변 픽셀처럼 메운다. | 이미지, 안전 제거 마스크 | 물체가 제거된 이미지 |
+| `BackgroundReplacementPipeline` 내부 foreground cleanup | 접시나 음식과 떨어져 홀로 남은 작은 전경 조각을 알파에서 제거한다. | 알파, 기준 마스크 | 정리된 알파, 제거 조각 마스크 |
+| `apply_container_blur` | 음식은 보호하고 음식이 아닌 접시·용기 부분에만 설정된 블러를 적용한다. | 이미지, 접시 마스크, 음식 보호 마스크 | 블러된 이미지와 블러 마스크 |
+| `repair_plate_edge` | 접시 테두리의 결손을 찾고 상단 림을 보완한다. | 이미지, 접시 마스크, 음식 마스크, 설정 | 보정된 이미지와 보정 리포트 |
 | `CameraAngleClassifier` | 사진 촬영 각도를 `top` 또는 `45`로 분류한다. | 원본 이미지 | 각도 이름과 신뢰도 |
-| `BackgroundPromptBuilder` | 업종, 분위기, 각도를 SANA가 이해할 배경 설명으로 만든다. | `business_type`, `desired_mood`, 각도 | 배경 프롬프트 |
-| `BackgroundGenerator` | SANA를 실행해 배경 후보를 만든다. | 프롬프트, 이미지 크기, 시드 | 여러 배경 후보 |
-| `BackgroundCandidateSelector` | 음식이 놓일 자리가 비어 있고 구도가 맞는 후보를 고른다. | 배경 후보, 탐지 결과, 점수 | 선택된 배경 |
-| `ForegroundPlacementService` | 음식과 접시의 RGBA 이미지를 새 배경의 알맞은 위치에 놓는다. | 전경 RGBA, 배경, 각도 | 합성 이미지와 배치 정보 |
-| `ContactShadowService` | 접시가 테이블 위에 떠 보이지 않도록 접촉 그림자를 만든다. | 배치된 알파, 배경 | 그림자가 추가된 이미지 |
-| `HarmonizationService` | 원본 전경의 밝기와 색을 새 배경에 조금 맞춘다. | 합성 이미지, 알파 | 색이 조화된 이미지 |
-| `SemanticValidator` | OpenCLIP으로 원본 전경과 합성 전경의 유사도를 검사한다. | 원본 전경, 합성 전경 | 유사도와 통과 여부 |
-| `QualityValidator` | 크기, 위치, 밝기, 빈 공간 등 규칙을 검사한다. | 최종 합성 및 중간 지표 | 최종 통과 또는 거절 |
+| `build_background_prompt` | 업종, 분위기, 각도를 SANA가 이해할 배경 설명으로 만든다. | `business_type`, `desired_mood`, 각도 | 배경 프롬프트 |
+| `FluxBackgroundGenerator` | SANA 또는 설정된 생성 모델을 실행해 배경 후보를 만든다. | 프롬프트, 이미지 크기, 시드 | 여러 배경 후보 |
+| `score_background_candidate` | 음식이 놓일 자리가 비어 있고 구도가 맞는 후보를 고른다. | 배경 후보, 탐지 결과, 점수 | 후보 점수 |
+| `place_foreground` | 음식과 접시의 RGBA 이미지를 새 배경의 알맞은 위치에 놓는다. | 전경 RGBA, 배경, 각도 | 합성 이미지와 배치 정보 |
+| `add_contact_shadow` | 접시가 테이블 위에 떠 보이지 않도록 접촉 그림자를 만든다. | 배치된 알파, 배경 | 그림자가 추가된 이미지 |
+| `harmonize_foreground` | 원본 전경의 밝기와 색을 새 배경에 조금 맞춘다. | 합성 이미지, 알파 | 색이 조화된 이미지 |
+| `OpenCLIPSemanticValidator` | OpenCLIP으로 원본 전경과 합성 전경의 유사도를 검사한다. | 원본 전경, 합성 전경 | 유사도와 통과 여부 |
+| `validate_result` | 밝기, 대비, 흐림 등 품질 규칙을 검사한다. | 최종 합성 및 중간 지표 | 최종 통과 또는 거절 |
+
+### 각 서비스의 간단한 작동 로직
+
+아래 설명은 코드를 처음 보는 사람이 “이 서비스가 안에서 대략 무엇을 하는지” 이해하기 위한 요약이다.
+
+| 서비스 또는 코드 | 간단한 로직 |
+| --- | --- |
+| `BackgroundReplacementPipeline` | 입력 이미지를 읽고 품질을 기록한다. 그 다음 탐지, 분할, 제거, 보정, 배경 생성, 합성, 검증을 정해진 순서대로 실행한다. 중간 결과는 `debug_artifacts`에, 단계별 상태는 리포트의 `stages`에 저장한다. |
+| `GroundingDINODetector` | 설정의 텍스트 프롬프트를 모델에 넣어 `plate`, `dish`, `food` 같은 대상의 박스를 찾는다. 결과는 접시/용기 박스와 음식 박스로 나누어 다음 SAM 단계의 힌트로 넘긴다. |
+| `UltralyticsDetector` | YOLO 가중치를 로드하고 이미지에서 설정된 클래스만 찾는다. GroundingDINO가 음식이나 용기를 못 찾은 경우 빈 쪽만 보완하며, 이미 찾은 GroundingDINO 결과를 무조건 덮어쓰지 않는다. |
+| `SAM2Segmenter` | 탐지 박스를 SAM2의 프롬프트로 넣는다. SAM2가 만든 여러 마스크를 한 장의 흰색/검은색 마스크로 합쳐 음식·접시의 기본 형태를 만든다. |
+| `HQSAMSegmenter` | SAM2와 같은 박스를 보고 더 정밀한 후보 마스크를 만든다. `patch_missing` 모드에서는 SAM2 경계 근처, 박스 안쪽, 작은 면적 조건을 만족하는 빠진 부분만 추가한다. |
+| `select_segmentation_result` | SAM2 결과와 HQ-SAM 결과를 비교한다. 설정이 `patch_missing`이면 SAM2 마스크를 기본으로 두고 허용된 작은 결손만 HQ-SAM에서 가져온다. |
+| `PlateMaskService` | 구조 마스크에서 접시처럼 보이는 큰 영역을 고른다. 내부 구멍을 메우고 타원 형태와 면적 조건을 검사해 접시 전체 마스크를 안정화한다. |
+| `build_plate_preservation_alpha` | 접시 마스크 가장자리를 약하게 부드럽게 만들어 `plate_alpha`를 만든다. preserve 모드에서는 마지막 alpha에 이 값을 다시 합쳐 접시가 중간 처리에서 사라지지 않게 한다. |
+| `validate_plate_preservation_alpha` | `plate_alpha`가 접시 마스크를 충분히 덮는지 검사한다. 내부 구멍이 너무 많거나 접시 커버리지가 낮으면 리포트에 경고성 지표를 남긴다. |
+| `RemovalTargetDetector` | YOLO로 `fork`, `knife`, `spoon`, `cup`, `bowl` 같은 제거 대상 박스를 찾는다. 실제로 지워도 되는지는 뒤에서 음식·접시 보호 마스크를 빼면서 다시 제한한다. |
+| `removal_mask_from_boxes` | 제거 대상 박스를 흰색 마스크로 칠하고 조금 팽창시킨다. 물체 가장자리까지 Big-LaMA가 메울 수 있게 여유를 주는 단계다. |
+| `BigLaMaInpainter` | 안전 제거 마스크가 비어 있으면 원본을 그대로 반환한다. 마스크가 있으면 Big-LaMA에 이미지와 마스크를 넣고, 지운 영역을 주변 색과 무늬로 채운 이미지를 만든다. |
+| foreground cleanup | 최종 alpha 후보에서 접시·음식 기준 영역과 연결되지 않은 별도 전경 조각을 찾는다. 작은 수저 조각처럼 떨어진 컴포넌트만 제거하고, 접시 위 음식과 연결된 부분은 유지한다. |
+| `apply_container_blur` | 접시/용기 마스크에서 음식 보호 마스크를 뺀다. 남은 영역에만 OpenCV blur를 적용하고, feather를 사용해 블러 경계가 딱딱하게 보이지 않게 섞는다. |
+| `repair_plate_edge` | 접시 마스크의 림 주변과 음식 마스크를 비교해 끊긴 상단 림 후보를 찾는다. 원본 이미지에서 실제 초록 림 색을 샘플링하고, 결손 위치에만 `synthetic_rim_bridge`를 얹어 최종 RGB에서 림이 이어져 보이게 한다. |
+| `CameraAngleClassifier` | EfficientNet-B0로 이미지를 `top` 또는 `45`로 분류한다. 신뢰도가 낮으면 설정에 따라 실패로 남기거나 fallback 각도를 사용한다. |
+| `build_background_prompt` | 업종, 분위기, 카메라 각도, 합성 모드를 묶어 배경 생성 프롬프트를 만든다. 음식과 로고, 글자, 사람은 만들지 말라는 제한도 함께 넣는다. |
+| `FluxBackgroundGenerator` | 설정된 provider를 보고 SANA 또는 다른 생성 모델을 로드한다. 같은 프롬프트로 여러 후보를 만들고 후보 파일을 중간 산출물로 저장한다. |
+| `score_background_candidate` | 생성 배경 후보 안에 음식이 생겼는지, 중앙 배치 공간이 비어 있는지, 원본과 색감이 너무 어긋나지 않는지 점수화한다. 점수가 좋은 후보가 최종 배경으로 선택된다. |
+| `place_foreground` | 전경 RGBA를 배경 크기에 맞게 조절한다. 카메라 각도와 설정 비율을 참고해 중앙 또는 접시 위치에 배치하고 합성 좌표를 기록한다. |
+| `add_contact_shadow` | 전경 alpha를 흐리게 만들어 테이블 위 그림자처럼 배경에 어둡게 섞는다. 접시가 공중에 떠 보이는 느낌을 줄이는 후처리다. |
+| `remove_color_spill` | 전경 가장자리의 이전 배경색 번짐을 줄인다. 알파 경계 부근에서 색 오염을 약하게 제거해 새 배경과 더 자연스럽게 붙게 한다. |
+| `harmonize_foreground` | 전경의 밝기와 채도를 새 배경에 조금 맞춘다. 원본 음식 색이 과하게 바뀌지 않도록 강하게 보정하지 않고 제한적으로 적용한다. |
+| `OpenCLIPSemanticValidator` | 원본 전경과 합성 전경을 OpenCLIP 임베딩으로 바꾼 뒤 유사도를 계산한다. 유사도가 너무 낮으면 음식·접시 의미가 바뀐 것으로 보고 결과 저장을 막는다. |
+| `validate_result` | 보정 전후의 밝기, 대비, 흐림 정도를 비교한다. 품질 저하가 설정 한계를 넘으면 결과를 통과시키지 않고 리포트에 실패 이유를 남긴다. |
 
 ---
 
@@ -425,7 +457,7 @@ RGB + alpha = foreground_rgba.png
 
 EfficientNet-B0가 위에서 찍은 사진인지 45도 사진인지 분류한다.
 
-`BackgroundPromptBuilder`는 다음 정보를 합친다.
+`build_background_prompt`는 다음 정보를 합친다.
 
 ```text
 business_type
@@ -529,6 +561,15 @@ BiRefNet
 
 ## 10. 결과 파일 읽는 법
 
+먼저 저장 위치를 두 가지로 나눠서 봐야 한다.
+
+| 구분 | 위치 | 의미 |
+| --- | --- | --- |
+| 파이프라인 원본 산출물 | `data/output`, `data/intermediate`, `data/masks`, `data/reports` | `BackgroundReplacementPipeline`이 직접 저장하는 기본 위치다. `configs/pipeline.yaml`의 `paths` 값과 일치한다. |
+| Colab 실험 보관본 | `data/experiments/background_replacement/{실행시각}` | `01_colab_background_replacement.ipynb`가 실행 후 중요한 산출물을 한 폴더에 복사해 모아두는 위치다. 다운로드해서 보는 결과는 보통 이쪽이다. |
+
+즉, 아래의 `data/output/...`, `data/masks/...` 경로는 **원본 저장 위치**다. Colab에서 실행했다면 같은 파일들이 `data/experiments/background_replacement/{실행시각}/` 아래에 파일명만 유지된 채 복사되어 있을 수 있다.
+
 ### 최종 결과
 
 ```text
@@ -562,27 +603,42 @@ data/masks/{이름}_plate_edge_repair_mask.png
 data/reports/{이름}_background_replacement_report.json
 ```
 
+Colab 실험 보관 폴더에서는 보통 다음처럼 복사본을 확인한다.
+
+```text
+data/experiments/background_replacement/{실행시각}/{이름}_background_replaced.jpg
+data/experiments/background_replacement/{실행시각}/{이름}_foreground_rgba.png
+data/experiments/background_replacement/{실행시각}/{이름}_background_replacement_report.json
+data/experiments/background_replacement/{실행시각}/{이름}_plate_edge_repair_mask.png
+data/experiments/background_replacement/{실행시각}/experiment_manifest.json
+```
+
+`experiment_manifest.json`에는 어떤 원본 산출물을 어떤 이름으로 복사했는지 `saved_files`로 기록된다. Colab에서 결과를 확인할 때는 이 manifest를 먼저 보면 빠르다.
+
 중요한 확인 항목:
 
 ```json
 {
-  "step_2b_hq_sam_segmentation": {
-    "status": "completed",
-    "selection_mode": "patch_missing"
-  },
-  "step_3_plate_preservation": {
-    "used_in_final_alpha": true
-  },
-  "step_5_safe_lama_removal": {
-    "status": "completed"
-  },
-  "step_5d_plate_edge_repair": {
-    "synthetic_rim_bridge_pixels": 1,
-    "synthetic_rim_color_sample_count": 1
+  "stages": {
+    "step_2b_hq_sam_segmentation": {
+      "status": "completed",
+      "selection_mode": "patch_missing"
+    },
+    "step_3_plate_preservation": {
+      "used_in_final_alpha": true
+    },
+    "step_5_safe_lama_removal": {
+      "status": "completed"
+    },
+    "step_5d_plate_edge_repair": {
+      "synthetic_rim_bridge_pixels": 1,
+      "synthetic_rim_color_sample_count": 1
+    }
   }
 }
 ```
 
+- 실제 리포트에서 단계별 값은 최상위가 아니라 `stages` 안에 들어 있다.
 - `synthetic_rim_bridge_pixels`가 0보다 커야 실제 브리지가 적용된 것이다.
 - `synthetic_rim_color_sample_count`가 충분해야 원본 접시 림 색을 제대로 읽은 것이다.
 - 값이 있다고 해서 눈으로 완벽하다는 뜻은 아니다. 최종 이미지와 보정 마스크를 함께 봐야 한다.
