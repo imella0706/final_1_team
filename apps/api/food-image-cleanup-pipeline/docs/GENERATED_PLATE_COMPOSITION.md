@@ -37,7 +37,7 @@ models:
 ```
 
 - `generated_plate`: 음식만 추출해 생성된 빈 접시 위에 배치하는 선택 실험 모드다. 기본 모드는 `preserve_original_plate`다.
-- `preserve_original_plate`: 이전 호환 모드다. 원본 접시를 유지해야 하는 예외 상황에서만 사용한다.
+- `preserve_original_plate`: 현재 기본 운영 모드다. 원본 메뉴와 접시 픽셀 보존을 우선한다.
 - `minimum_plate_score`: 중앙성·크기·원형성을 바탕으로 계산한 접시 후보의 최소 점수다. 후보 품질이 낮다면 `0.55`까지 올릴 수 있다.
 - `food_width_ratio_of_plate`: 음식 전경 크기다. 음식이 접시를 과하게 덮으면 `0.45~0.52`로 낮춘다.
 
@@ -63,4 +63,4 @@ fully visible with a clean intact rim, large enough to hold one dish
 3. 음식이 크면 `food_width_ratio_of_plate`를 낮춘다.
 4. 접시가 포함된 원본을 유지해야 하는 특수 사례만 `preserve_original_plate`로 전환한다.
 
-로컬 실행과 코랩 노트북은 모두 같은 `configs/pipeline.yaml`을 읽으므로, 별도의 노트북 설정 변경 없이 이 모드가 적용된다.
+로컬 실행은 `configs/pipeline.yaml`을 그대로 사용한다. 반면 현재 Colab 노트북은 위젯에서 선택한 `composition_mode`를 메타데이터에 넣어 YAML 값을 덮어쓴다. 노트북의 기본 선택은 `generated_plate`이며 테스트 편의를 위해 `require_food_visible_mask: false`도 전달하므로, 운영 기본값과 같은 실행을 원하면 위젯에서 `preserve_original_plate`를 선택해야 한다.

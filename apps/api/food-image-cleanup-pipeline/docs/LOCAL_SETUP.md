@@ -27,7 +27,7 @@ python -m scripts.run_background_replacement --input data/input/example.jpg --me
 ## 안전 종료 상태
 
 - `food_detection_failed`: YOLO11n이 음식·용기를 찾지 못함. 광고 JPG를 저장하지 않는다.
-- `semantic_validation_failed`: OpenCLIP 유사도 0.8 미만. SAM 재합성도 실패해 광고 JPG를 저장하지 않는다.
+- `semantic_validation_failed`: OpenCLIP 유사도 0.8 미만. 현재 코드는 재합성하지 않고 광고 JPG 저장을 거부한다.
 - `completed`: 최종 합성 JPG를 저장했다.
 
 중앙 사각형 대체는 `--diagnostic-center-fallback` 옵션을 준 연결 테스트에서만 허용한다. 운영 요청에는 사용하지 않는다.
