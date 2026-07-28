@@ -66,18 +66,8 @@ def call_real_openai_llm(api_key: str, prompt: str) -> dict:
             content = body["choices"][0]["message"]["content"]
             return json.loads(content)
     except Exception as e:
-        print(f"[WARN] Real OpenAI API call failed ({e}). Falling back to cached synthesis.")
-        return {
-            "overall_score": 88,
-            "commercial_suitability_pct": "상위 12% 입지 적합도",
-            "expected_conversion_lift_pct": "+35.0% 보행자 시선 노출 상승 예측",
-            "ai_verdict_summary": (
-                "[상권 & 타겟 분석] 서울시 동대문구 제기동 상권은 일평균 48,500명의 유동인구를 보유하고 있으며, 특히 5060 중장년층 비율이 55.8%로 서울시 최상위권입니다. 약령시장과 청량리역 중심의 어르신 보행 흐름이 뚜렷한 상권입니다.\n\n"
-                "[CCTV 관측 & 동선 평가] CCTV 관측 결과 12:00~13:00 점심시간대에 프레임당 평균 3.78명의 관측 피크를 형성하며, 보행자의 50%는 상향, 50%는 하향으로 양방향 균등 이동 패턴을 보입니다.\n\n"
-                "[실행 제안 & 액션 플랜] 5060 타겟 특성에 맞춰 가독성이 높은 돋보기 폰트의 '점심 특가' 배너와, 양방향 보행자 시선을 동시에 사로잡는 'V자형 양면 입간판'을 매장 전방 10m 지점에 설치할 것을 강력히 추천합니다.\n\n"
-                "[성과 연결 & 매출 검증] 본 시각적 개선안 적용 후 2주간 POS 주문 수, 시간대별 객단가, 할인 쿠폰회수율을 비교하여 실제 매출 전환 상승 효과를 체계적으로 검증해야 합니다."
-            )
-        }
+        print(f"[ERROR] Real OpenAI API call failed: {e}")
+        raise RuntimeError(f"OpenAI API call failed: {e}")
 
 
 def generate_l4_artifacts():
@@ -88,31 +78,24 @@ def generate_l4_artifacts():
     env_path = repo_root / "apps" / "api" / ".env"
     api_key = load_env_api_key(env_path)
 
-    llm_synthesis = None
-    if api_key:
-        print(f"[INFO] Found OpenAI API key in {env_path}. Triggering ENHANCED OpenAI LLM Synthesis Call...")
-        prompt = """
-        [1차 정량 데이터 상세 입력]
-        - 매장 입지: 서울특별시 동대문구 제기동 (청량리역·서울약령시장 주변 상권)
-        - 상권 유동인구: 일평균 48,500명 (상권 내 보행 흡수율 상위 18%)
-        - 연령대 분포: 10-20대(12.4%), 30-40대(31.8%), 5060 어르신세대(55.8% - 서울시 최상위 비중)
-        - CCTV 관측 데이터 (C0241 매장 전면): 
-          * 피크 시간대: 12:00 ~ 13:00 (프레임당 평균 3.78명 관측, 상대 혼잡도 피크)
-          * 매장 앞 관측구역 비중: 전체 유동 관측의 48.1%
-          * 보행 이동 방향: 화면 하향 50.0% (55건) vs 화면 상향 50.0% (55건) 양방향 동일 비중
-        - 인근 집객 시설: 청량리역 (250m), 서울약령시장 버스정류장 (80m)
-        
-        위 데이터를 바탕으로 종합 입지 점수(overall_score), 입지 백분위(commercial_suitability_pct), 예상 전환 상승률(expected_conversion_lift_pct), AI 종합 판정 문장(ai_verdict_summary)을 산출해주세요.
-        """
-        llm_synthesis = call_real_openai_llm(api_key, prompt)
-    else:
-        print("[WARN] API Key not found in apps/api/.env")
-        llm_synthesis = {
-            "overall_score": 88,
-            "commercial_suitability_pct": "상위 12% 입지 적합도",
-            "expected_conversion_lift_pct": "+35.0% 보행자 시선 노출 상승 예측",
-            "ai_verdict_summary": "1차 데이터와 2차 CCTV 관측을 융합한 AI 종합 진단 결과, 상권 적합도 88점으로 도출되었습니다."
-        }
+    if not api_key:
+        raise ValueError(f"OpenAI API Key not found in {env_path}. Cannot generate L4 artifacts without API key.")
+
+    print(f"[INFO] Found OpenAI API key in {env_path}. Triggering ENHANCED OpenAI LLM Synthesis Call...")
+    prompt = """
+    [1차 정량 데이터 상세 입력]
+    - 매장 입지: 서울특별시 동대문구 제기동 (청량리역·서울약령시장 주변 상권)
+    - 상권 유동인구: 일평균 48,500명 (상권 내 보행 흡수율 상위 18%)
+    - 연령대 분포: 10-20대(12.4%), 30-40대(31.8%), 5060 어르신세대(55.8% - 서울시 최상위 비중)
+    - CCTV 관측 데이터 (C0241 매장 전면): 
+      * 피크 시간대: 12:00 ~ 13:00 (프레임당 평균 3.78명 관측, 상대 혼잡도 피크)
+      * 매장 앞 관측구역 비중: 전체 유동 관측의 48.1%
+      * 보행 이동 방향: 화면 하향 50.0% (55건) vs 화면 상향 50.0% (55건) 양방향 동일 비중
+    - 인근 집객 시설: 청량리역 (250m), 서울약령시장 버스정류장 (80m)
+    
+    위 데이터를 바탕으로 종합 입지 점수(overall_score), 입지 백분위(commercial_suitability_pct), 예상 전환 상승률(expected_conversion_lift_pct), AI 종합 판정 문장(ai_verdict_summary)을 산출해주세요.
+    """
+    llm_synthesis = call_real_openai_llm(api_key, prompt)
 
     # 1. Seoul Commercial Data Artifact (Dongdaemun-gu Jegi-dong - Cafe Cheongryang)
     commercial_analysis_data = {

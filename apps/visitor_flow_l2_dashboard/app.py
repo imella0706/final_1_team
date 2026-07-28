@@ -609,9 +609,9 @@ def render_customer_report(
         except Exception:
             pass
 
-    score = ai_eval.get("overall_score", 88)
-    suitability = ai_eval.get("commercial_suitability_pct", "상위 10% 카페 입지 적합도")
-    lift = ai_eval.get("expected_conversion_lift_pct", "+40.0% 테이크아웃 매출 상승 예측")
+    score = ai_eval.get("overall_score", "-")
+    suitability = ai_eval.get("commercial_suitability_pct", "-")
+    lift = ai_eval.get("expected_conversion_lift_pct", "-")
     verdict = ai_eval.get("ai_verdict_summary", "")
 
     m1, m2, m3 = st.columns(3)
@@ -647,12 +647,7 @@ def render_customer_report(
     # 2. AI Structured 4-Part Verdict Cards
     st.markdown("#### 📝 BrandMate AI 카페 맞춤형 종합 경영 · 마케팅 컨설팅")
     
-    formatted_verdict = verdict if verdict else (
-        "[카페 상권 & 타겟 분석] 청량리역 및 약령시장 주변은 5060 어르신 비중이 55.8%로 최상위권입니다. 건강 음료 및 식후 커피 테이크아웃 수요가 매우 우수합니다.\n\n"
-        "[CCTV 관측 & 픽업 피크] 12:00~13:00 점심 식후 관측 피크(3.78명/frame)가 나타나며, 양방향 50% 보행 동선으로 시선 노출 기회가 최상위입니다.\n\n"
-        "[카페 맞춤 액션 플랜] 어르신 타겟 돋보기 폰트의 '식후 건강차/점심 커피 콤보' 배너와 'A자형 양면 입간판'을 매장 전방 10m 지점에 설치하세요.\n\n"
-        "[POS 성과 & 회전율 검증] 적용 후 2주간 POS 테이크아웃 음료 수량 및 점심시간 객단가를 비교하여 실제 매출 증대를 측정하세요."
-    )
+    formatted_verdict = verdict if verdict else "⚠️ AI 진단 결괏값이 생성되지 않았습니다."
 
     # Convert newlines to HTML paragraphs with font-size 16.5px matching Streamlit default text
     html_paragraphs = "".join(f"<p style='margin-bottom:16px; line-height:1.7; color:#262730; font-size:16.5px; font-weight:400;'>{p.strip()}</p>" for p in formatted_verdict.split("\n\n") if p.strip())
