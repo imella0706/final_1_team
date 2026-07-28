@@ -653,8 +653,17 @@ def render_customer_report(
     elif not isinstance(formatted_verdict, str):
         formatted_verdict = str(formatted_verdict)
 
-    # Convert newlines to HTML paragraphs with font-size 16.5px matching Streamlit default text
-    html_paragraphs = "".join(f"<p style='margin-bottom:16px; line-height:1.7; color:#262730; font-size:16.5px; font-weight:400;'>{p.strip()}</p>" for p in formatted_verdict.split("\n\n") if p.strip())
+    # Make bracket headers [헤더] bold and visually prominent with blue color
+    import re
+    paragraphs = []
+    for p in formatted_verdict.split("\n\n"):
+        p_clean = p.strip()
+        if p_clean:
+            # Replace [헤더명] with bold styled header span
+            p_formatted = re.sub(r"^(\[[^\]]+\])", r"<strong style='color:#1A365D; font-size:17px;'>\1</strong>", p_clean)
+            paragraphs.append(f"<p style='margin-bottom:16px; line-height:1.7; color:#262730; font-size:16.5px; font-weight:400;'>{p_formatted}</p>")
+
+    html_paragraphs = "".join(paragraphs)
 
     st.markdown(
         f"""
