@@ -388,6 +388,7 @@ def render_customer_report(
     roi_summary: pd.DataFrame,
     masked_image_path: Path,
     *,
+    crossing_summary: dict[str, Any] | None = None,
     store_name: str,
     survey_location: str,
     report_number: str,
@@ -536,12 +537,45 @@ def render_customer_report(
         st.info("두 날짜에 공통으로 관측된 시간대가 없어 직접 비교하지 않았습니다.")
 
     st.divider()
-    st.subheader("6. 운영·마케팅 실행 제안")
+    st.subheader("6. 보행 방향 이동 흐름 분석 (Line Crossing)")
+    if crossing_summary is not None:
+        c_results = crossing_summary.get("results", {})
+        c_directions = c_results.get("direction_event_counts", {})
+        total_crossing = int(c_results.get("total_crossing_events", 0))
+        downward = int(c_directions.get("screen_downward_event", 0))
+        upward = int(c_directions.get("screen_upward_event", 0))
+        down_pct = (downward / total_crossing * 100.0) if total_crossing > 0 else 0.0
+        up_pct = (upward / total_crossing * 100.0) if total_crossing > 0 else 0.0
+
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("총 보행 통과 이벤트", f"{total_crossing}건")
+        c2.metric("화면 하향 이동 (downward)", f"{down_pct:.1f}% ({downward}건)")
+        c3.metric("화면 상향 이동 (upward)", f"{up_pct:.1f}% ({upward}건)")
+        c4.metric("통과 트랙 수", f"{int(c_results.get('unique_track_ids_crossed', 0))}개")
+
+        st.markdown(
+            f"대표 검증 구간 분석 결과, 매장 전면 보행로 수동 기준선을 통과한 보행 이동 이벤트는 **총 {total_crossing}건**입니다. "
+            f"화면 기준 아래쪽 이동(하향)과 위쪽 이동(상향)이 **각각 {downward}건({down_pct:.1f}%)과 {upward}건({up_pct:.1f}%)**으로 "
+            "동일한 이동 비중을 형성하고 있습니다."
+        )
+        st.caption(
+            "※ 보행 방향 통과 이벤트는 추적 경로가 기준선을 통과한 횟수이며, 고유 방문자 수나 하루 전체 총 유동인구를 의미하지 않습니다."
+        )
+    else:
+        st.info("보행 방향 이동 흐름(Line Crossing) 산출물이 아직 로드되지 않았습니다.")
+
+    st.divider()
+    st.subheader("7. 운영·마케팅 실행 제안")
     st.markdown(
         f"**피크 시간 활용 · {facts['peak_hour']} 전후 프로모션 메시지 추천**  \n"
         "분석 범위에서 이 시간대의 매장 앞 관측량이 가장 높았습니다. 지나가는 "
         "고객의 시선을 빠르게 사로잡을 수 있도록 '점심 특가'나 '테이크아웃 할인'처럼 "
         "짧고 명확한 문구로 구성하는 것을 추천합니다.\n\n"
+        "**보행 방향 동선 고려 · 양방향 시선 유도 입간판 및 배너 배치 추천**  \n"
+        "보행로를 상향/하향으로 지나는 보행자 동선이 모두 관측(각 50.0% 비중)되었습니다. "
+        "매장 입구 전면의 입간판 및 현수막은 한쪽 방향이 아닌 양방향 보행자 시선에서 동시에 "
+        "눈에 띌 수 있도록 V자형 배치나 양면 배치를 권장합니다. 또한 보행자 이동 방향에 맞춰 "
+        "'오시는 길 10m 앞'과 같은 화살표 시선 유도 문구를 적용하면 노출 효과를 높일 수 있습니다.\n\n"
         "**매장 앞 관측구역 · 보행로와 계단 진입로 동시 고려**  \n"
         "노란 관측구역은 매장 앞 보행로와 계단 진입로를 함께 포함합니다. 안내물은 "
         "두 동선에서 모두 확인하기 쉬운 위치에 배치하고, 문구는 짧게 줄이되 글자 크기는 "
@@ -556,7 +590,7 @@ def render_customer_report(
     )
 
     st.divider()
-    st.subheader("7. 분석 범위와 활용 기준")
+    st.subheader("8. 분석 범위와 활용 기준")
     st.markdown(
         f"- 본 결과는 {facts['clip_count']}개 영상, 총 {facts['analysis_minutes']}분의 "
         "관측 표본을 분석한 결과입니다.\n"
@@ -1767,6 +1801,7 @@ def main() -> None:
             roi_analysis,
             roi_summary,
             masked_image_path,
+            crossing_summary=crossing_summary,
             store_name=report_store_name,
             survey_location=report_location,
             report_number=report_number,
