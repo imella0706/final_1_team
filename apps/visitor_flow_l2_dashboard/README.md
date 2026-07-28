@@ -247,13 +247,13 @@ Streamlit 대시보드는 내부 back-office 도구입니다. `고객 PDF 리포
 | 금지 | Streamlit 주소를 고객에게 공유하거나 외부 IP에 공개 |
 | 후속 | 장기 관측 고객이 많아진 뒤 고객 포털/로그인 대시보드 검토 |
 
-### BrandMate 통합 실행 - 상권분석 담당자용
+### BrandMate 통합 실행
 
-팀원 기본 실행에서는 Streamlit 상권분석 대시보드를 띄우지 않습니다. 상권분석 담당자 또는 관리자만 아래처럼 `START_DASHBOARD=true`를 명시해 BrandMate web, FastAPI, Postgres, Streamlit 대시보드를 함께 실행합니다.
+기본 실행 명령(`scripts/manage_brandmate_services_gcp.sh`)으로 BrandMate web, FastAPI, Postgres, ComfyUI와 함께 Streamlit 상권분석 대시보드(포트 8503)를 자동으로 실행합니다.
 
 ```bash
-# [Design Intent] 개발 중인 상권분석 Streamlit 화면은 담당자 확인 시에만 8503 포트로 함께 실행한다.
-START_DASHBOARD=true bash scripts/manage_brandmate_services_gcp.sh restart
+# [Design Intent] 표준 서비스를 띄우면 상권분석 Streamlit 화면도 8503 포트로 자동 실행된다.
+bash scripts/manage_brandmate_services_gcp.sh restart
 ```
 
 실행 후 접속 주소:

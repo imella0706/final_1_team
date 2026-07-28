@@ -1,0 +1,42 @@
+{
+  "schema_version": "1.0",
+  "scoring_config_version": "scoring_v1",
+  "description": "Deterministic MVP scoring for sns_trend review queue candidates. Raw counts are normalized inside each source and are not summed across platforms.",
+  "frequency_score": {
+    "max_score": 20
+  },
+  "recency_score": {
+    "current_week": 10,
+    "previous_week": 5,
+    "older_week": 0
+  },
+  "cross_platform_score": {
+    "1": 0,
+    "2": 15,
+    "3": 25,
+    "4": 30
+  },
+  "source_reliability_score": {
+    "youtube": 3,
+    "gogumafarm": 5,
+    "careet": 5,
+    "naver": 0
+  },
+  "generic_term_penalty": 10,
+  "risk_penalty": 5,
+  "risk_terms": [
+    "어벤져스",
+    "마블",
+    "디즈니",
+    "리니지",
+    "리니지m",
+    "메이플",
+    "메이플스토리",
+    "로블록스",
+    "roblox",
+    "t1",
+    "jyp",
+    "김동현",
+    "허경환"
+  ]
+}

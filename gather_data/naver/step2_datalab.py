@@ -11,9 +11,11 @@
 - datalab_키워드.csv  (기간별 상대 검색량. 기간 내 최대값=100 기준 비율)
 필요 라이브러리:  pip install requests pandas python-dotenv
 """
+import argparse
 import json
 import os
 import sys
+from pathlib import Path
 
 import pandas as pd
 import requests
@@ -32,39 +34,64 @@ END_DATE = "2026-06-30"         # 조회 종료일
 TIME_UNIT = "week"              # "date"(일별) / "week"(주별) / "month"(월별)
 # ======================================
 
-if not CLIENT_ID or not CLIENT_SECRET:
-    raise SystemExit(
-        "NAVER_CLIENT_ID 또는 NAVER_CLIENT_SECRET이 없습니다. "
-        "apps/api/.env 파일을 확인하세요."
+
+def parse_args():
+    parser = argparse.ArgumentParser(
+        description="Collect Naver Data Lab search trend data."
     )
+    parser.add_argument("--keyword", default=KEYWORD)
+    parser.add_argument("--start-date", default=START_DATE)
+    parser.add_argument("--end-date", default=END_DATE)
+    parser.add_argument("--time-unit", default=TIME_UNIT, choices=("date", "week", "month"))
+    parser.add_argument("--output-dir", default=BASE_DIR)
+    return parser.parse_args()
 
-url = "https://openapi.naver.com/v1/datalab/search"
-headers = {
-    "X-Naver-Client-Id": CLIENT_ID,
-    "X-Naver-Client-Secret": CLIENT_SECRET,
-    "Content-Type": "application/json",
-}
-body = {
-    "startDate": START_DATE,
-    "endDate": END_DATE,
-    "timeUnit": TIME_UNIT,
-    # 키워드를 여러 개 비교하고 싶으면 keywordGroups에 그룹을 추가하세요 (최대 5개)
-    # 예: {"groupName": "비건", "keywords": ["비건", "비건식품"]}
-    "keywordGroups": [
-        {"groupName": KEYWORD, "keywords": [KEYWORD]},
-    ],
-}
 
-res = requests.post(url, headers=headers, data=json.dumps(body))
-if res.status_code != 200:
-    print(f"오류 {res.status_code}: {res.text}")
-    sys.exit()
+def collect_datalab_search_trend(*, keyword, start_date, end_date, time_unit):
+    url = "https://openapi.naver.com/v1/datalab/search"
+    headers = {
+        "X-Naver-Client-Id": CLIENT_ID,
+        "X-Naver-Client-Secret": CLIENT_SECRET,
+        "Content-Type": "application/json",
+    }
+    body = {
+        "startDate": start_date,
+        "endDate": end_date,
+        "timeUnit": time_unit,
+        # 키워드를 여러 개 비교하고 싶으면 keywordGroups에 그룹을 추가하세요 (최대 5개)
+        # 예: {"groupName": "비건", "keywords": ["비건", "비건식품"]}
+        "keywordGroups": [
+            {"groupName": keyword, "keywords": [keyword]},
+        ],
+    }
 
-data = res.json()["results"][0]["data"]        # [{"period": 날짜, "ratio": 값}, ...]
-df = pd.DataFrame(data)
-filename = os.path.join(BASE_DIR, f"datalab_{KEYWORD}.csv")
-df.to_csv(filename, index=False, encoding="utf-8-sig")
+    res = requests.post(url, headers=headers, data=json.dumps(body))
+    if res.status_code != 200:
+        print(f"오류 {res.status_code}: {res.text}")
+        sys.exit()
+    return res.json()["results"][0]["data"]
 
-print(f"{len(df)}개 구간 저장 완료 → {filename}")
-print(df.head())
-print("\n2단계 완료! 다음은 python step3_analyze.py 를 실행하세요.")
+
+if __name__ == "__main__":
+    args = parse_args()
+    if not CLIENT_ID or not CLIENT_SECRET:
+        raise SystemExit(
+            "NAVER_CLIENT_ID 또는 NAVER_CLIENT_SECRET이 없습니다. "
+            "apps/api/.env 파일을 확인하세요."
+        )
+
+    data = collect_datalab_search_trend(
+        keyword=args.keyword,
+        start_date=args.start_date,
+        end_date=args.end_date,
+        time_unit=args.time_unit,
+    )
+    df = pd.DataFrame(data)
+    output_dir = Path(args.output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    filename = output_dir / f"datalab_{args.keyword}.csv"
+    df.to_csv(filename, index=False, encoding="utf-8-sig")
+
+    print(f"{len(df)}개 구간 저장 완료 → {filename}")
+    print(df.head())
+    print("\n2단계 완료! 다음은 python step3_analyze.py 를 실행하세요.")

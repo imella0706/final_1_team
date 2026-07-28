@@ -43,6 +43,7 @@ from youtube_trends.csv_io import DataFileError, atomic_write_json
 REGION_CODE = DEFAULT_REGION_CODE
 MAX_RESULTS = DEFAULT_PAGE_SIZE
 TOTAL_VIDEOS = DEFAULT_TOTAL_VIDEOS
+CRAWLER_RUN_SUMMARY_FILENAME = "crawler_run_summary.json"
 
 
 def build_parser(defaults: CollectionOptions | None = None) -> argparse.ArgumentParser:
@@ -305,7 +306,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             "output_file": str(output),
         }
         try:
-            atomic_write_json(run_directory / "run_summary.json", summary)
+            atomic_write_json(run_directory / CRAWLER_RUN_SUMMARY_FILENAME, summary)
         except (DataFileError, OSError) as exc:
             logging.error("failed to write landing run summary: %s", exc)
             _write_error_artifact(

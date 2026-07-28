@@ -6,7 +6,7 @@ from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import patch
 
-from youtube_trending_collector import main
+from youtube_trending_collector import CRAWLER_RUN_SUMMARY_FILENAME, main
 from youtube_trends.collector import CollectionError, VideoRecord
 from youtube_trends.config import (
     ConfigurationError,
@@ -76,7 +76,7 @@ class YouTubeLandingContractTest(unittest.TestCase):
             self.assertTrue(
                 (output_dir / "youtube_trending_KR_20260727.csv").is_file()
             )
-            self.assertFalse((output_dir / "run_summary.json").exists())
+            self.assertFalse((output_dir / CRAWLER_RUN_SUMMARY_FILENAME).exists())
 
     @patch(
         "youtube_trending_collector.fetch_trending_videos",
@@ -112,7 +112,9 @@ class YouTubeLandingContractTest(unittest.TestCase):
                 (output_dir / "youtube_trending_KR_2026-W31.csv").is_file()
             )
             summary = json.loads(
-                (output_dir / "run_summary.json").read_text(encoding="utf-8")
+                (output_dir / CRAWLER_RUN_SUMMARY_FILENAME).read_text(
+                    encoding="utf-8"
+                )
             )
             self.assertEqual(summary["status"], "success")
             self.assertEqual(summary["week"], "2026-W31")
@@ -158,7 +160,7 @@ class YouTubeLandingContractTest(unittest.TestCase):
             self.assertTrue(
                 (run_directory / "youtube_trending_KR_2026-W31.csv").is_file()
             )
-            self.assertTrue((run_directory / "run_summary.json").is_file())
+            self.assertTrue((run_directory / CRAWLER_RUN_SUMMARY_FILENAME).is_file())
 
     @patch(
         "youtube_trending_collector.fetch_trending_videos",

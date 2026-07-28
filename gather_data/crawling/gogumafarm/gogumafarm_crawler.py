@@ -16,9 +16,9 @@ import re
 import time
 import unicodedata
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any, Iterable, Sequence
 from urllib.parse import unquote, urljoin, urlparse, urlunparse
 
 import requests
@@ -29,6 +29,8 @@ BASE_URL = "https://gogumafarm.kr"
 API_BASE = f"{BASE_URL}/wp-json/wp/v2"
 SOURCE_URL = f"{BASE_URL}/category/trends/"
 SCHEMA_VERSION = "1.0"
+CRAWLER_RUN_SUMMARY_FILENAME = "crawler_run_summary.json"
+CRAWLER_ERROR_FILENAME = "error.json"
 
 CATEGORY_NAME = "최신 밈과 트렌드"
 CATEGORY_SLUG = "trends"
@@ -39,6 +41,10 @@ USER_AGENT = "GogumafarmPublicMetadataCrawler/1.0 (research; no-login; contact: 
 RETRYABLE_STATUS = {429, 500, 502, 503, 504}
 KST = timezone(timedelta(hours=9))
 CHECKPOINT_NAME = ".gogumafarm_checkpoint.json"
+REPO_ROOT = Path(__file__).resolve().parents[3]
+LANDING_DATA_ROOT = REPO_ROOT / "data" / "landing" / "sns_trend"
+CURATED_DATA_ROOT = REPO_ROOT / "data" / "curated" / "sns_trend"
+DEFAULT_CURATED_VERSION = "v3"
 
 POST_FIELDS = ",".join(
     [
@@ -207,6 +213,13 @@ class HTTPStatusError(RuntimeError):
 
 
 @dataclass(frozen=True)
+class KeywordArtifacts:
+    term_rows: list[dict[str, Any]]
+    final_terms: list[str]
+    display_terms: list[str]
+
+
+@dataclass(frozen=True)
 class Taxonomy:
     id: int
     name: str
@@ -259,6 +272,68 @@ def trim_text(value: str, limit: int) -> str:
 
 def now_kst() -> str:
     return datetime.now(KST).isoformat(timespec="seconds")
+
+
+def now_utc_z() -> str:
+    return datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+
+
+def current_run_date() -> date:
+    return datetime.now(KST).date()
+
+
+def parse_run_date(value: str) -> date:
+    try:
+        return date.fromisoformat(value)
+    except ValueError as exc:
+        raise CrawlerError("--date must use YYYY-MM-DD format") from exc
+
+
+def parse_iso_week(value: str) -> str:
+    normalized = value.strip().upper()
+    match = re.fullmatch(r"(\d{4})-W(\d{2})", normalized)
+    if match is None:
+        raise CrawlerError("--week must use YYYY-Www format")
+    year, week = (int(part) for part in match.groups())
+    try:
+        date.fromisocalendar(year, week, 1)
+    except ValueError as exc:
+        raise CrawlerError(f"invalid ISO week: {normalized}") from exc
+    return normalized
+
+
+def parse_dataset_version(value: str) -> str:
+    normalized = value.strip().lower()
+    if not re.fullmatch(r"v[1-9][0-9]*", normalized):
+        raise CrawlerError("dataset version must use vN format, for example v3")
+    return normalized
+
+
+def parse_run_id(value: str) -> str:
+    normalized = value.strip()
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.:+@=-]{0,254}", normalized):
+        raise CrawlerError("--run-id must be 1-255 path-safe ASCII characters")
+    return normalized
+
+
+def landing_run_directory(
+    *,
+    week: str,
+    run_id: str,
+    root: Path = LANDING_DATA_ROOT,
+) -> Path:
+    # [Design Intent] Isolate each crawler execution so reruns never overwrite
+    # another Airflow/manual run inside the shared landing partition.
+    return root / f"week={week}" / "raw" / "gogumafarm" / f"run_id={run_id}"
+
+
+def curated_meme_card_candidates_path(
+    *,
+    version: str,
+    week: str,
+    root: Path = CURATED_DATA_ROOT,
+) -> Path:
+    return root / version / "meme_card_candidates" / "gogumafarm" / f"gogumafarm_meme_card_candidates_{week}.json"
 
 
 def utc_z(value: Any) -> str:
@@ -1080,18 +1155,36 @@ def term_csv_rows(document: dict[str, Any]) -> list[dict[str, Any]]:
     return rows
 
 
-def final_meme_terms(rows: Iterable[dict[str, Any]]) -> list[str]:
+def final_meme_term_pairs(rows: Iterable[dict[str, Any]]) -> tuple[list[str], list[str]]:
     terms: list[str] = []
+    display_terms: list[str] = []
     seen: set[str] = set()
     for row in rows:
-        term = _remove_emoji(_clean_term(str(row.get("term", ""))))
+        display_term = _clean_term(str(row.get("term", "")))
+        term = _remove_emoji(display_term)
         if not _is_final_meme_term(term):
             continue
         key = re.sub(r"\s+", "", term).lower()
         if key and key not in seen:
             terms.append(term)
+            display_terms.append(display_term)
             seen.add(key)
+    return terms, display_terms
+
+
+def final_meme_terms(rows: Iterable[dict[str, Any]]) -> list[str]:
+    terms, _display_terms = final_meme_term_pairs(rows)
     return terms
+
+
+def build_keyword_artifacts(document: dict[str, Any]) -> KeywordArtifacts:
+    term_rows = term_csv_rows(document)
+    final_terms, display_terms = final_meme_term_pairs(term_rows)
+    return KeywordArtifacts(
+        term_rows=term_rows,
+        final_terms=final_terms,
+        display_terms=display_terms,
+    )
 
 
 def atomic_write_csv(path: Path, fields: list[str], rows: Iterable[dict[str, Any]]) -> None:
@@ -1127,11 +1220,166 @@ def emit_team_style_outputs(output_dir: Path, document: dict[str, Any], stamp: s
     term_path = output_dir / "processed" / f"gogumafarm_meme_terms_{stamp}.csv"
     final_path = output_dir / "final_processed" / f"gogumafarm_meme_terms_{stamp}.json"
     article_rows = article_csv_rows(document)
-    term_rows = term_csv_rows(document)
+    keyword_artifacts = build_keyword_artifacts(document)
     atomic_write_csv(article_path, ARTICLE_CSV_FIELDS, article_rows)
-    atomic_write_csv(term_path, TERM_CSV_FIELDS, term_rows)
-    atomic_write_json(final_path, final_meme_terms(term_rows))
+    atomic_write_csv(term_path, TERM_CSV_FIELDS, keyword_artifacts.term_rows)
+    atomic_write_json(final_path, keyword_artifacts.final_terms)
     return article_path, term_path, final_path
+
+
+def emit_landing_outputs(output_dir: Path, document: dict[str, Any], stamp: str) -> tuple[Path, Path, Path]:
+    article_path = output_dir / f"gogumafarm_articles_{stamp}.csv"
+    term_path = output_dir / f"gogumafarm_meme_terms_{stamp}.csv"
+    final_path = output_dir / f"gogumafarm_meme_terms_{stamp}.json"
+    article_rows = article_csv_rows(document)
+    keyword_artifacts = build_keyword_artifacts(document)
+    atomic_write_csv(article_path, ARTICLE_CSV_FIELDS, article_rows)
+    atomic_write_csv(term_path, TERM_CSV_FIELDS, keyword_artifacts.term_rows)
+    atomic_write_json(final_path, keyword_artifacts.final_terms)
+    return article_path, term_path, final_path
+
+
+def build_curated_meme_card_candidates_document(
+    document: dict[str, Any],
+    *,
+    version: str,
+    week: str,
+    run_id: str,
+) -> dict[str, Any]:
+    keyword_artifacts = build_keyword_artifacts(document)
+    return {
+        "schema_version": "1.0",
+        "dataset_name": "sns_trend",
+        "version": version,
+        "stage": "curated",
+        "artifact_name": "meme_card_candidates",
+        "source_family": "gogumafarm",
+        "curation_status": "rule_filtered",
+        "review_status": "pending",
+        "collected_week": week,
+        "source_landing_run_id": run_id,
+        "generated_at": now_utc_z(),
+        "source_article_count": document.get("article_count", 0),
+        "source_meme_item_count": document.get("meme_item_count", 0),
+        "term_count": len(keyword_artifacts.final_terms),
+        "terms": keyword_artifacts.final_terms,
+        "display_terms": keyword_artifacts.display_terms,
+    }
+
+
+def write_curated_meme_card_candidates(
+    *,
+    document: dict[str, Any],
+    version: str,
+    week: str,
+    run_id: str,
+    root: Path = CURATED_DATA_ROOT,
+    fail_if_exists: bool = False,
+) -> Path:
+    output_path = curated_meme_card_candidates_path(version=version, week=week, root=root)
+    if fail_if_exists:
+        _ensure_outputs_do_not_exist([output_path])
+    payload = build_curated_meme_card_candidates_document(
+        document,
+        version=version,
+        week=week,
+        run_id=run_id,
+    )
+    atomic_write_json(output_path, payload)
+    return output_path
+
+
+def _landing_context(args: argparse.Namespace) -> tuple[str, str] | None:
+    week = getattr(args, "week", None)
+    run_id = getattr(args, "run_id", None)
+    if week is None and run_id is None:
+        return None
+    if week is None or run_id is None:
+        raise CrawlerError("--week and --run-id must be provided together")
+    return parse_iso_week(week), parse_run_id(run_id)
+
+
+def _resolve_output_dir(args: argparse.Namespace, landing: tuple[str, str] | None) -> Path:
+    if args.output_dir is not None:
+        return Path(args.output_dir)
+    if landing is None:
+        return Path("data")
+    week, run_id = landing
+    return landing_run_directory(week=week, run_id=run_id)
+
+
+def _resolve_stamp(args: argparse.Namespace, fallback_path: Path | None = None) -> str:
+    if args.run_date:
+        return parse_run_date(args.run_date).strftime("%Y%m%d")
+    if fallback_path is not None:
+        fallback_stamp = _date_from_output_name(fallback_path)
+        if fallback_stamp:
+            return fallback_stamp
+    return current_run_date().strftime("%Y%m%d")
+
+
+def _ensure_outputs_do_not_exist(paths: Iterable[Path]) -> None:
+    existing = [str(path) for path in paths if path.exists()]
+    if existing:
+        raise CrawlerError(f"output already exists: {existing[0]}")
+
+
+def write_landing_summary(
+    *,
+    output_dir: Path,
+    document: dict[str, Any],
+    week: str,
+    run_id: str,
+    started_at: str,
+    outputs: dict[str, Path],
+    mode: str,
+) -> Path:
+    summary_path = output_dir / CRAWLER_RUN_SUMMARY_FILENAME
+    summary = {
+        "schema_version": "1.0",
+        "source": "gogumafarm",
+        "status": "success",
+        "mode": mode,
+        "week": week,
+        "run_id": run_id,
+        "started_at": started_at,
+        "ended_at": now_utc_z(),
+        "article_count": document.get("article_count", 0),
+        "meme_item_count": document.get("meme_item_count", 0),
+        "outputs": {name: str(path) for name, path in outputs.items()},
+    }
+    atomic_write_json(summary_path, summary)
+    return summary_path
+
+
+def write_landing_error(
+    *,
+    output_dir: Path,
+    week: str,
+    run_id: str,
+    started_at: str,
+    exit_code: int,
+    error: Exception,
+) -> Path:
+    error_path = output_dir / CRAWLER_ERROR_FILENAME
+    payload = {
+        "schema_version": "1.0",
+        "source": "gogumafarm",
+        "status": "failed",
+        "week": week,
+        "run_id": run_id,
+        "started_at": started_at,
+        "ended_at": now_utc_z(),
+        "exit_code": exit_code,
+        "error_type": type(error).__name__,
+        "message": str(error),
+    }
+    atomic_write_json(error_path, payload)
+    return error_path
+
+
+def clear_landing_error(output_dir: Path) -> None:
+    (output_dir / CRAWLER_ERROR_FILENAME).unlink(missing_ok=True)
 
 
 def load_document(path: Path) -> dict[str, Any]:
@@ -1206,7 +1454,9 @@ def validate_final_document(document: dict[str, Any]) -> None:
 def crawl(args: argparse.Namespace, client: Any | None = None) -> Path | None:
     owns_client = client is None
     client = client or PoliteSession(args.delay, args.timeout, args.retries)
-    output_dir = Path(args.output_dir)
+    started_at = now_utc_z()
+    landing = _landing_context(args)
+    output_dir = _resolve_output_dir(args, landing)
     stats = RunStats()
     try:
         category = resolve_category(client)
@@ -1253,10 +1503,64 @@ def crawl(args: argparse.Namespace, client: Any | None = None) -> Path | None:
 
         document = make_document(articles, category, tag, collected_at, api_total)
         validate_final_document(document)
-        stamp = datetime.now(KST).strftime("%Y%m%d")
+        stamp = _resolve_stamp(args)
         output_path = output_dir / f"gogumafarm_memes_{stamp}.json"
+        if args.fail_if_exists:
+            landing_output_paths = [
+                output_path,
+                output_dir / f"gogumafarm_articles_{stamp}.csv",
+                output_dir / f"gogumafarm_meme_terms_{stamp}.csv",
+                output_dir / f"gogumafarm_meme_terms_{stamp}.json",
+                output_dir / CRAWLER_RUN_SUMMARY_FILENAME,
+            ]
+            if landing is not None and args.emit_curated_meme_card_candidates:
+                week, _run_id = landing
+                landing_output_paths.append(
+                    curated_meme_card_candidates_path(
+                        version=args.curated_version,
+                        week=week,
+                        root=args.curated_root,
+                    )
+                )
+            legacy_output_paths = [
+                output_path,
+                output_dir / "raw" / f"gogumafarm_articles_{stamp}.csv",
+                output_dir / "processed" / f"gogumafarm_meme_terms_{stamp}.csv",
+                output_dir / "final_processed" / f"gogumafarm_meme_terms_{stamp}.json",
+            ]
+            _ensure_outputs_do_not_exist(landing_output_paths if landing else legacy_output_paths)
         atomic_write_json(output_path, document)
-        article_csv_path, term_csv_path, final_terms_path = emit_team_style_outputs(output_dir, document, stamp)
+        if landing is None:
+            article_csv_path, term_csv_path, final_terms_path = emit_team_style_outputs(output_dir, document, stamp)
+        else:
+            article_csv_path, term_csv_path, final_terms_path = emit_landing_outputs(output_dir, document, stamp)
+            week, run_id = landing
+            outputs = {
+                "raw_json": output_path,
+                "article_csv": article_csv_path,
+                "term_csv": term_csv_path,
+                "term_json": final_terms_path,
+            }
+            if args.emit_curated_meme_card_candidates:
+                curated_path = write_curated_meme_card_candidates(
+                    document=document,
+                    version=args.curated_version,
+                    week=week,
+                    run_id=run_id,
+                    root=args.curated_root,
+                    fail_if_exists=False,
+                )
+                outputs["curated_meme_card_candidates"] = curated_path
+            clear_landing_error(output_dir)
+            write_landing_summary(
+                output_dir=output_dir,
+                document=document,
+                week=week,
+                run_id=run_id,
+                started_at=started_at,
+                outputs=outputs,
+                mode="crawl",
+            )
         checkpoint.unlink(missing_ok=True)
 
         statuses = [article.get("meme_extraction_status", "") for article in articles]
@@ -1294,8 +1598,32 @@ def crawl(args: argparse.Namespace, client: Any | None = None) -> Path | None:
             statuses.count("parse_error"),
             len(unique_sources),
         )
-        LOG.info("team-style outputs: raw=%s processed=%s final=%s", article_csv_path, term_csv_path, final_terms_path)
+        if landing is None:
+            LOG.info("team-style outputs: raw=%s processed=%s final=%s", article_csv_path, term_csv_path, final_terms_path)
+        else:
+            LOG.info(
+                "landing outputs: json=%s articles=%s terms=%s final_terms=%s",
+                output_path,
+                article_csv_path,
+                term_csv_path,
+                final_terms_path,
+            )
         return output_path
+    except (CrawlerError, HTTPStatusError, requests.RequestException) as exc:
+        if landing is not None:
+            week, run_id = landing
+            try:
+                write_landing_error(
+                    output_dir=output_dir,
+                    week=week,
+                    run_id=run_id,
+                    started_at=started_at,
+                    exit_code=1,
+                    error=exc,
+                )
+            except OSError as artifact_error:
+                LOG.error("failed to write landing error artifact: %s", artifact_error)
+        raise
     except KeyboardInterrupt:
         LOG.warning("interrupted; preserving checkpoint if one was written")
         raise
@@ -1306,14 +1634,26 @@ def crawl(args: argparse.Namespace, client: Any | None = None) -> Path | None:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="고구마팜 공개 WordPress API 기반 밈 게시물 메타데이터 수집기")
-    parser.add_argument("--output-dir", type=Path, default=Path("data"))
+    parser.add_argument("--output-dir", type=Path)
+    parser.add_argument("--date", dest="run_date", help="output date in YYYY-MM-DD format")
+    parser.add_argument("--week", help="landing partition in Asia/Seoul ISO week format (YYYY-Www)")
+    parser.add_argument("--run-id", help="Airflow or local run identifier used to isolate landing artifacts")
     parser.add_argument("--delay", type=float, default=1.0, help="request interval in seconds; minimum 1.0")
     parser.add_argument("--timeout", type=float, default=15.0)
     parser.add_argument("--retries", type=int, default=3)
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--resume-from", type=Path)
     parser.add_argument("--emit-from-json", type=Path, help="existing gogumafarm_memes_YYYYMMDD.json에서 CSV/term JSON만 생성")
+    parser.add_argument(
+        "--emit-curated-meme-card-candidates",
+        dest="emit_curated_meme_card_candidates",
+        action="store_true",
+        help="also write rule-filtered curated meme_card_candidates JSON for landing runs",
+    )
+    parser.add_argument("--curated-version", default=DEFAULT_CURATED_VERSION, help="curated dataset version, for example v3")
+    parser.add_argument("--curated-root", type=Path, default=CURATED_DATA_ROOT)
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--fail-if-exists", action="store_true", help="do not replace an existing output file")
     parser.add_argument("--log-level", choices=("DEBUG", "INFO", "WARNING", "ERROR"), default="INFO")
     return parser
 
@@ -1329,20 +1669,63 @@ def validate_args(parser: argparse.ArgumentParser, args: argparse.Namespace) -> 
         parser.error("--resume-from file does not exist")
     if args.emit_from_json is not None and not args.emit_from_json.exists():
         parser.error("--emit-from-json file does not exist")
+    try:
+        landing = _landing_context(args)
+        args.curated_version = parse_dataset_version(args.curated_version)
+        if args.emit_curated_meme_card_candidates and landing is None:
+            parser.error("--emit-curated-meme-card-candidates requires --week and --run-id")
+        if args.run_date:
+            parse_run_date(args.run_date)
+    except CrawlerError as exc:
+        parser.error(str(exc))
 
 
-def main() -> int:
+def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     validate_args(parser, args)
     logging.basicConfig(level=getattr(logging, args.log_level), format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    started_at = now_utc_z()
     try:
         if args.emit_from_json is not None:
             document = load_document(args.emit_from_json)
-            args.output_dir.mkdir(parents=True, exist_ok=True)
-            stamp = _date_from_output_name(args.emit_from_json) or datetime.now(KST).strftime("%Y%m%d")
-            article_path, term_path, final_path = emit_team_style_outputs(args.output_dir, document, stamp)
-            LOG.info("team-style outputs: raw=%s processed=%s final=%s", article_path, term_path, final_path)
+            landing = _landing_context(args)
+            output_dir = _resolve_output_dir(args, landing)
+            output_dir.mkdir(parents=True, exist_ok=True)
+            stamp = _resolve_stamp(args, fallback_path=args.emit_from_json)
+            if landing is None:
+                article_path, term_path, final_path = emit_team_style_outputs(output_dir, document, stamp)
+                LOG.info("team-style outputs: raw=%s processed=%s final=%s", article_path, term_path, final_path)
+            else:
+                article_path, term_path, final_path = emit_landing_outputs(output_dir, document, stamp)
+                week, run_id = landing
+                outputs = {
+                    "source_json": args.emit_from_json,
+                    "article_csv": article_path,
+                    "term_csv": term_path,
+                    "term_json": final_path,
+                }
+                if args.emit_curated_meme_card_candidates:
+                    curated_path = write_curated_meme_card_candidates(
+                        document=document,
+                        version=args.curated_version,
+                        week=week,
+                        run_id=run_id,
+                        root=args.curated_root,
+                        fail_if_exists=args.fail_if_exists,
+                    )
+                    outputs["curated_meme_card_candidates"] = curated_path
+                clear_landing_error(output_dir)
+                write_landing_summary(
+                    output_dir=output_dir,
+                    document=document,
+                    week=week,
+                    run_id=run_id,
+                    started_at=started_at,
+                    outputs=outputs,
+                    mode="emit_from_json",
+                )
+                LOG.info("landing outputs: articles=%s terms=%s final_terms=%s", article_path, term_path, final_path)
             return 0
         crawl(args)
     except CrawlerError as exc:

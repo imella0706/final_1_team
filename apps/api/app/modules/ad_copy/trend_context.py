@@ -236,6 +236,27 @@ class TrendCard(BaseModel):
 
 
 REPO_ROOT = Path(__file__).resolve().parents[5]
+
+V3_TREND_CARD_PAYLOAD_PATH = (
+    REPO_ROOT
+    / "data"
+    / "processed"
+    / "sns_trend"
+    / "v3"
+    / "cross_platform_signal_top_candidates"
+    / "cross_platform_signal_top_candidates.json"
+)
+
+V3_TREND_CARD_PAYLOAD_PATH = (
+    REPO_ROOT
+    / "data"
+    / "processed"
+    / "sns_trend"
+    / "v3"
+    / "cross_platform_signal_top_candidates"
+    / "cross_platform_signal_top_candidates.json"
+)
+
 DEFAULT_TREND_CARD_PAYLOAD_PATH = (
     REPO_ROOT
     / "data"
