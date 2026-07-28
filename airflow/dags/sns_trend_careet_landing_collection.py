@@ -30,7 +30,8 @@ LANDING_ROOT = REPO_ROOT / "data" / "landing" / "sns_trend"
 CURATED_ROOT = REPO_ROOT / "data" / "curated" / "sns_trend"
 
 CAREET_LANDING_SCHEDULE = (
-    os.getenv("BRANDMATE_SNS_TREND_CAREET_LANDING_SCHEDULE", "").strip() or None
+    os.getenv("BRANDMATE_SNS_TREND_CAREET_LANDING_SCHEDULE", "0 4 * * 3").strip()
+    or "0 4 * * 3"
 )
 CAREET_DELAY_SECONDS = float(os.getenv("BRANDMATE_SNS_TREND_CAREET_DELAY", "1.5"))
 CAREET_TIMEOUT_SECONDS = float(os.getenv("BRANDMATE_SNS_TREND_CAREET_TIMEOUT", "15"))
