@@ -812,11 +812,32 @@ def render_operator_integrated_qa(
     crossing_dir: Path,
     missing_crossing_files: list[Path],
 ) -> None:
-    st.markdown("#### 운영자용 ROI · 개인정보 마스킹 · Tracking · Line Crossing 통합 QA")
+    st.markdown("#### ■ 운영자용 ROI · 개인정보 마스킹 · Tracking · Line Crossing 통합 QA")
     st.caption(
         "L3-4/L3-5 통합 QA입니다. ROI, 개인정보 마스킹, 연속 frame track ID, 수동 기준선(Line Crossing) 통과 이벤트를 "
         "단일 비디오 플레이어로 함께 검수합니다. (고유 방문자 수나 매장 입장객 수를 의미하지 않습니다)"
     )
+
+    indicator_guide = pd.DataFrame(
+        [
+            {
+                "지표명 (색상)": "In front of shop (노란색)",
+                "성격": "실시간 순간값",
+                "세는 범위": "매장 앞 노란색 ROI 박스 내부에 있는 사람 수",
+            },
+            {
+                "지표명 (색상)": "Person being tracked (초록색)",
+                "성격": "실시간 순간값",
+                "세는 범위": "ROI 안팎 상관없이 화면 전체에서 박스 쳐진 추적 인원 수",
+            },
+            {
+                "지표명 (색상)": "Line Crossing events (빨간색)",
+                "성격": "누적 카운트",
+                "세는 범위": "영상 재생 시작 후 빨간 기준선을 가로질러 지나간 보행 통과 누적 횟수",
+            },
+        ]
+    )
+    st.table(indicator_guide)
 
     # 1개의 통합 비디오 플레이어: L3-5 비디오(ROI + 마스킹 + Tracking + Line Crossing + 카운터)를 최우선 재생
     primary_video_path = None
@@ -1051,18 +1072,29 @@ def render_time_trend(dashboard_summary: pd.DataFrame) -> None:
 
 
 def render_video_validation(analysis: dict[str, Any], results_dir: Path) -> None:
-    st.subheader("4. 영상별 분석 결과 검증")
+    st.subheader("■ 영상별 분석 결과 검증")
 
     clip_summaries = analysis.get("clip_summaries", [])
     if not clip_summaries:
         st.info("clip summary 정보가 없습니다.")
         return
 
-    df_clips = pd.DataFrame(clip_summaries)
+    df_clips = pd.DataFrame(clip_summaries).copy()
 
-    if "video_path" in df_clips.columns:
-        df_clips["clip_name"] = df_clips["video_path"].apply(
-            lambda value: Path(str(value)).name
+    if "video_id" in df_clips.columns and "clip_name" not in df_clips.columns:
+        df_clips["clip_name"] = df_clips["video_id"]
+    elif "video" in df_clips.columns and "clip_name" not in df_clips.columns:
+        df_clips["clip_name"] = df_clips["video"].apply(lambda value: Path(str(value)).name)
+
+    if "person_detection_observations" in df_clips.columns and "person_observations" not in df_clips.columns:
+        df_clips["person_observations"] = df_clips["person_detection_observations"]
+
+    if "date_id" in df_clips.columns and "time_bucket" not in df_clips.columns:
+        df_clips["time_bucket"] = df_clips["date_id"]
+
+    if "sampled_frames" in df_clips.columns and "person_observations" in df_clips.columns:
+        df_clips["mean_persons_per_sampled_frame"] = (
+            df_clips["person_observations"] / df_clips["sampled_frames"]
         )
 
     cols_to_show = [
@@ -1073,15 +1105,28 @@ def render_video_validation(analysis: dict[str, Any], results_dir: Path) -> None
             "sampled_frames",
             "person_observations",
             "mean_persons_per_sampled_frame",
-            "max_persons_in_sampled_frame",
         ]
         if col in df_clips.columns
     ]
 
+    st.caption(
+        "분석 대상 15개 CCTV 영상 클립별 추출 장면 수(sampled_frames), 총 탐지 횟수, "
+        "프레임당 평균 관측 인원을 세부 검수하는 운영자용 지표 표입니다."
+    )
     st.dataframe(
         df_clips[cols_to_show],
         use_container_width=True,
         hide_index=True,
+        column_config={
+            "clip_name": "클립 영상 파일명",
+            "time_bucket": "날짜/시간대",
+            "sampled_frames": "추출 장면 수(장)",
+            "person_observations": "총 탐지 건수(건)",
+            "mean_persons_per_sampled_frame": st.column_config.NumberColumn(
+                "프레임당 평균 인원",
+                format="%.3f명",
+            ),
+        },
     )
 
 
@@ -1225,7 +1270,7 @@ def render_roi_analysis(
     *,
     show_operator_debug: bool = True,
 ) -> None:
-    st.subheader("1. 매장 전면 ROI 관측량")
+    st.subheader("■ 매장 전면 ROI 관측량")
     st.caption("수동 normalized polygon · bbox bottom-center 판정 · 10초 sampled frame")
 
     peak_bucket = str(analysis.get("peak_time_bucket", ""))
@@ -1373,7 +1418,7 @@ def render_time_trend(
     *,
     show_validation_details: bool = True,
 ) -> None:
-    st.subheader("2. 전체 화면 시간대별 프레임 정규화 관측량")
+    st.subheader("■ 전체 화면 시간대별 프레임 정규화 관측량")
     chart = dashboard_summary.copy()
     chart["time_label"] = pd.to_datetime(chart["time_bucket"]).dt.strftime("%H:%M")
     if "date_id" in chart.columns:
@@ -1513,7 +1558,7 @@ def render_grid_heatmap(
     summary: pd.DataFrame,
     dashboard_summary: pd.DataFrame,
 ) -> None:
-    st.subheader("4. 화면 구역별 관측량 분포")
+    st.subheader("■ 화면 구역별 관측량 분포")
     st.caption("화면 기준 · 원근 미보정 · 실제 지면 밀집도 아님")
     st.info(
         "아래 24칸은 검증 영상에 보이는 노란 6x4 grid와 같은 기준입니다. "

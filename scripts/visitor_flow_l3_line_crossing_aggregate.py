@@ -528,7 +528,30 @@ def draw_crossing_footer(
     frame_events: list[dict[str, Any]],
 ) -> None:
     height, width = frame.shape[:2]
-    cv2.rectangle(frame, (0, height - 64), (width, height), (0, 0, 0), -1)
+    total_crossings = sum(cumulative_counts.values())
+
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    font_scale = 0.85
+    thick = 2
+    line3 = f"Line Crossing events : {total_crossings}"
+
+    card_w = 500
+    card_h = 160
+    margin_x = 35
+    margin_y = 75
+
+    box_right = width - margin_x
+    box_left = box_right - card_w
+    box_bottom = height - margin_y
+    box_top = box_bottom - card_h
+
+    # Draw Crimson Red Line Crossing events on top line of white card
+    x_text = box_left + 22
+    y1 = box_top + 42
+
+    cv2.putText(frame, line3, (x_text, y1), font, font_scale, (0, 0, 200), thick, cv2.LINE_AA)
+
+    cv2.rectangle(frame, (0, height - 52), (width, height), (0, 0, 0), -1)
     count_text = " | ".join(
         f"{label}={count}" for label, count in sorted(cumulative_counts.items())
     )
@@ -538,24 +561,24 @@ def draw_crossing_footer(
     cv2.putText(
         frame,
         footer,
-        (24, height - 24),
+        (18, height - 16),
         cv2.FONT_HERSHEY_SIMPLEX,
-        0.72,
+        0.70,
         (255, 255, 255),
         2,
         cv2.LINE_AA,
     )
     for row in frame_events:
         point = (round(float(row["intersection_x"])), round(float(row["intersection_y"])))
-        cv2.circle(frame, point, 12, (0, 0, 255), -1, cv2.LINE_AA)
+        cv2.circle(frame, point, 14, (0, 0, 255), -1, cv2.LINE_AA)
         cv2.putText(
             frame,
             str(row["event_label"]),
-            (point[0] + 14, point[1] - 10),
+            (point[0] + 16, point[1] - 10),
             cv2.FONT_HERSHEY_SIMPLEX,
-            0.7,
+            0.85,
             (0, 0, 255),
-            2,
+            3,
             cv2.LINE_AA,
         )
 

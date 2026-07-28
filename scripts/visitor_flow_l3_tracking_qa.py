@@ -287,23 +287,72 @@ def draw_detections(
             track_histories[detection.track_id].append((point_x, point_y))
 
         color = stable_track_color(detection.track_id)
-        location = "ROI" if in_roi else "outside"
-        track_label = "id=?" if detection.track_id is None else f"id={detection.track_id}"
-        cv2.rectangle(frame, (left, top), (right, bottom), color, 2, cv2.LINE_AA)
-        cv2.circle(frame, (point_x, point_y), 5, (0, 0, 255), -1, cv2.LINE_AA)
+        track_label = "person-?" if detection.track_id is None else f"person-{detection.track_id}"
+        cv2.rectangle(frame, (left, top), (right, bottom), color, 3, cv2.LINE_AA)
+        cv2.circle(frame, (point_x, point_y), 6, (0, 0, 255), -1, cv2.LINE_AA)
+
+        # Draw filled background box for high contrast person label
+        font = cv2.FONT_HERSHEY_SIMPLEX
+        font_scale = 0.65
+        text_thick = 2
+        (tw, th), baseline = cv2.getTextSize(track_label, font, font_scale, text_thick)
+        box_top = max(10, top - th - 12)
+        box_bottom = box_top + th + 8
+        box_left = left
+        box_right = left + tw + 14
+
+        # Filled color banner
+        cv2.rectangle(frame, (box_left, box_top), (box_right, box_bottom), color, -1)
+        cv2.rectangle(frame, (box_left, box_top), (box_right, box_bottom), (0, 0, 0), 1)
+        # Text inside box
         cv2.putText(
             frame,
-            f"{track_label} {detection.confidence:.2f} | {location}",
-            (left, max(66, top - 8)),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.64,
-            color,
-            2,
+            track_label,
+            (box_left + 7, box_bottom - 5),
+            font,
+            font_scale,
+            (255, 255, 255),
+            text_thick,
             cv2.LINE_AA,
         )
 
     draw_track_trails(frame, detections, track_histories)
+    draw_big_screen_counts(frame, len(roi_track_ids), len(active_track_ids))
     return len(active_track_ids), len(roi_track_ids), unassigned_count
+
+
+def draw_big_screen_counts(frame: np.ndarray, roi_count: int, tracked_count: int) -> None:
+    height, width = frame.shape[:2]
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    font_scale = 0.85
+    thick = 2
+
+    line1 = f"In front of shop : {roi_count}"
+    line2 = f"Person being tracked : {tracked_count}"
+
+    card_w = 500
+    card_h = 160
+    margin_x = 35
+    margin_y = 75
+
+    box_right = width - margin_x
+    box_left = box_right - card_w
+    box_bottom = height - margin_y
+    box_top = box_bottom - card_h
+
+    # Draw crisp white background card
+    cv2.rectangle(frame, (box_left, box_top), (box_right, box_bottom), (255, 255, 255), -1)
+    cv2.rectangle(frame, (box_left, box_top), (box_right, box_bottom), (40, 40, 40), 2)
+
+    x_text = box_left + 22
+    y2 = box_top + 90
+    y3 = box_top + 138
+
+    # Line 2: In front of shop (Golden Amber)
+    cv2.putText(frame, line1, (x_text, y2), font, font_scale, (0, 120, 210), thick, cv2.LINE_AA)
+
+    # Line 3: Person being tracked (Dark Green)
+    cv2.putText(frame, line2, (x_text, y3), font, font_scale, (0, 140, 0), thick, cv2.LINE_AA)
 
 
 def draw_footer(
@@ -315,7 +364,7 @@ def draw_footer(
     unassigned_count: int,
 ) -> None:
     height, width = frame.shape[:2]
-    cv2.rectangle(frame, (0, height - 62), (width, height), (0, 0, 0), -1)
+    cv2.rectangle(frame, (0, height - 52), (width, height), (0, 0, 0), -1)
     cv2.putText(
         frame,
         (
@@ -323,9 +372,9 @@ def draw_footer(
             f"active_tracks={active_tracks} roi_tracks={roi_tracks} "
             f"unassigned={unassigned_count} | clip-local IDs, not unique visitors"
         ),
-        (18, height - 20),
+        (18, height - 16),
         cv2.FONT_HERSHEY_SIMPLEX,
-        0.75,
+        0.70,
         (255, 255, 255),
         2,
         cv2.LINE_AA,
