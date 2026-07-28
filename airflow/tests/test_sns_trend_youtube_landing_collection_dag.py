@@ -64,10 +64,10 @@ def test_sns_trend_youtube_landing_collection_dag_compiles() -> None:
     compile(source, str(DAG_FILE), "exec")
 
 
-def test_dag_defaults_to_manual_schedule(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_dag_defaults_to_weekly_schedule(monkeypatch: pytest.MonkeyPatch) -> None:
     module = _load_dag_module_with_fake_airflow(monkeypatch)
 
-    assert module.sns_trend_youtube_landing_collection.dag_kwargs["schedule"] is None
+    assert module.sns_trend_youtube_landing_collection.dag_kwargs["schedule"] == "0 4 * * 3"
     assert module.sns_trend_youtube_landing_collection.dag_kwargs["catchup"] is False
     assert module.sns_trend_youtube_landing_collection.dag_kwargs["max_active_runs"] == 1
 

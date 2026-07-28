@@ -32,7 +32,8 @@ YOUTUBE_DIR = REPO_ROOT / "gather_data" / "youtube"
 LANDING_ROOT = REPO_ROOT / "data" / "landing" / "sns_trend"
 CURATED_ROOT = REPO_ROOT / "data" / "curated" / "sns_trend"
 YOUTUBE_LANDING_SCHEDULE = (
-    os.getenv("BRANDMATE_SNS_TREND_YOUTUBE_LANDING_SCHEDULE", "").strip() or None
+    os.getenv("BRANDMATE_SNS_TREND_YOUTUBE_LANDING_SCHEDULE", "0 4 * * 3").strip()
+    or "0 4 * * 3"
 )
 YOUTUBE_LANDING_LIMIT = int(
     os.getenv("BRANDMATE_SNS_TREND_YOUTUBE_LANDING_LIMIT", str(DEFAULT_LIMIT))

@@ -38,7 +38,8 @@ SNS_TREND_PROCESSED_GCS_ROOT = os.getenv(
     "BRANDMATE_SNS_TREND_PROCESSED_GCS_ROOT", ""
 ).strip()
 SNS_TREND_VALIDATION_SCHEDULE = (
-    os.getenv("BRANDMATE_SNS_TREND_VALIDATION_SCHEDULE", "").strip() or None
+    os.getenv("BRANDMATE_SNS_TREND_VALIDATION_SCHEDULE", "30 4 * * 3").strip()
+    or "30 4 * * 3"
 )
 SNS_TREND_SAME_VERSION_POLICY = (
     os.getenv("BRANDMATE_SNS_TREND_SAME_VERSION_POLICY", "skip").strip() or "skip"
