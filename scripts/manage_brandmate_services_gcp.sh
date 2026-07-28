@@ -47,15 +47,22 @@ if [[ -n "${WSL_DISTRO_NAME:-}" ]]; then
 fi
 DASHBOARD_HOST="${DASHBOARD_HOST:-127.0.0.1}"
 DASHBOARD_PORT="${DASHBOARD_PORT:-8503}"
+REVIEW_DASHBOARD_HOST="${REVIEW_DASHBOARD_HOST:-127.0.0.1}"
+REVIEW_DASHBOARD_PORT="${REVIEW_DASHBOARD_PORT:-8502}"
+AIRFLOW_WEB_PORT="${AIRFLOW_WEB_PORT:-8080}"
 COMFYUI_HOST="${COMFYUI_HOST:-127.0.0.1}"
 COMFYUI_PORT="${COMFYUI_PORT:-8188}"
 RUN_DB_MIGRATIONS="${RUN_DB_MIGRATIONS:-true}"
 START_COMFYUI="${START_COMFYUI:-auto}"
 START_DASHBOARD="${START_DASHBOARD:-auto}"
+START_REVIEW_DASHBOARD="${START_REVIEW_DASHBOARD:-auto}"
+START_AIRFLOW="${START_AIRFLOW:-auto}"
 
 API_URL="http://127.0.0.1:${API_PORT}"
 WEB_URL="http://127.0.0.1:${WEB_PORT}"
 DASHBOARD_URL="http://127.0.0.1:${DASHBOARD_PORT}"
+REVIEW_DASHBOARD_URL="http://127.0.0.1:${REVIEW_DASHBOARD_PORT}"
+AIRFLOW_URL="http://127.0.0.1:${AIRFLOW_WEB_PORT}"
 COMFYUI_URL="http://127.0.0.1:${COMFYUI_PORT}"
 
 LOG_DIR="${BRANDMATE_SERVICE_LOG_DIR:-$PROJECT_ROOT/outputs/brandmate_services}"
@@ -380,6 +387,54 @@ ensure_dashboard() {
   wait_until_ready visitor_flow_dashboard "$DASHBOARD_URL/" 60
 }
 
+ensure_review_dashboard() {
+  if [[ "$START_REVIEW_DASHBOARD" == "false" ]]; then
+    echo "[skip] SNS trend review dashboard disabled: START_REVIEW_DASHBOARD=$START_REVIEW_DASHBOARD"
+    return 0
+  fi
+
+  if is_ready "$REVIEW_DASHBOARD_URL/"; then
+    echo "[ok] SNS trend review dashboard already running: $REVIEW_DASHBOARD_URL"
+    return 0
+  fi
+
+  local app_path="$PROJECT_ROOT/apps/review_dashboard/sns_trend_review_app.py"
+  if [[ ! -f "$app_path" ]]; then
+    echo "[skip] SNS trend review dashboard app not found: $app_path"
+    return 0
+  fi
+
+  PYTHONPATH="$PROJECT_ROOT/gather_data" start_process \
+    sns_trend_review_dashboard \
+    "$PID_DIR/sns_trend_review_dashboard.pid" \
+    "$LOG_DIR/sns_trend_review_dashboard.log" \
+    "$PROJECT_ROOT" \
+    "${API_PYTHON[@]}" -m streamlit run "$app_path" \
+      --server.address "$REVIEW_DASHBOARD_HOST" \
+      --server.port "$REVIEW_DASHBOARD_PORT"
+
+  wait_until_ready sns_trend_review_dashboard "$REVIEW_DASHBOARD_URL/" 60
+}
+
+ensure_airflow() {
+  if [[ "$START_AIRFLOW" == "false" ]]; then
+    echo "[skip] Airflow disabled: START_AIRFLOW=$START_AIRFLOW"
+    return 0
+  fi
+
+  if is_ready "$AIRFLOW_URL/health"; then
+    echo "[ok] Airflow webserver already running: $AIRFLOW_URL"
+    return 0
+  fi
+
+  if [[ -f "$PROJECT_ROOT/scripts/airflow/up.sh" ]]; then
+    echo "[start] Airflow via scripts/airflow/up.sh"
+    bash "$PROJECT_ROOT/scripts/airflow/up.sh" >/dev/null 2>&1 || {
+      echo "[warn] Airflow startup failed or timed out"
+    }
+  fi
+}
+
 check_frontend_api_url() {
   local active_api_line
   active_api_line="$(grep -E '^[[:space:]]*const API_BASE_URL' "$WEB_DIR/app.js" || true)"
@@ -404,6 +459,8 @@ serve() {
   ensure_api
   ensure_frontend
   ensure_dashboard
+  ensure_review_dashboard
+  ensure_airflow
   check_frontend_api_url
 
   echo
@@ -414,6 +471,16 @@ serve() {
     echo "  Visitor-flow dashboard: $DASHBOARD_URL"
   else
     echo "  Visitor-flow dashboard: skipped"
+  fi
+  if is_ready "$REVIEW_DASHBOARD_URL/"; then
+    echo "  SNS-trend review dashboard: $REVIEW_DASHBOARD_URL"
+  else
+    echo "  SNS-trend review dashboard: skipped"
+  fi
+  if is_ready "$AIRFLOW_URL/health"; then
+    echo "  Airflow dashboard: $AIRFLOW_URL"
+  else
+    echo "  Airflow dashboard: skipped"
   fi
   if is_ready "$COMFYUI_URL/system_stats"; then
     echo "  ComfyUI internal: $COMFYUI_URL"
@@ -450,6 +517,7 @@ stop_one() {
 }
 
 stop_stack() {
+  stop_one sns_trend_review_dashboard "$PID_DIR/sns_trend_review_dashboard.pid"
   stop_one visitor_flow_dashboard "$PID_DIR/visitor_flow_dashboard.pid"
   stop_one frontend "$PID_DIR/frontend.pid"
   stop_one fastapi "$PID_DIR/fastapi.pid"
@@ -473,6 +541,8 @@ status_stack() {
   status_one frontend "$WEB_URL/"
   status_one fastapi "$API_URL/health"
   status_one visitor_flow_dashboard "$DASHBOARD_URL/"
+  status_one sns_trend_review_dashboard "$REVIEW_DASHBOARD_URL/"
+  status_one airflow_webserver "$AIRFLOW_URL/health"
   status_one comfyui "$COMFYUI_URL/system_stats"
   if "$DOCKER_BIN" compose -f "$DOCKER_COMPOSE_FILE" exec -T brandmate-postgres \
     pg_isready -U brandmate -d brandmate >/dev/null 2>&1; then
@@ -483,8 +553,8 @@ status_stack() {
 }
 
 tail_logs() {
-  touch "$LOG_DIR/fastapi.log" "$LOG_DIR/frontend.log" "$LOG_DIR/comfyui.log" "$LOG_DIR/visitor_flow_dashboard.log"
-  tail -f "$LOG_DIR/fastapi.log" "$LOG_DIR/frontend.log" "$LOG_DIR/comfyui.log" "$LOG_DIR/visitor_flow_dashboard.log"
+  touch "$LOG_DIR/fastapi.log" "$LOG_DIR/frontend.log" "$LOG_DIR/comfyui.log" "$LOG_DIR/visitor_flow_dashboard.log" "$LOG_DIR/sns_trend_review_dashboard.log"
+  tail -f "$LOG_DIR/fastapi.log" "$LOG_DIR/frontend.log" "$LOG_DIR/comfyui.log" "$LOG_DIR/visitor_flow_dashboard.log" "$LOG_DIR/sns_trend_review_dashboard.log"
 }
 
 run_qa() {
