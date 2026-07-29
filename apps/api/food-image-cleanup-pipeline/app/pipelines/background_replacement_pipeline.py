@@ -23,6 +23,7 @@ from app.services.detection import (
 from app.services.edge_decontamination import remove_color_spill
 from app.services.foreground_extraction import alpha_composite, extract_rgba, foreground_mask
 from app.services.foreground_placement import fit_background, place_foreground
+from app.services.food_support_recovery import recover_food_supports
 from app.services.generated_plate import find_generated_plate_region
 from app.services.grounding_dino import (
     GroundingDINODetector,
@@ -32,6 +33,10 @@ from app.services.grounding_dino import (
 from app.services.harmonization import harmonize_foreground
 from app.services.inpainting import BigLaMaInpainter, removal_mask_from_boxes
 from app.services.matting import BiRefNetMattingService
+from app.services.mask_quality import (
+    assess_food_mask_quality,
+    assess_plate_mask_quality,
+)
 from app.services.plate_edge_repair import repair_plate_edge
 from app.services.plate_mask import PlateMaskService
 from app.services.plate_preservation import (
@@ -393,7 +398,74 @@ class BackgroundReplacementPipeline:
                 else "sam_plus_plate_segmenter"
             )
         food_alpha_gate = np.where(food_only_mask > 0, 255, 0).astype(np.uint8)
+        food_support_config = dict(
+            self.config.models.get("food_support_recovery", {})
+        )
+        recover_supports = bool(food_support_config.get("enabled", True)) and (
+            not generated_plate_mode
+            or not bool(food_support_config.get("preserve_mode_only", True))
+        )
+        if recover_supports:
+            food_support_result = recover_food_supports(
+                original,
+                plate_result.mask,
+                food_alpha_gate,
+                (
+                    hq_food_segmentation.mask
+                    if hq_food_segmentation is not None
+                    else None,
+                    sam2_food_segmentation.mask,
+                ),
+                food_support_config,
+            )
+            food_support_mask = food_support_result.mask
+        else:
+            food_support_mask = np.zeros_like(food_alpha_gate)
+            food_support_result = None
+        if np.any(food_support_mask):
+            food_alpha_gate = cv2.bitwise_or(food_alpha_gate, food_support_mask)
+            stabilized_food_source = cv2.bitwise_or(
+                stabilized_food_source,
+                food_support_mask,
+            )
+            stabilized_foreground = cv2.bitwise_or(
+                stabilized_foreground,
+                food_support_mask,
+            )
         active_foreground_mask = food_alpha_gate if generated_plate_mode else stabilized_foreground
+        mask_quality_config = dict(self.config.models.get("mask_quality", {}))
+        food_mask_quality = assess_food_mask_quality(
+            food_alpha_gate,
+            plate_mask=plate_result.mask,
+            config=dict(mask_quality_config.get("food", {})),
+        )
+        plate_mask_quality = assess_plate_mask_quality(
+            plate_result.mask,
+            source_mask=plate_seed_mask,
+            shape_type=plate_result.shape_type,
+            shape_confidence=float(
+                plate_result.metrics.get("shape_confidence", 0.0)
+            ),
+            config=dict(mask_quality_config.get("plate", {})),
+        )
+        stages["step_2c_mask_quality"] = {
+            "status": (
+                "completed"
+                if food_mask_quality.passed and plate_mask_quality.passed
+                else "low_confidence"
+            ),
+            "food": {
+                **food_mask_quality.metrics,
+                "reasons": list(food_mask_quality.reasons),
+            },
+            "plate": {
+                **plate_mask_quality.metrics,
+                "reasons": list(plate_mask_quality.reasons),
+            },
+            "synthetic_rim_allowed": bool(
+                food_mask_quality.passed and plate_mask_quality.passed
+            ),
+        }
         stabilization_metrics = {
             "food": food_stabilization_metrics,
             "container": container_stabilization_metrics,
@@ -421,6 +493,22 @@ class BackgroundReplacementPipeline:
         food_mask_path = self.config.paths.mask_dir / f"{input_path.stem}_food_sam_mask.png"
         save_image(stabilized_food_source, food_mask_path)
         debug_artifacts["food_sam_mask"] = str(food_mask_path)
+        food_support_mask_path = (
+            self.config.paths.mask_dir / f"{input_path.stem}_food_support_mask.png"
+        )
+        save_image(food_support_mask, food_support_mask_path)
+        debug_artifacts["food_support_mask"] = str(food_support_mask_path)
+        stages["step_2d_food_support_recovery"] = {
+            **(
+                food_support_result.metrics
+                if food_support_result is not None
+                else {
+                    "status": "skipped_generated_plate_mode",
+                    "applied": False,
+                }
+            ),
+            "mask_path": str(food_support_mask_path),
+        }
         active_food_mask_path = self.config.paths.mask_dir / f"{input_path.stem}_food_active_mask.png"
         save_image(food_alpha_gate, active_food_mask_path)
         debug_artifacts["food_active_mask"] = str(active_food_mask_path)
@@ -445,6 +533,26 @@ class BackgroundReplacementPipeline:
                 validation=None,
                 status="food_visible_segmentation_required",
                 reason="원본 접시를 제거하는 합성을 위해 food_visible 분할 모델이 필요합니다. YOLO11-seg 접시·음식 모델을 학습한 뒤 plate_segmenter를 활성화하세요.",
+                debug_artifacts=debug_artifacts,
+            )
+        if (
+            generated_plate_mode
+            and bool(
+                mask_quality_config.get(
+                    "reject_generated_plate_on_food_failure",
+                    True,
+                )
+            )
+            and not food_mask_quality.passed
+        ):
+            return self._rejected_result(
+                report_path,
+                input_path=input_path,
+                foreground_path=None,
+                stages=stages,
+                validation=None,
+                status="food_mask_quality_failed",
+                reason="음식 전용 마스크의 품질이 낮아 원본 용기가 섞일 수 있으므로 generated_plate 합성을 중단합니다.",
                 debug_artifacts=debug_artifacts,
             )
         # 최종 알파는 항상 SAM 음식·접시 분할 마스크만 사용한다. BiRefNet은
@@ -530,7 +638,7 @@ class BackgroundReplacementPipeline:
         removal_protection_source = (
             food_alpha_gate
             if generated_plate_mode
-            else plate_alpha
+            else cv2.bitwise_or(plate_alpha, food_support_mask)
         )
         removal_protection = ((removal_protection_source > 0).astype(np.uint8) * 255)
         removal_protection = cv2.dilate(
@@ -593,7 +701,11 @@ class BackgroundReplacementPipeline:
         cleanup_config = dict(self.config.models.get("foreground_cleanup", {}))
         detached_foreground_mask = np.zeros_like(alpha, dtype=np.uint8)
         if cleanup_config.get("enabled", True):
-            anchor_source = food_alpha_gate if generated_plate_mode else plate_alpha
+            anchor_source = (
+                food_alpha_gate
+                if generated_plate_mode
+                else cv2.bitwise_or(plate_alpha, food_support_mask)
+            )
             anchor_dilation = int(cleanup_config.get("anchor_dilation", 15))
             anchor_dilation = anchor_dilation + 1 if anchor_dilation % 2 == 0 else anchor_dilation
             anchor = ((anchor_source > 0).astype(np.uint8) * 255)
@@ -705,8 +817,48 @@ class BackgroundReplacementPipeline:
                 plate_result.mask,
                 food_alpha_gate,
                 plate_edge_repair_config,
+                shape_type=plate_result.shape_type,
+                plate_quality=plate_mask_quality.metrics,
+                food_quality=food_mask_quality.metrics,
+                protected_detail_mask=food_support_mask,
+                source_image_bgr=original,
             )
             cleaned = plate_edge_repair.image
+            alpha_extension_applied = False
+            alpha_extension_mask_path: Path | None = None
+            if (
+                plate_edge_repair.alpha_extension_mask is not None
+                and np.any(plate_edge_repair.alpha_extension_mask)
+                and bool(
+                    plate_edge_repair_config.get(
+                        "plate_edge_alpha_extension_enabled",
+                        True,
+                    )
+                )
+            ):
+                extension_alpha = build_plate_preservation_alpha(
+                    plate_edge_repair.alpha_extension_mask,
+                    feather_kernel=int(
+                        plate_edge_repair_config.get(
+                            "plate_edge_alpha_extension_feather_kernel",
+                            3,
+                        )
+                    ),
+                )
+                alpha = np.maximum(alpha, extension_alpha)
+                save_image(alpha, alpha_path)
+                alpha_extension_mask_path = (
+                    self.config.paths.mask_dir
+                    / f"{input_path.stem}_plate_edge_alpha_extension_mask.png"
+                )
+                save_image(
+                    plate_edge_repair.alpha_extension_mask,
+                    alpha_extension_mask_path,
+                )
+                debug_artifacts["plate_edge_alpha_extension_mask"] = str(
+                    alpha_extension_mask_path
+                )
+                alpha_extension_applied = True
             plate_edge_repair_mask_path = (
                 self.config.paths.mask_dir / f"{input_path.stem}_plate_edge_repair_mask.png"
             )
@@ -715,6 +867,10 @@ class BackgroundReplacementPipeline:
             stages["step_5d_plate_edge_repair"] = {
                 **plate_edge_repair.metrics,
                 "mask_path": str(plate_edge_repair_mask_path),
+                "alpha_extension_applied": alpha_extension_applied,
+                "alpha_extension_mask_path": str(alpha_extension_mask_path)
+                if alpha_extension_mask_path is not None
+                else None,
                 "after_container_blur": True,
             }
 

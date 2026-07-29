@@ -142,7 +142,20 @@ def split_plate_and_food_boxes(
     """언어 검출 라벨을 접시 후보와 음식 후보로 분류한다."""
 
     plate_terms = ("plate", "dish", "bowl", "saucer", "tray")
-    food_terms = ("food", "meal", "dish", "bread", "cake", "dessert", "pizza", "sandwich")
+    food_terms = (
+        "food",
+        "meal",
+        "dish",
+        "bread",
+        "cake",
+        "dessert",
+        "pizza",
+        "sandwich",
+        "skewer",
+        "chopstick",
+        "satay stick",
+        "food stick",
+    )
     plate_boxes = [item.box_xyxy for item in detections if any(term in item.label for term in plate_terms)]
     food_boxes = [item.box_xyxy for item in detections if any(term in item.label for term in food_terms)]
     return plate_boxes, food_boxes, detections

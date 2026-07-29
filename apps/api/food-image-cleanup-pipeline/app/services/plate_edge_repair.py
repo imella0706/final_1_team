@@ -6,12 +6,15 @@ from typing import Any
 import cv2
 import numpy as np
 
+from app.services.rim_observation import observe_container_rim
+
 
 @dataclass(frozen=True, slots=True)
 class PlateEdgeRepairResult:
     image: np.ndarray
     mask: np.ndarray
     metrics: dict[str, float | int | bool | str]
+    alpha_extension_mask: np.ndarray | None = None
 
 
 def _odd(value: int) -> int:
@@ -163,8 +166,48 @@ def _build_ellipse_rim_line_mask(
 
     line = np.zeros_like(plate_mask)
     cv2.ellipse(line, cv2.fitEllipse(contour), 255, thickness=max(1, int(thickness)))
-    plate_guard = cv2.dilate(plate_mask, np.ones((3, 3), np.uint8))
-    return cv2.bitwise_and(line, plate_guard)
+    # Geometry derived only from the plate mask must never paint outside it.
+    # A separate, evidence-backed observed-rim fit may extend the support later.
+    return cv2.bitwise_and(line, plate_mask)
+
+
+def _build_shape_rim_line_mask(
+    plate_mask: np.ndarray,
+    thickness: int,
+    *,
+    shape_type: str,
+    inset: int = 0,
+) -> np.ndarray:
+    if shape_type == "ellipse":
+        return _build_ellipse_rim_line_mask(
+            plate_mask,
+            thickness,
+            inset=inset,
+        )
+
+    fit_mask = plate_mask
+    inset = max(0, int(inset))
+    if inset:
+        fit_mask = cv2.erode(
+            plate_mask,
+            cv2.getStructuringElement(
+                cv2.MORPH_ELLIPSE,
+                (_odd(inset * 2 + 1), _odd(inset * 2 + 1)),
+            ),
+        )
+        if not np.any(fit_mask):
+            fit_mask = plate_mask
+    contours, _ = cv2.findContours(
+        fit_mask,
+        cv2.RETR_EXTERNAL,
+        cv2.CHAIN_APPROX_NONE,
+    )
+    line = np.zeros_like(plate_mask)
+    if not contours:
+        return line
+    contour = max(contours, key=cv2.contourArea)
+    cv2.drawContours(line, [contour], -1, 255, max(1, int(thickness)))
+    return cv2.bitwise_and(line, plate_mask)
 
 
 def _build_hue_rim_observed_mask(
@@ -201,6 +244,413 @@ def _build_hue_rim_observed_mask(
     if not allow_food_overlap:
         observed = cv2.bitwise_and(observed, cv2.bitwise_not(food_mask))
     return observed
+
+
+def _build_observed_rim_fitted_line_mask(
+    image_bgr: np.ndarray,
+    plate_mask: np.ndarray,
+    *,
+    thickness: int,
+    boundary_width: int,
+    plate_dilation: int,
+    minimum_component_area: int,
+    minimum_pixels: int,
+    observed_dilation: int,
+    minimum_overlap_ratio: float,
+    maximum_aspect_ratio: float,
+    minimum_area_ratio: float,
+    maximum_area_ratio: float,
+    maximum_center_shift_ratio: float,
+    hue_min: int,
+    hue_max: int,
+    saturation_min: int,
+    value_min: int,
+    value_max: int,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, dict[str, Any]]:
+    """Fit the expected rim to real colored rim pixels near the plate boundary."""
+    empty = np.zeros_like(plate_mask)
+    plate_dilation = max(0, int(plate_dilation))
+    if plate_dilation:
+        plate_guard = cv2.dilate(
+            plate_mask,
+            cv2.getStructuringElement(
+                cv2.MORPH_ELLIPSE,
+                (_odd(plate_dilation * 2 + 1), _odd(plate_dilation * 2 + 1)),
+            ),
+        )
+    else:
+        plate_guard = plate_mask
+
+    boundary_width = max(1, int(boundary_width))
+    inner_plate = cv2.erode(
+        plate_mask,
+        cv2.getStructuringElement(
+            cv2.MORPH_ELLIPSE,
+            (_odd(boundary_width * 2 + 1), _odd(boundary_width * 2 + 1)),
+        ),
+    )
+    boundary_band = cv2.bitwise_and(plate_guard, cv2.bitwise_not(inner_plate))
+    observed = _build_hue_rim_observed_mask(
+        image_bgr,
+        plate_guard,
+        np.zeros_like(plate_mask),
+        hue_min=hue_min,
+        hue_max=hue_max,
+        saturation_min=saturation_min,
+        value_min=value_min,
+        value_max=value_max,
+        allow_food_overlap=True,
+    )
+    observed = cv2.bitwise_and(observed, boundary_band)
+    observed = _filter_small_components(observed, max(1, int(minimum_component_area)))
+
+    ys, xs = np.where(observed > 0)
+    observed_pixels = int(len(xs))
+    metrics: dict[str, Any] = {
+        "enabled": True,
+        "used": False,
+        "observed_pixels": observed_pixels,
+    }
+    if observed_pixels < max(5, int(minimum_pixels)):
+        metrics["reason"] = "insufficient_observed_rim_pixels"
+        return empty, observed, empty, metrics
+
+    points = np.column_stack((xs, ys)).astype(np.float32).reshape(-1, 1, 2)
+    fitted_ellipse = cv2.fitEllipse(points)
+    (center_x, center_y), (axis_a, axis_b), angle = fitted_ellipse
+    aspect_ratio = max(axis_a, axis_b) / max(min(axis_a, axis_b), 1.0)
+    fitted_area = float(np.pi * axis_a * axis_b * 0.25)
+    plate_area = float(np.count_nonzero(plate_mask))
+    area_ratio = fitted_area / max(plate_area, 1.0)
+
+    plate_contours, _ = cv2.findContours(
+        plate_mask,
+        cv2.RETR_EXTERNAL,
+        cv2.CHAIN_APPROX_SIMPLE,
+    )
+    center_shift_ratio = 0.0
+    if plate_contours:
+        plate_contour = max(plate_contours, key=cv2.contourArea)
+        if len(plate_contour) >= 5:
+            (plate_center_x, plate_center_y), (plate_axis_a, plate_axis_b), _ = (
+                cv2.fitEllipse(plate_contour)
+            )
+            center_shift_ratio = float(
+                np.hypot(center_x - plate_center_x, center_y - plate_center_y)
+                / max(plate_axis_a, plate_axis_b, 1.0)
+            )
+
+    line = np.zeros_like(plate_mask)
+    cv2.ellipse(line, fitted_ellipse, 255, thickness=max(1, int(thickness)))
+    line = cv2.bitwise_and(line, plate_guard)
+    filled = np.zeros_like(plate_mask)
+    cv2.ellipse(filled, fitted_ellipse, 255, thickness=-1)
+    filled = cv2.bitwise_and(filled, plate_guard)
+
+    observed_near = cv2.dilate(
+        observed,
+        cv2.getStructuringElement(
+            cv2.MORPH_ELLIPSE,
+            (_odd(observed_dilation), _odd(observed_dilation)),
+        ),
+    )
+    line_pixels = int(np.count_nonzero(line))
+    overlap_pixels = int(np.count_nonzero(cv2.bitwise_and(line, observed_near)))
+    overlap_ratio = overlap_pixels / max(line_pixels, 1)
+    metrics.update(
+        {
+            "line_pixels": line_pixels,
+            "overlap_pixels": overlap_pixels,
+            "overlap_ratio": round(float(overlap_ratio), 6),
+            "ellipse_center_x": round(float(center_x), 3),
+            "ellipse_center_y": round(float(center_y), 3),
+            "ellipse_axis_a": round(float(axis_a), 3),
+            "ellipse_axis_b": round(float(axis_b), 3),
+            "ellipse_angle": round(float(angle), 3),
+            "ellipse_aspect_ratio": round(float(aspect_ratio), 6),
+            "ellipse_area_ratio": round(float(area_ratio), 6),
+            "center_shift_ratio": round(float(center_shift_ratio), 6),
+        }
+    )
+    if aspect_ratio > float(maximum_aspect_ratio):
+        metrics["reason"] = "ellipse_aspect_ratio_rejected"
+        return empty, observed, empty, metrics
+    if not float(minimum_area_ratio) <= area_ratio <= float(maximum_area_ratio):
+        metrics["reason"] = "ellipse_area_ratio_rejected"
+        return empty, observed, empty, metrics
+    if center_shift_ratio > float(maximum_center_shift_ratio):
+        metrics["reason"] = "ellipse_center_shift_rejected"
+        return empty, observed, empty, metrics
+    if overlap_ratio < float(minimum_overlap_ratio):
+        metrics["reason"] = "ellipse_color_overlap_rejected"
+        return empty, observed, empty, metrics
+
+    metrics["used"] = True
+    metrics["reason"] = "observed_rim_ellipse_accepted"
+    return line, observed, filled, metrics
+
+
+def _build_bracketed_rim_gap_target(
+    expected_rim_line: np.ndarray,
+    observed_rim: np.ndarray,
+    fitted_rim_fill: np.ndarray,
+    repair_seed: np.ndarray,
+    *,
+    top_ratio: float,
+    observed_dilation: int,
+    anchor_close_kernel: int,
+    repair_anchor_dilation: int,
+    minimum_gap_width: int,
+    maximum_gap_width: int,
+    endpoint_margin: int,
+) -> tuple[np.ndarray, dict[str, Any]]:
+    """Fill only top-rim gaps that have real rim-color anchors on both sides."""
+    empty = np.zeros_like(expected_rim_line)
+    top_arc = _top_plate_arc_mask(fitted_rim_fill, top_ratio)
+    expected = cv2.bitwise_and(expected_rim_line, top_arc)
+    if not np.any(expected) or not np.any(observed_rim):
+        return empty, {
+            "enabled": True,
+            "gap_count": 0,
+            "reason": "missing_expected_or_observed_rim",
+        }
+
+    observed_near = cv2.dilate(
+        observed_rim,
+        cv2.getStructuringElement(
+            cv2.MORPH_ELLIPSE,
+            (_odd(observed_dilation), _odd(observed_dilation)),
+        ),
+    )
+    anchored = cv2.bitwise_and(expected, observed_near)
+    expected_columns = np.any(expected > 0, axis=0)
+    anchored_columns = np.any(anchored > 0, axis=0)
+    if anchor_close_kernel > 1:
+        row = (anchored_columns.astype(np.uint8) * 255).reshape(1, -1)
+        row = cv2.morphologyEx(
+            row,
+            cv2.MORPH_CLOSE,
+            cv2.getStructuringElement(
+                cv2.MORPH_RECT,
+                (_odd(anchor_close_kernel), 1),
+            ),
+        )
+        anchored_columns = row.reshape(-1) > 0
+
+    anchor_x = np.flatnonzero(anchored_columns & expected_columns)
+    if len(anchor_x) < 2:
+        return empty, {
+            "enabled": True,
+            "gap_count": 0,
+            "anchor_columns": int(len(anchor_x)),
+            "reason": "insufficient_bracketing_anchors",
+        }
+
+    repair_near = cv2.dilate(
+        repair_seed,
+        cv2.getStructuringElement(
+            cv2.MORPH_ELLIPSE,
+            (_odd(repair_anchor_dilation), _odd(repair_anchor_dilation)),
+        ),
+    )
+    minimum_gap_width = max(1, int(minimum_gap_width))
+    maximum_gap_width = max(minimum_gap_width, int(maximum_gap_width))
+    endpoint_margin = max(0, int(endpoint_margin))
+    target = np.zeros_like(expected)
+    accepted_widths: list[int] = []
+    first_anchor = int(anchor_x.min())
+    last_anchor = int(anchor_x.max())
+    x = first_anchor + 1
+    while x < last_anchor:
+        if anchored_columns[x] or not expected_columns[x]:
+            x += 1
+            continue
+        start = x
+        while (
+            x <= last_anchor
+            and expected_columns[x]
+            and not anchored_columns[x]
+        ):
+            x += 1
+        end = x - 1
+        if x > last_anchor or not anchored_columns[x]:
+            continue
+        width = end - start + 1
+        if not minimum_gap_width <= width <= maximum_gap_width:
+            continue
+
+        left = max(first_anchor, start - endpoint_margin)
+        right = min(last_anchor, end + endpoint_margin)
+        candidate = np.zeros_like(expected)
+        candidate[:, left : right + 1] = expected[:, left : right + 1]
+        if not np.any(cv2.bitwise_and(candidate, repair_near)):
+            continue
+        target = cv2.bitwise_or(target, candidate)
+        accepted_widths.append(width)
+
+    return target, {
+        "enabled": True,
+        "gap_count": len(accepted_widths),
+        "gap_widths": accepted_widths,
+        "anchor_columns": int(len(anchor_x)),
+        "target_pixels": int(np.count_nonzero(target)),
+        "reason": "bracketed_gaps_selected" if accepted_widths else "no_eligible_gap",
+    }
+
+
+def _build_contour_bracketed_gap_target(
+    expected_rim_line: np.ndarray,
+    observed_rim: np.ndarray,
+    fitted_rim_fill: np.ndarray,
+    repair_seed: np.ndarray,
+    *,
+    observed_dilation: int,
+    anchor_close_kernel: int,
+    repair_anchor_dilation: int,
+    minimum_gap_length: int,
+    maximum_gap_length: int,
+    endpoint_margin: int,
+    line_width: int,
+    maximum_gap_count: int,
+    maximum_total_gap_fraction: float,
+    allowed_region: np.ndarray | None = None,
+) -> tuple[np.ndarray, dict[str, Any]]:
+    """Select only contour gaps with observed anchors at both endpoints."""
+    empty = np.zeros_like(expected_rim_line)
+    contours, _ = cv2.findContours(
+        fitted_rim_fill,
+        cv2.RETR_EXTERNAL,
+        cv2.CHAIN_APPROX_NONE,
+    )
+    if not contours or not np.any(expected_rim_line) or not np.any(observed_rim):
+        return empty, {
+            "enabled": True,
+            "gap_count": 0,
+            "reason": "missing_contour_or_observed_rim",
+        }
+
+    contour = max(contours, key=cv2.contourArea).reshape(-1, 2)
+    if len(contour) < 8:
+        return empty, {
+            "enabled": True,
+            "gap_count": 0,
+            "reason": "contour_too_short",
+        }
+    observed_near = cv2.dilate(
+        observed_rim,
+        cv2.getStructuringElement(
+            cv2.MORPH_ELLIPSE,
+            (_odd(observed_dilation), _odd(observed_dilation)),
+        ),
+    )
+    anchored = observed_near[contour[:, 1], contour[:, 0]] > 0
+    if anchor_close_kernel > 1:
+        cyclic = np.concatenate([anchored, anchored, anchored]).astype(np.uint8)
+        cyclic = cv2.morphologyEx(
+            (cyclic * 255).reshape(1, -1),
+            cv2.MORPH_CLOSE,
+            cv2.getStructuringElement(
+                cv2.MORPH_RECT,
+                (_odd(anchor_close_kernel), 1),
+            ),
+        ).reshape(-1) > 0
+        anchored = cyclic[len(anchored) : len(anchored) * 2]
+    if int(np.count_nonzero(anchored)) < 2:
+        return empty, {
+            "enabled": True,
+            "gap_count": 0,
+            "anchor_points": int(np.count_nonzero(anchored)),
+            "reason": "insufficient_bracketing_anchors",
+        }
+
+    repair_near = cv2.dilate(
+        repair_seed,
+        cv2.getStructuringElement(
+            cv2.MORPH_ELLIPSE,
+            (_odd(repair_anchor_dilation), _odd(repair_anchor_dilation)),
+        ),
+    )
+    length = len(contour)
+    minimum_gap_length = max(1, int(minimum_gap_length))
+    maximum_gap_length = max(minimum_gap_length, int(maximum_gap_length))
+    endpoint_margin = max(0, int(endpoint_margin))
+    starts = [
+        index
+        for index in range(length)
+        if not anchored[index] and anchored[(index - 1) % length]
+    ]
+    candidates: list[tuple[float, int, np.ndarray]] = []
+    for start in starts:
+        end = start
+        while not anchored[end % length] and end - start < length:
+            end += 1
+        gap_length = end - start
+        if not minimum_gap_length <= gap_length <= maximum_gap_length:
+            continue
+        indices = [
+            index % length
+            for index in range(
+                start - endpoint_margin,
+                end + endpoint_margin + 1,
+            )
+        ]
+        points = contour[indices]
+        point_mask = np.zeros_like(expected_rim_line)
+        cv2.polylines(
+            point_mask,
+            [points.reshape(-1, 1, 2)],
+            False,
+            255,
+            max(1, int(line_width)),
+        )
+        candidate = cv2.bitwise_and(point_mask, expected_rim_line)
+        if allowed_region is not None:
+            candidate = cv2.bitwise_and(candidate, allowed_region)
+        if not np.any(candidate):
+            continue
+        repair_overlap = int(
+            np.count_nonzero(cv2.bitwise_and(candidate, repair_near))
+        )
+        if repair_overlap == 0:
+            continue
+        score = repair_overlap / max(np.count_nonzero(candidate), 1)
+        candidates.append((float(score), gap_length, candidate))
+
+    candidates.sort(key=lambda item: (item[0], -item[1]), reverse=True)
+    maximum_gap_count = max(1, int(maximum_gap_count))
+    maximum_total_length = max(
+        minimum_gap_length,
+        int(round(length * max(0.0, float(maximum_total_gap_fraction)))),
+    )
+    target = np.zeros_like(expected_rim_line)
+    accepted_lengths: list[int] = []
+    total_length = 0
+    for _, gap_length, candidate in candidates:
+        if len(accepted_lengths) >= maximum_gap_count:
+            break
+        if total_length + gap_length > maximum_total_length:
+            continue
+        target = cv2.bitwise_or(target, candidate)
+        accepted_lengths.append(gap_length)
+        total_length += gap_length
+
+    return target, {
+        "enabled": True,
+        "gap_count": len(accepted_lengths),
+        "gap_lengths": accepted_lengths,
+        "anchor_points": int(np.count_nonzero(anchored)),
+        "contour_points": length,
+        "candidate_gap_count": len(candidates),
+        "maximum_gap_count": maximum_gap_count,
+        "maximum_total_gap_length": maximum_total_length,
+        "selected_total_gap_length": total_length,
+        "target_pixels": int(np.count_nonzero(target)),
+        "reason": (
+            "contour_bracketed_gaps_selected"
+            if accepted_lengths
+            else "no_eligible_contour_gap"
+        ),
+    }
 
 
 def _build_color_aligned_rim_line_mask(
@@ -566,6 +1016,7 @@ def _blend_rim_color(
     *,
     opacity: float,
     feather_kernel: int,
+    support_mask: np.ndarray | None = None,
 ) -> np.ndarray:
     if not np.any(mask):
         return image_bgr
@@ -580,12 +1031,35 @@ def _blend_rim_color(
         max_alpha = float(alpha.max())
         if max_alpha > 0:
             alpha = alpha / max_alpha
+    if support_mask is not None:
+        alpha *= (support_mask > 0).astype(np.float32)
     alpha = (alpha * opacity)[:, :, None]
     if rim_color.ndim == 3 and rim_color.shape == image_bgr.shape:
         color = rim_color.astype(np.float32)
     else:
         color = rim_color.astype(np.float32).reshape(1, 1, 3)
     blended = image_bgr.astype(np.float32) * (1.0 - alpha) + color * alpha
+    return np.clip(blended, 0, 255).astype(np.uint8)
+
+
+def _restore_source_pixels(
+    image_bgr: np.ndarray,
+    source_bgr: np.ndarray,
+    mask: np.ndarray,
+    *,
+    feather_kernel: int,
+) -> np.ndarray:
+    if not np.any(mask):
+        return image_bgr
+    alpha = mask.astype(np.float32) / 255.0
+    feather_kernel = _odd(feather_kernel)
+    if feather_kernel > 1:
+        alpha = cv2.GaussianBlur(alpha, (feather_kernel, feather_kernel), 0)
+    alpha = alpha[:, :, None]
+    blended = (
+        image_bgr.astype(np.float32) * (1.0 - alpha)
+        + source_bgr.astype(np.float32) * alpha
+    )
     return np.clip(blended, 0, 255).astype(np.uint8)
 
 
@@ -660,6 +1134,12 @@ def repair_plate_edge(
     plate_mask: np.ndarray,
     food_mask: np.ndarray,
     config: dict[str, Any],
+    *,
+    shape_type: str | None = None,
+    plate_quality: dict[str, Any] | None = None,
+    food_quality: dict[str, Any] | None = None,
+    protected_detail_mask: np.ndarray | None = None,
+    source_image_bgr: np.ndarray | None = None,
 ) -> PlateEdgeRepairResult:
     """Fill small occluders on the preserved plate rim without expanding alpha.
 
@@ -683,6 +1163,30 @@ def repair_plate_edge(
 
     plate = np.where(plate_mask >= 128, 255, 0).astype(np.uint8)
     food = np.where(food_mask >= 128, 255, 0).astype(np.uint8)
+    protected_detail = (
+        np.where(protected_detail_mask >= 128, 255, 0).astype(np.uint8)
+        if protected_detail_mask is not None
+        else np.zeros_like(plate)
+    )
+    source_image = source_image_bgr if source_image_bgr is not None else image_bgr
+    if protected_detail.shape != plate.shape or source_image.shape != image_bgr.shape:
+        raise ValueError("protected detail and source image must match the input image")
+    resolved_shape_type = str(
+        shape_type or config.get("shape_type", "ellipse")
+    ).strip().lower()
+    if resolved_shape_type not in {"ellipse", "quadrilateral", "irregular"}:
+        resolved_shape_type = "irregular"
+    quality_gate_enabled = bool(config.get("quality_gate_enabled", True))
+    plate_quality_passed = (
+        True if plate_quality is None else bool(plate_quality.get("passed", False))
+    )
+    food_quality_passed = (
+        True if food_quality is None else bool(food_quality.get("passed", False))
+    )
+    synthetic_quality_allowed = (
+        not quality_gate_enabled
+        or (plate_quality_passed and food_quality_passed)
+    )
     if not np.any(plate) or not np.any(food):
         return PlateEdgeRepairResult(
             image=image_bgr,
@@ -725,6 +1229,18 @@ def repair_plate_edge(
 
     repair_mask = cv2.bitwise_and(rim_ring, food)
     repair_mask = cv2.bitwise_and(repair_mask, cv2.bitwise_not(protected_food))
+    detail_guard_width = max(1, int(config.get("protected_detail_guard_width", 5)))
+    protected_detail_guard = cv2.dilate(
+        protected_detail,
+        cv2.getStructuringElement(
+            cv2.MORPH_ELLIPSE,
+            (_odd(detail_guard_width), _odd(detail_guard_width)),
+        ),
+    )
+    repair_mask = cv2.bitwise_and(
+        repair_mask,
+        cv2.bitwise_not(protected_detail_guard),
+    )
 
     close_kernel = int(config.get("close_kernel", 5))
     if close_kernel > 1:
@@ -762,6 +1278,18 @@ def repair_plate_edge(
     color_aligned_rim_pixels = 0
     color_aligned_rim_inset = 0
     color_aligned_rim_overlap_pixels = 0
+    alpha_extension_mask = np.zeros_like(plate)
+    observed_rim_fit_metrics: dict[str, Any] = {"enabled": False, "used": False}
+    adaptive_rim_observation_metrics: dict[str, Any] = {
+        "enabled": False,
+        "used": False,
+    }
+    observed_source_rim_mask = np.zeros_like(plate)
+    bracketed_gap_metrics: dict[str, Any] = {"enabled": False, "gap_count": 0}
+    synthetic_rim_bridge_mode = str(
+        config.get("synthetic_rim_bridge_mode", "observed_gap")
+    ).strip().lower()
+    synthetic_rim_bridge_outside_plate_pixels = 0
     missing_rim_core_pixels = 0
     missing_rim_surface_pixels = 0
     missing_rim_metrics: dict[str, int | float | bool] = {"enabled": False}
@@ -773,19 +1301,27 @@ def repair_plate_edge(
     }
     if bool(config.get("restore_rim_line", True)):
         rim_line_width = max(1, int(config.get("rim_line_width", 5)))
-        rim_line_mask = _build_ellipse_rim_line_mask(plate, rim_line_width)
+        rim_line_mask = _build_shape_rim_line_mask(
+            plate,
+            rim_line_width,
+            shape_type=resolved_shape_type,
+        )
         inner_rim_line_pixels = 0
         inner_rim_line_mask = np.zeros_like(rim_line_mask)
         if bool(config.get("restore_inner_rim_line", True)):
-            inner_rim_line_mask = _build_ellipse_rim_line_mask(
+            inner_rim_line_mask = _build_shape_rim_line_mask(
                 plate,
                 max(1, int(config.get("inner_rim_line_width", rim_line_width))),
+                shape_type=resolved_shape_type,
                 inset=int(config.get("inner_rim_line_inset", 22)),
             )
             inner_rim_line_pixels = int(np.count_nonzero(inner_rim_line_mask))
             rim_line_mask = cv2.bitwise_or(rim_line_mask, inner_rim_line_mask)
         color_aligned_rim_line_mask = np.zeros_like(rim_line_mask)
-        if bool(config.get("color_aligned_rim_enabled", True)):
+        if (
+            resolved_shape_type == "ellipse"
+            and bool(config.get("color_aligned_rim_enabled", True))
+        ):
             (
                 color_aligned_rim_line_mask,
                 color_aligned_rim_inset,
@@ -951,6 +1487,7 @@ def repair_plate_edge(
                             feather_kernel=int(
                                 config.get("rim_missing_surface_feather_kernel", 7)
                             ),
+                            support_mask=plate,
                         )
                         repair_mask = cv2.bitwise_or(
                             repair_mask,
@@ -962,6 +1499,7 @@ def repair_plate_edge(
                     rim_blend_source,
                     opacity=opacity,
                     feather_kernel=int(config.get("rim_line_feather_kernel", 7)),
+                    support_mask=plate,
                 )
                 if bool(config.get("rim_missing_core_blend_enabled", True)):
                     missing_core_target = cv2.bitwise_and(
@@ -978,6 +1516,7 @@ def repair_plate_edge(
                             feather_kernel=int(
                                 config.get("rim_missing_core_feather_kernel", 3)
                             ),
+                            support_mask=plate,
                         )
                         repair_mask = cv2.bitwise_or(repair_mask, missing_core_target)
                 repair_mask = cv2.bitwise_or(repair_mask, line_target)
@@ -988,92 +1527,541 @@ def repair_plate_edge(
                     if not np.any(bridge_source_mask):
                         bridge_source_mask = rim_line_mask
                     bridge_seed = cv2.bitwise_or(repair_mask, missing_rim_target)
-                    synthetic_bridge_target = _connect_top_rim_bridge_target(
-                        bridge_source_mask,
-                        plate,
-                        bridge_seed,
-                        top_ratio=float(config.get("synthetic_rim_bridge_top_ratio", 0.30)),
-                        bridge_dilation=int(
-                            config.get("synthetic_rim_bridge_dilation", 95)
-                        ),
-                        horizontal_margin=int(
-                            config.get("synthetic_rim_bridge_horizontal_margin", 64)
-                        ),
+                    bridge_support_mask = plate
+                    fitted_rim_fill = plate
+                    observed_rim = np.zeros_like(plate)
+                    adaptive_rim_color: np.ndarray | None = None
+                    adaptive_rim_config = dict(
+                        config.get("adaptive_rim_observation", {})
                     )
-                    if bool(config.get("synthetic_rim_bridge_connect_full_top", True)):
-                        top_arc = _top_plate_arc_mask(
+                    adaptive_rim_enabled = bool(
+                        adaptive_rim_config.get("enabled", True)
+                    )
+                    if adaptive_rim_enabled:
+                        adaptive_observation = observe_container_rim(
+                            image_bgr,
                             plate,
-                            float(config.get("synthetic_rim_bridge_top_ratio", 0.30)),
+                            food,
+                            shape_type=resolved_shape_type,
+                            config=adaptive_rim_config,
                         )
-                        top_inner_rim = cv2.bitwise_and(bridge_source_mask, top_arc)
-                        if np.any(top_inner_rim) and np.any(synthetic_bridge_target):
-                            ys, xs = np.where(synthetic_bridge_target > 0)
-                            x_min = max(
+                        adaptive_rim_observation_metrics = {
+                            "enabled": True,
+                            **adaptive_observation.metrics,
+                        }
+                        if bool(adaptive_observation.metrics.get("used", False)):
+                            bridge_source_mask = adaptive_observation.line_mask
+                            observed_rim = adaptive_observation.observed_mask
+                            fitted_rim_fill = adaptive_observation.fill_mask
+                            adaptive_rim_color = adaptive_observation.color_bgr
+                            outside_tolerance = max(
                                 0,
-                                int(xs.min())
-                                - max(
-                                    0,
-                                    int(
-                                        config.get(
-                                            "synthetic_rim_bridge_horizontal_margin",
-                                            64,
-                                        )
+                                int(
+                                    config.get(
+                                        "synthetic_rim_bridge_plate_outside_tolerance",
+                                        9,
+                                    )
+                                ),
+                            )
+                            bridge_support_mask = cv2.dilate(
+                                plate,
+                                cv2.getStructuringElement(
+                                    cv2.MORPH_ELLIPSE,
+                                    (
+                                        _odd(outside_tolerance * 2 + 1),
+                                        _odd(outside_tolerance * 2 + 1),
                                     ),
                                 ),
                             )
-                            x_max = min(
-                                top_inner_rim.shape[1] - 1,
-                                int(xs.max())
-                                + max(
-                                    0,
+                            if bool(
+                                config.get(
+                                    "observed_source_rim_preservation_enabled",
+                                    True,
+                                )
+                            ):
+                                source_width = max(
+                                    1,
                                     int(
                                         config.get(
-                                            "synthetic_rim_bridge_horizontal_margin",
-                                            64,
+                                            "observed_source_rim_dilation",
+                                            3,
                                         )
+                                    ),
+                                )
+                                observed_source_rim_mask = cv2.dilate(
+                                    observed_rim,
+                                    cv2.getStructuringElement(
+                                        cv2.MORPH_ELLIPSE,
+                                        (_odd(source_width), _odd(source_width)),
+                                    ),
+                                )
+                                source_corridor = cv2.dilate(
+                                    bridge_source_mask,
+                                    cv2.getStructuringElement(
+                                        cv2.MORPH_ELLIPSE,
+                                        (
+                                            _odd(source_width + 2),
+                                            _odd(source_width + 2),
+                                        ),
+                                    ),
+                                )
+                                observed_source_rim_mask = cv2.bitwise_and(
+                                    observed_source_rim_mask,
+                                    source_corridor,
+                                )
+                                observed_source_rim_mask = cv2.bitwise_and(
+                                    observed_source_rim_mask,
+                                    bridge_support_mask,
+                                )
+                                observed_source_rim_mask = cv2.bitwise_and(
+                                    observed_source_rim_mask,
+                                    cv2.bitwise_not(protected_detail_guard),
+                                )
+                        else:
+                            synthetic_quality_allowed = False
+                    elif bool(config.get("observed_rim_fit_enabled", True)):
+                        (
+                            observed_fit_line,
+                            observed_rim,
+                            fitted_rim_fill,
+                            observed_rim_fit_metrics,
+                        ) = _build_observed_rim_fitted_line_mask(
+                            image_bgr,
+                            plate,
+                            thickness=max(
+                                1,
+                                int(
+                                    config.get(
+                                        "observed_rim_fit_line_width",
+                                        config.get(
+                                            "color_aligned_rim_line_width",
+                                            rim_line_width,
+                                        ),
+                                    )
+                                ),
+                            ),
+                            boundary_width=int(
+                                config.get("observed_rim_fit_boundary_width", 52)
+                            ),
+                            plate_dilation=int(
+                                config.get("observed_rim_fit_plate_dilation", 9)
+                            ),
+                            minimum_component_area=int(
+                                config.get("observed_rim_fit_min_component_area", 8)
+                            ),
+                            minimum_pixels=int(
+                                config.get("observed_rim_fit_min_pixels", 256)
+                            ),
+                            observed_dilation=int(
+                                config.get("observed_rim_fit_observed_dilation", 7)
+                            ),
+                            minimum_overlap_ratio=float(
+                                config.get("observed_rim_fit_min_overlap_ratio", 0.55)
+                            ),
+                            maximum_aspect_ratio=float(
+                                config.get("observed_rim_fit_max_aspect_ratio", 1.35)
+                            ),
+                            minimum_area_ratio=float(
+                                config.get("observed_rim_fit_min_area_ratio", 0.55)
+                            ),
+                            maximum_area_ratio=float(
+                                config.get("observed_rim_fit_max_area_ratio", 1.05)
+                            ),
+                            maximum_center_shift_ratio=float(
+                                config.get(
+                                    "observed_rim_fit_max_center_shift_ratio",
+                                    0.08,
+                                )
+                            ),
+                            hue_min=int(config.get("synthetic_rim_color_hue_min", 35)),
+                            hue_max=int(config.get("synthetic_rim_color_hue_max", 95)),
+                            saturation_min=int(
+                                config.get("synthetic_rim_color_saturation_min", 45)
+                            ),
+                            value_min=int(
+                                config.get("synthetic_rim_color_value_min", 30)
+                            ),
+                            value_max=int(
+                                config.get("synthetic_rim_color_value_max", 210)
+                            ),
+                        )
+                        if bool(observed_rim_fit_metrics.get("used", False)):
+                            bridge_source_mask = observed_fit_line
+                            outside_tolerance = max(
+                                0,
+                                int(
+                                    config.get(
+                                        "synthetic_rim_bridge_plate_outside_tolerance",
+                                        9,
+                                    )
+                                ),
+                            )
+                            bridge_support_mask = cv2.dilate(
+                                plate,
+                                cv2.getStructuringElement(
+                                    cv2.MORPH_ELLIPSE,
+                                    (
+                                        _odd(outside_tolerance * 2 + 1),
+                                        _odd(outside_tolerance * 2 + 1),
                                     ),
                                 ),
                             )
-                            full_bridge = np.zeros_like(top_inner_rim)
-                            full_bridge[:, x_min : x_max + 1] = 255
-                            synthetic_bridge_target = cv2.bitwise_or(
-                                synthetic_bridge_target,
-                                cv2.bitwise_and(full_bridge, top_inner_rim),
+
+                    observation_used = bool(
+                        adaptive_rim_observation_metrics.get("used", False)
+                    ) or bool(observed_rim_fit_metrics.get("used", False))
+                    if not synthetic_quality_allowed:
+                        synthetic_bridge_target = np.zeros_like(plate)
+                        bracketed_gap_metrics = {
+                            "enabled": True,
+                            "gap_count": 0,
+                            "reason": (
+                                "low_confidence_fallback_original_mask"
+                                if plate_quality_passed and food_quality_passed
+                                else "food_or_plate_mask_quality_rejected"
+                            ),
+                        }
+                    elif (
+                        synthetic_rim_bridge_mode == "observed_contour_gap"
+                        and observation_used
+                    ):
+                        contour_gap_allowed_region = None
+                        if (
+                            resolved_shape_type == "ellipse"
+                            and bool(
+                                config.get(
+                                    "synthetic_rim_bridge_ellipse_top_only",
+                                    True,
+                                )
                             )
+                        ):
+                            contour_gap_allowed_region = _top_plate_arc_mask(
+                                fitted_rim_fill,
+                                float(
+                                    config.get(
+                                        "synthetic_rim_bridge_ellipse_top_ratio",
+                                        0.36,
+                                    )
+                                ),
+                            )
+                        (
+                            synthetic_bridge_target,
+                            bracketed_gap_metrics,
+                        ) = _build_contour_bracketed_gap_target(
+                            bridge_source_mask,
+                            observed_rim,
+                            fitted_rim_fill,
+                            bridge_seed,
+                            observed_dilation=int(
+                                config.get(
+                                    "synthetic_rim_bridge_gap_observed_dilation",
+                                    7,
+                                )
+                            ),
+                            anchor_close_kernel=int(
+                                config.get(
+                                    "synthetic_rim_bridge_gap_anchor_close_kernel",
+                                    5,
+                                )
+                            ),
+                            repair_anchor_dilation=int(
+                                config.get("synthetic_rim_bridge_dilation", 95)
+                            ),
+                            minimum_gap_length=int(
+                                config.get(
+                                    "synthetic_rim_bridge_gap_min_length",
+                                    3,
+                                )
+                            ),
+                            maximum_gap_length=int(
+                                config.get(
+                                    "synthetic_rim_bridge_gap_max_length",
+                                    280,
+                                )
+                            ),
+                            endpoint_margin=int(
+                                config.get(
+                                    "synthetic_rim_bridge_gap_endpoint_margin",
+                                    4,
+                                )
+                            ),
+                            line_width=max(
+                                1,
+                                int(
+                                    adaptive_rim_config.get(
+                                        "line_width",
+                                        config.get(
+                                            "observed_rim_fit_line_width",
+                                            rim_line_width,
+                                        ),
+                                    )
+                                ),
+                            ),
+                            maximum_gap_count=int(
+                                config.get(
+                                    "synthetic_rim_bridge_gap_max_count",
+                                    4,
+                                )
+                            ),
+                            maximum_total_gap_fraction=float(
+                                config.get(
+                                    "synthetic_rim_bridge_gap_max_total_fraction",
+                                    0.16,
+                                )
+                            ),
+                            allowed_region=contour_gap_allowed_region,
+                        )
+                    elif (
+                        synthetic_rim_bridge_mode == "observed_gap"
+                        and observation_used
+                    ):
+                        (
+                            synthetic_bridge_target,
+                            bracketed_gap_metrics,
+                        ) = _build_bracketed_rim_gap_target(
+                            bridge_source_mask,
+                            observed_rim,
+                            fitted_rim_fill,
+                            bridge_seed,
+                            top_ratio=float(
+                                config.get("synthetic_rim_bridge_top_ratio", 0.30)
+                            ),
+                            observed_dilation=int(
+                                config.get(
+                                    "synthetic_rim_bridge_gap_observed_dilation",
+                                    7,
+                                )
+                            ),
+                            anchor_close_kernel=int(
+                                config.get(
+                                    "synthetic_rim_bridge_gap_anchor_close_kernel",
+                                    5,
+                                )
+                            ),
+                            repair_anchor_dilation=int(
+                                config.get("synthetic_rim_bridge_dilation", 95)
+                            ),
+                            minimum_gap_width=int(
+                                config.get(
+                                    "synthetic_rim_bridge_gap_min_width",
+                                    3,
+                                )
+                            ),
+                            maximum_gap_width=int(
+                                config.get(
+                                    "synthetic_rim_bridge_gap_max_width",
+                                    280,
+                                )
+                            ),
+                            endpoint_margin=int(
+                                config.get(
+                                    "synthetic_rim_bridge_gap_endpoint_margin",
+                                    4,
+                                )
+                            ),
+                        )
+                    else:
+                        synthetic_bridge_target = _connect_top_rim_bridge_target(
+                            bridge_source_mask,
+                            plate,
+                            bridge_seed,
+                            top_ratio=float(
+                                config.get("synthetic_rim_bridge_top_ratio", 0.30)
+                            ),
+                            bridge_dilation=int(
+                                config.get("synthetic_rim_bridge_dilation", 95)
+                            ),
+                            horizontal_margin=int(
+                                config.get("synthetic_rim_bridge_horizontal_margin", 64)
+                            ),
+                        )
+                        if bool(
+                            config.get("synthetic_rim_bridge_connect_full_top", False)
+                        ):
+                            top_arc = _top_plate_arc_mask(
+                                plate,
+                                float(
+                                    config.get(
+                                        "synthetic_rim_bridge_top_ratio",
+                                        0.30,
+                                    )
+                                ),
+                            )
+                            top_inner_rim = cv2.bitwise_and(
+                                bridge_source_mask,
+                                top_arc,
+                            )
+                            if np.any(top_inner_rim) and np.any(
+                                synthetic_bridge_target
+                            ):
+                                ys, xs = np.where(synthetic_bridge_target > 0)
+                                x_min = max(
+                                    0,
+                                    int(xs.min())
+                                    - max(
+                                        0,
+                                        int(
+                                            config.get(
+                                                "synthetic_rim_bridge_horizontal_margin",
+                                                64,
+                                            )
+                                        ),
+                                    ),
+                                )
+                                x_max = min(
+                                    top_inner_rim.shape[1] - 1,
+                                    int(xs.max())
+                                    + max(
+                                        0,
+                                        int(
+                                            config.get(
+                                                "synthetic_rim_bridge_horizontal_margin",
+                                                64,
+                                            )
+                                        ),
+                                    ),
+                                )
+                                full_bridge = np.zeros_like(top_inner_rim)
+                                full_bridge[:, x_min : x_max + 1] = 255
+                                synthetic_bridge_target = cv2.bitwise_or(
+                                    synthetic_bridge_target,
+                                    cv2.bitwise_and(full_bridge, top_inner_rim),
+                                )
                     if bool(config.get("synthetic_rim_bridge_dilate", True)):
+                        extra_width = int(
+                            config.get("synthetic_rim_bridge_extra_width", 3)
+                        )
                         synthetic_bridge_target = cv2.dilate(
                             synthetic_bridge_target,
                             cv2.getStructuringElement(
                                 cv2.MORPH_ELLIPSE,
                                 (
-                                    _odd(
-                                        int(
-                                            config.get(
-                                                "synthetic_rim_bridge_extra_width",
-                                                3,
-                                            )
-                                        )
-                                    ),
-                                    _odd(
-                                        int(
-                                            config.get(
-                                                "synthetic_rim_bridge_extra_width",
-                                                3,
-                                            )
-                                        )
-                                    ),
+                                    _odd(extra_width),
+                                    _odd(extra_width),
                                 ),
+                            ),
+                        )
+                        rim_corridor = cv2.dilate(
+                            bridge_source_mask,
+                            cv2.getStructuringElement(
+                                cv2.MORPH_ELLIPSE,
+                                (_odd(extra_width), _odd(extra_width)),
                             ),
                         )
                         synthetic_bridge_target = cv2.bitwise_and(
                             synthetic_bridge_target,
-                            cv2.dilate(plate, np.ones((3, 3), np.uint8)),
+                            rim_corridor,
                         )
+                    if not bool(
+                        config.get(
+                            "synthetic_rim_bridge_allow_food_overlap",
+                            False,
+                        )
+                    ):
+                        if bool(
+                            config.get(
+                                "synthetic_rim_bridge_allow_thin_foreground_overlap",
+                                True,
+                            )
+                        ):
+                            thin_radius = max(
+                                1,
+                                int(
+                                    config.get(
+                                        "synthetic_rim_bridge_thin_foreground_radius",
+                                        4,
+                                    )
+                                ),
+                            )
+                            food_distance = cv2.distanceTransform(
+                                (food > 0).astype(np.uint8),
+                                cv2.DIST_L2,
+                                5,
+                            )
+                            thick_food_core = np.where(
+                                food_distance > float(thin_radius),
+                                255,
+                                0,
+                            ).astype(np.uint8)
+                            thick_food_protection = cv2.dilate(
+                                thick_food_core,
+                                cv2.getStructuringElement(
+                                    cv2.MORPH_ELLIPSE,
+                                    (
+                                        _odd(thin_radius * 2 + 1),
+                                        _odd(thin_radius * 2 + 1),
+                                    ),
+                                ),
+                            )
+                            synthetic_bridge_target = cv2.bitwise_and(
+                                synthetic_bridge_target,
+                                cv2.bitwise_not(thick_food_protection),
+                            )
+                        else:
+                            synthetic_bridge_target = cv2.bitwise_and(
+                                synthetic_bridge_target,
+                                cv2.bitwise_not(food),
+                            )
+                    synthetic_bridge_target = cv2.bitwise_and(
+                        synthetic_bridge_target,
+                        bridge_support_mask,
+                    )
+                    synthetic_bridge_target = cv2.bitwise_and(
+                        synthetic_bridge_target,
+                        cv2.bitwise_not(protected_detail_guard),
+                    )
+                    bridge_plate_area_ratio = float(
+                        np.count_nonzero(synthetic_bridge_target)
+                        / max(np.count_nonzero(plate), 1)
+                    )
+                    maximum_bridge_area_ratio = float(
+                        config.get(
+                            "synthetic_rim_bridge_max_plate_area_ratio",
+                            0.008,
+                        )
+                    )
+                    if bridge_plate_area_ratio > maximum_bridge_area_ratio:
+                        synthetic_bridge_target = np.zeros_like(
+                            synthetic_bridge_target
+                        )
+                        synthetic_quality_allowed = False
+                        bracketed_gap_metrics = {
+                            **bracketed_gap_metrics,
+                            "reason": "synthetic_bridge_area_ratio_rejected",
+                            "bridge_plate_area_ratio": round(
+                                bridge_plate_area_ratio,
+                                6,
+                            ),
+                            "maximum_bridge_plate_area_ratio": (
+                                maximum_bridge_area_ratio
+                            ),
+                        }
                     synthetic_rim_bridge_pixels = int(
                         np.count_nonzero(synthetic_bridge_target)
                     )
-                    colored_rim_color, synthetic_rim_color_sample_count = (
-                        _estimate_dominant_hue_rim_color(
+                    synthetic_rim_bridge_outside_plate_pixels = int(
+                        np.count_nonzero(
+                            (synthetic_bridge_target > 0) & (plate == 0)
+                        )
+                    )
+                    if bool(
+                        config.get("plate_edge_alpha_extension_enabled", True)
+                    ):
+                        alpha_extension_mask = cv2.bitwise_and(
+                            synthetic_bridge_target,
+                            cv2.bitwise_not(plate),
+                        )
+                    colored_rim_color = adaptive_rim_color
+                    if colored_rim_color is not None:
+                        synthetic_rim_color_sample_count = int(
+                            adaptive_rim_observation_metrics.get(
+                                "observed_pixels",
+                                0,
+                            )
+                        )
+                    else:
+                        colored_rim_color, synthetic_rim_color_sample_count = (
+                            _estimate_dominant_hue_rim_color(
                             image_bgr,
                             bridge_source_mask,
                             food,
@@ -1090,8 +2078,8 @@ def repair_plate_edge(
                             hue_window=int(config.get("synthetic_rim_color_hue_window", 14)),
                             hue_min=int(config.get("synthetic_rim_color_hue_min", 35)),
                             hue_max=int(config.get("synthetic_rim_color_hue_max", 95)),
+                            )
                         )
-                    )
                     if colored_rim_color is None:
                         colored_rim_color, synthetic_rim_color_sample_count = (
                             _estimate_colored_rim_color(
@@ -1122,7 +2110,7 @@ def repair_plate_edge(
                             ),
                         )
                         top_arc = _top_plate_arc_mask(
-                            plate,
+                            fitted_rim_fill,
                             float(config.get("synthetic_rim_band_top_ratio", 0.30)),
                         )
                         synthetic_band_target = cv2.bitwise_and(
@@ -1131,7 +2119,7 @@ def repair_plate_edge(
                         )
                         synthetic_band_target = cv2.bitwise_and(
                             synthetic_band_target,
-                            cv2.dilate(plate, np.ones((3, 3), np.uint8)),
+                            bridge_support_mask,
                         )
                         if not bool(config.get("synthetic_rim_band_allow_food_overlap", True)):
                             synthetic_band_target = cv2.bitwise_and(
@@ -1152,6 +2140,7 @@ def repair_plate_edge(
                                 feather_kernel=int(
                                     config.get("synthetic_rim_band_feather_kernel", 5)
                                 ),
+                                support_mask=bridge_support_mask,
                             )
                     if synthetic_rim_bridge_pixels:
                         repaired = _blend_rim_color(
@@ -1164,6 +2153,7 @@ def repair_plate_edge(
                             feather_kernel=int(
                                 config.get("synthetic_rim_bridge_feather_kernel", 3)
                             ),
+                            support_mask=bridge_support_mask,
                         )
                         repair_mask = cv2.bitwise_or(
                             repair_mask,
@@ -1273,6 +2263,10 @@ def repair_plate_edge(
                                 completion_target,
                                 cv2.bitwise_not(completion_protected_food),
                             )
+                    completion_target = cv2.bitwise_and(
+                        completion_target,
+                        cv2.bitwise_not(protected_detail_guard),
+                    )
                     plate_mask_rim_completion_pixels = int(
                         np.count_nonzero(completion_target)
                     )
@@ -1290,12 +2284,42 @@ def repair_plate_edge(
                                     5,
                                 )
                             ),
+                            support_mask=plate,
                         )
                         repair_mask = cv2.bitwise_or(repair_mask, completion_target)
+
+    if np.any(observed_source_rim_mask):
+        repaired = _restore_source_pixels(
+            repaired,
+            source_image,
+            observed_source_rim_mask,
+            feather_kernel=int(
+                config.get("observed_source_rim_feather_kernel", 3)
+            ),
+        )
+        repair_mask = cv2.bitwise_or(repair_mask, observed_source_rim_mask)
+        if bool(config.get("plate_edge_alpha_extension_enabled", True)):
+            alpha_extension_mask = cv2.bitwise_or(
+                alpha_extension_mask,
+                cv2.bitwise_and(
+                    observed_source_rim_mask,
+                    cv2.bitwise_not(plate),
+                ),
+            )
+    if np.any(protected_detail):
+        repaired = _restore_source_pixels(
+            repaired,
+            source_image,
+            protected_detail,
+            feather_kernel=int(
+                config.get("protected_detail_feather_kernel", 3)
+            ),
+        )
 
     return PlateEdgeRepairResult(
         image=repaired,
         mask=repair_mask,
+        alpha_extension_mask=alpha_extension_mask,
         metrics={
             "status": "completed",
             "applied": True,
@@ -1316,8 +2340,30 @@ def repair_plate_edge(
             "color_aligned_rim_overlap_pixels": color_aligned_rim_overlap_pixels,
             "rim_line_sample_count": rim_line_sample_count,
             "synthetic_rim_bridge_pixels": synthetic_rim_bridge_pixels,
+            "synthetic_rim_bridge_mode": synthetic_rim_bridge_mode,
+            "synthetic_rim_bridge_outside_plate_pixels": (
+                synthetic_rim_bridge_outside_plate_pixels
+            ),
             "synthetic_rim_band_pixels": synthetic_rim_band_pixels,
             "synthetic_rim_color_sample_count": synthetic_rim_color_sample_count,
+            "observed_rim_fit": observed_rim_fit_metrics,
+            "adaptive_rim_observation": adaptive_rim_observation_metrics,
+            "observed_source_rim_pixels": int(
+                np.count_nonzero(observed_source_rim_mask)
+            ),
+            "observed_source_rim_outside_plate_pixels": int(
+                np.count_nonzero(
+                    (observed_source_rim_mask > 0) & (plate == 0)
+                )
+            ),
+            "bracketed_rim_gap": bracketed_gap_metrics,
+            "shape_type": resolved_shape_type,
+            "quality_gate_enabled": quality_gate_enabled,
+            "plate_quality_passed": plate_quality_passed,
+            "food_quality_passed": food_quality_passed,
+            "synthetic_rim_allowed": synthetic_quality_allowed,
+            "alpha_extension_pixels": int(np.count_nonzero(alpha_extension_mask)),
+            "protected_detail_pixels": int(np.count_nonzero(protected_detail)),
             "plate_mask_rim_completion_pixels": plate_mask_rim_completion_pixels,
             "rim_line_bridge_occlusions": bool(
                 config.get("rim_line_bridge_occlusions", True)
