@@ -29,10 +29,9 @@ CAREET_DIR = REPO_ROOT / "gather_data" / "crawling" / "careet"
 LANDING_ROOT = REPO_ROOT / "data" / "landing" / "sns_trend"
 CURATED_ROOT = REPO_ROOT / "data" / "curated" / "sns_trend"
 
-CAREET_LANDING_SCHEDULE = (
-    os.getenv("BRANDMATE_SNS_TREND_CAREET_LANDING_SCHEDULE", "0 4 * * 3").strip()
-    or "0 4 * * 3"
-)
+CAREET_LANDING_SCHEDULE = os.environ[
+    "BRANDMATE_SNS_TREND_CAREET_LANDING_SCHEDULE"
+].strip()
 CAREET_DELAY_SECONDS = float(os.getenv("BRANDMATE_SNS_TREND_CAREET_DELAY", "1.5"))
 CAREET_TIMEOUT_SECONDS = float(os.getenv("BRANDMATE_SNS_TREND_CAREET_TIMEOUT", "15"))
 CAREET_RETRIES = int(os.getenv("BRANDMATE_SNS_TREND_CAREET_RETRIES", "3"))
@@ -81,16 +80,16 @@ def _int_conf(value: Any, *, default: int, minimum: int) -> int:
     return result
 
 
-def _date_from_logical_date(value: Any) -> datetime:
+def _date_from_data_interval_end(value: Any) -> datetime:
     if value is None:
-        return datetime.now(timezone.utc).astimezone(KST)
+        raise AirflowException("data_interval_end is required to derive run_date/week")
     if hasattr(value, "in_timezone"):
         return value.in_timezone("Asia/Seoul")
     if isinstance(value, datetime):
         if value.tzinfo is None:
             value = value.replace(tzinfo=timezone.utc)
         return value.astimezone(KST)
-    return datetime.now(timezone.utc).astimezone(KST)
+    raise AirflowException("data_interval_end must be a datetime-like value")
 
 
 def _iso_week(value: datetime) -> str:
@@ -107,13 +106,20 @@ def _resolve_careet_landing_config(
     conf: dict[str, Any],
     dag_run_id: str,
     logical_date: Any,
+    data_interval_end: Any = None,
     landing_root: Path = LANDING_ROOT,
     curated_root: Path = CURATED_ROOT,
     careet_dir: Path = CAREET_DIR,
 ) -> dict[str, Any]:
-    run_datetime = _date_from_logical_date(logical_date)
-    run_date = str(conf.get("run_date") or conf.get("date") or run_datetime.date())
-    week = str(conf.get("week") or _iso_week(run_datetime)).strip().upper()
+    explicit_run_date = conf.get("run_date") or conf.get("date")
+    explicit_week = conf.get("week")
+    run_datetime = (
+        None
+        if explicit_run_date and explicit_week
+        else _date_from_data_interval_end(data_interval_end)
+    )
+    run_date = str(explicit_run_date or run_datetime.date())
+    week = str(explicit_week or _iso_week(run_datetime)).strip().upper()
     run_id = _safe_path_fragment(str(conf.get("run_id") or dag_run_id))
     curated_version = str(
         conf.get("curated_version") or CAREET_CURATED_VERSION
@@ -358,7 +364,7 @@ def _verify_careet_landing_artifacts(config: dict[str, Any]) -> dict[str, Any]:
 
 @dag(
     dag_id=DAG_ID,
-    start_date=datetime(2026, 7, 27),
+    start_date=datetime(2026, 7, 22, 20, 10, tzinfo=timezone.utc),
     schedule=CAREET_LANDING_SCHEDULE,
     catchup=False,
     max_active_runs=1,
@@ -393,6 +399,7 @@ def sns_trend_careet_landing_collection() -> None:
             conf=conf,
             dag_run_id=dag_run_id,
             logical_date=context.get("logical_date"),
+            data_interval_end=context.get("data_interval_end"),
         )
 
     @task
@@ -408,9 +415,37 @@ def sns_trend_careet_landing_collection() -> None:
     def verify_careet_landing_contract(config: dict[str, Any]) -> dict[str, Any]:
         return _verify_careet_landing_artifacts(config)
 
+    @task
+    def upload_careet_landing_to_gcs(config: dict[str, Any]) -> dict[str, Any]:
+        if not config.get("upload_gcs", True):
+            return {**config, "gcs_landing_upload": {"status": "skipped", "reason": "upload_gcs is False"}}
+
+        from sns_trend.storage import StorageError, upload_dir_to_gcs
+
+        run_dir = Path(config["run_dir"])
+        week = config["week"]
+        source = config["source"]
+        run_id = config["run_id"]
+        gcs_landing_prefix = str(
+            config.get("gcs_landing_prefix")
+            or f"gs://ssakda/projects/brandmate/data/landing/sns_trend/week={week}/raw/{source}/run_id={run_id}/"
+        )
+
+        try:
+            upload_result = upload_dir_to_gcs(
+                local_dir=run_dir,
+                gcs_prefix=gcs_landing_prefix,
+            )
+            return {**config, "gcs_landing_upload": upload_result}
+        except StorageError as error:
+            raise AirflowException(
+                f"Failed to upload Careet landing artifacts to GCS: {error}"
+            ) from error
+
     resolved_config = resolve_careet_landing_context()
     collected = collect_careet_landing(resolved_config)
-    verify_careet_landing_contract(collected)
+    verified = verify_careet_landing_contract(collected)
+    upload_careet_landing_to_gcs(verified)
 
 
 sns_trend_careet_landing_collection()

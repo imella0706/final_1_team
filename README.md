@@ -35,6 +35,7 @@ BrandMate AI는 광고 제작에 필요한 여러 작업을 하나의 흐름으�
 7. CosyVoice 또는 OpenAI TTS로 광고 문구를 음성 광고로 변환합니다.
 8. 별도의 CCTV 분석 파이프라인이 매장 전면 유동량, ROI 관측량과 이동 후보를 집계합니다.
 
+
 메인 광고 생성 경로는 `apps/web`과 `apps/api`가 담당합니다. 트렌드 데이터, 이미지 보정, 음성 합성, 음식 광고 검색 DB와 유동 분석은 독립적으로 실행할 수 있는 하위 서비스 또는 데이터 파이프라인으로 구성되어 있습니다.
 
 ## 핵심 기능
@@ -55,8 +56,11 @@ BrandMate AI는 광고 제작에 필요한 여러 작업을 하나의 흐름으�
 
 ## 전체 서비스 구조
 
+### 1. 메인 광고 생성 파이프라인
+
+
 ```mermaid
-flowchart LR
+flowchart TD
     subgraph DATA["트렌드 데이터 파이프라인"]
         SOURCES["YouTube · 고구마팜 · 캐릿"]
         NAVER["네이버 참고 신호<br/>독립 수집"]
@@ -76,12 +80,17 @@ flowchart LR
         API <--> DB
     end
 
-    subgraph GENERATION["광고 생성"]
+    subgraph GENERATION["광고 생성 엔진"]
         LLM["LLM Router<br/>광고 문구 · 전략 · 비주얼 브리프"]
         IMAGE["ComfyUI · OpenAI · Hugging Face<br/>광고 이미지"]
         CLEANUP["음식 이미지 보정<br/>네이버 채널 선택 기능"]
         VOICE["CosyVoice · OpenAI TTS<br/>음성 광고"]
-        ARTIFACT["광고 산출물"]
+        ARTIFACT["광고 산출물<br/>(Web UI로 결과 전달)"]
+
+        LLM --> ARTIFACT
+        IMAGE --> ARTIFACT
+        CLEANUP --> ARTIFACT
+        VOICE --> ARTIFACT
     end
 
     TRENDS -. "환경변수로 사용할 JSON 지정" .-> API
@@ -89,21 +98,52 @@ flowchart LR
     API --> IMAGE
     API -. "네이버 업로드 이미지 + 기능 ON" .-> CLEANUP
     API --> VOICE
-    LLM --> ARTIFACT
-    IMAGE --> ARTIFACT
-    CLEANUP --> ARTIFACT
-    VOICE --> ARTIFACT
-    ARTIFACT --> WEB
+```
 
-    subgraph ANALYTICS["독립 분석 및 데이터 자산"]
-        RAG["AIHub 음식 광고 Retrieval DB<br/>CLIP · FAISS"]
-        CCTV["CCTV 유동 분석<br/>YOLO · ROI · Privacy · QA"]
-        DASH["상권 분석 Streamlit"]
-        CCTV --> DASH
+
+
+### 2. AIHub 음식 광고 Retrieval DB
+
+```mermaid
+flowchart TD
+    subgraph AIHUB["AIHub 음식 광고 Retrieval DB"]
+        RAG["AIHub 음식 광고<br/>Retrieval DB&nbsp;&nbsp;&nbsp;&nbsp;"]
     end
 ```
 
-`Retrieval DB`와 CCTV 유동 분석은 저장소에 포함된 독립 데이터/분석 경로입니다. 메인 광고 생성 API의 모든 요청이 이 두 경로를 자동 호출하는 구조는 아닙니다.
+* **AIHub 음식 광고 Retrieval DB:** 음식 이미지와 캡션을 검색할 수 있는 오프라인 데이터베이스입니다.
+
+### 3. CCTV 상권 유동 분석 파이프라인
+
+```mermaid
+flowchart TD
+    subgraph CCTV_ANALYTICS["CCTV 상권 유동 분석 파이프라인"]
+        CCTV_SRC["AIHub CCTV 영상 :<br/>관측 샘플"]
+        CV_ENGINE["YOLO11s · ROI 필터링 :<br/>Privacy Masking · Line Crossing"]
+        SEOUL_DATA["서울시 상권분석 API :<br/>유동인구 · 연령대 · 성별 데이터"]
+        MAP_OVERLAY["네이버 지도 Static Map :<br/>입간판 · 배너 위치 시각화"]
+        LLM_CMO["OpenAI LLM :<br/>F&B CMO 마케팅 전략 컨설팅"]
+        CCTV_DASH["상권 분석 Streamlit 대시보드 :<br/>고객 전달용 PDF 리포트"]
+
+        CCTV_SRC --> CV_ENGINE
+        CV_ENGINE --> LLM_CMO
+        SEOUL_DATA --> LLM_CMO
+        MAP_OVERLAY --> LLM_CMO
+        LLM_CMO --> CCTV_DASH
+    end
+```
+
+* **CCTV 상권 유동 분석:** 스트림릿 대시보드에서 매장 주변 유동인구를 분석하고 AI 마케팅 컨설팅 PDF 리포트를 생성하는 기능입니다.
+
+
+
+
+
+
+
+
+
+
 
 ## 코드 실행 흐름
 
@@ -299,15 +339,20 @@ cp apps/api/.env.gcp.example apps/api/.env
 ./scripts/manage_brandmate_services_gcp.sh restart
 ```
 
-상태, 로그와 종료 명령:
+상태, 로깅 시스템 및 종료 명령:
 
 ```bash
-./scripts/manage_brandmate_services_gcp.sh status
+# 전체 서비스 실시간 로그 통합 모니터링 (fastapi, comfyui, frontend, dashboard 등)
 ./scripts/manage_brandmate_services_gcp.sh logs
+
+# 서비스별 구동 상태 확인
+./scripts/manage_brandmate_services_gcp.sh status
+
+# 스택 전체 안전 종료
 ./scripts/manage_brandmate_services_gcp.sh stop
 ```
 
-이 스크립트는 PostgreSQL, migration, FastAPI, 정적 웹을 관리합니다. 설치 여부와 `START_*` 환경변수에 따라 ComfyUI, 상권 대시보드, 검수 대시보드, Airflow를 함께 실행하거나 건너뜁니다.
+이 스크립트(`scripts/manage_brandmate_services_gcp.sh`)는 **프로세스 격리 및 통합 로깅 시스템**을 내장하고 있습니다. 백그라운드에서 구동되는 모든 서비스의 출력을 `outputs/brandmate_services/` 하위에 각 서비스별 로그 파일(`fastapi.log`, `comfyui.log`, `frontend.log`, `sns_trend_review_dashboard.log` 등)로 영구 저장합니다. 런타임 오류나 패키지 누락 발생 시 `./scripts/manage_brandmate_services_gcp.sh logs` 명령어 또는 특정 서비스의 로그 파일(`cat outputs/brandmate_services/<서비스명>.log`)을 조회하여 막연한 추측 없이 에러가 발생한 정확한 위치와 원인을 즉시 규명할 수 있습니다
 
 ### 접속 주소
 

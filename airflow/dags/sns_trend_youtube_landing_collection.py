@@ -31,10 +31,9 @@ REPO_ROOT = Path(os.getenv("BRANDMATE_REPO_ROOT", AIRFLOW_ROOT.parent))
 YOUTUBE_DIR = REPO_ROOT / "gather_data" / "youtube"
 LANDING_ROOT = REPO_ROOT / "data" / "landing" / "sns_trend"
 CURATED_ROOT = REPO_ROOT / "data" / "curated" / "sns_trend"
-YOUTUBE_LANDING_SCHEDULE = (
-    os.getenv("BRANDMATE_SNS_TREND_YOUTUBE_LANDING_SCHEDULE", "0 4 * * 3").strip()
-    or "0 4 * * 3"
-)
+YOUTUBE_LANDING_SCHEDULE = os.environ[
+    "BRANDMATE_SNS_TREND_YOUTUBE_LANDING_SCHEDULE"
+].strip()
 YOUTUBE_LANDING_LIMIT = int(
     os.getenv("BRANDMATE_SNS_TREND_YOUTUBE_LANDING_LIMIT", str(DEFAULT_LIMIT))
 )
@@ -75,16 +74,16 @@ def _dataset_version_conf(value: Any, *, default: str) -> str:
     return version
 
 
-def _date_from_logical_date(value: Any) -> datetime:
+def _date_from_data_interval_end(value: Any) -> datetime:
     if value is None:
-        return datetime.now(timezone.utc).astimezone(KST)
+        raise AirflowException("data_interval_end is required to derive run_date/week")
     if hasattr(value, "in_timezone"):
         return value.in_timezone("Asia/Seoul")
     if isinstance(value, datetime):
         if value.tzinfo is None:
             value = value.replace(tzinfo=timezone.utc)
         return value.astimezone(KST)
-    return datetime.now(timezone.utc).astimezone(KST)
+    raise AirflowException("data_interval_end must be a datetime-like value")
 
 
 def _iso_week(value: datetime) -> str:
@@ -97,13 +96,20 @@ def _resolve_youtube_landing_config(
     conf: dict[str, Any],
     dag_run_id: str,
     logical_date: Any,
+    data_interval_end: Any = None,
     landing_root: Path = LANDING_ROOT,
     youtube_dir: Path = YOUTUBE_DIR,
     curated_root: Path = CURATED_ROOT,
 ) -> dict[str, Any]:
-    run_datetime = _date_from_logical_date(logical_date)
-    run_date = str(conf.get("run_date") or conf.get("date") or run_datetime.date())
-    week = str(conf.get("week") or _iso_week(run_datetime)).strip().upper()
+    explicit_run_date = conf.get("run_date") or conf.get("date")
+    explicit_week = conf.get("week")
+    run_datetime = (
+        None
+        if explicit_run_date and explicit_week
+        else _date_from_data_interval_end(data_interval_end)
+    )
+    run_date = str(explicit_run_date or run_datetime.date())
+    week = str(explicit_week or _iso_week(run_datetime)).strip().upper()
     region = str(conf.get("region") or DEFAULT_REGION).strip().upper()
     run_id = _safe_path_fragment(str(conf.get("run_id") or dag_run_id))
     limit = _int_conf(conf.get("limit"), default=YOUTUBE_LANDING_LIMIT)
@@ -115,6 +121,10 @@ def _resolve_youtube_landing_config(
     curated_version = _dataset_version_conf(
         conf.get("curated_version"),
         default=DEFAULT_CURATED_VERSION,
+    )
+    upload_gcs = _bool_conf(
+        conf.get("upload_gcs"),
+        default=True,
     )
     tokenizer = str(conf.get("tokenizer") or "regex").strip()
 
@@ -151,6 +161,7 @@ def _resolve_youtube_landing_config(
         "region": region,
         "limit": limit,
         "tokenizer": tokenizer,
+        "upload_gcs": upload_gcs,
         "fail_if_exists": fail_if_exists,
         "emit_curated_meme_card_candidates": emit_curated,
         "curated_version": curated_version,
@@ -316,7 +327,7 @@ def _verify_youtube_landing_artifacts(config: dict[str, Any]) -> dict[str, Any]:
 
 @dag(
     dag_id=DAG_ID,
-    start_date=datetime(2026, 7, 27),
+    start_date=datetime(2026, 7, 22, 20, 10, tzinfo=timezone.utc),
     schedule=YOUTUBE_LANDING_SCHEDULE,
     catchup=False,
     max_active_runs=1,
@@ -333,6 +344,7 @@ def _verify_youtube_landing_artifacts(config: dict[str, Any]) -> dict[str, Any]:
       "run_date": "2026-07-27",
       "run_id": "manual__youtube_phase4_smoke",
       "limit": 5,
+      "upload_gcs": true,
       "emit_curated_meme_card_candidates": true
     }
     ```
@@ -350,6 +362,7 @@ def sns_trend_youtube_landing_collection() -> None:
             conf=conf,
             dag_run_id=dag_run_id,
             logical_date=context.get("logical_date"),
+            data_interval_end=context.get("data_interval_end"),
         )
 
     @task
@@ -377,10 +390,38 @@ def sns_trend_youtube_landing_collection() -> None:
     def verify_youtube_landing_contract(config: dict[str, Any]) -> dict[str, Any]:
         return _verify_youtube_landing_artifacts(config)
 
+    @task
+    def upload_youtube_landing_to_gcs(config: dict[str, Any]) -> dict[str, Any]:
+        if not config.get("upload_gcs", True):
+            return {**config, "gcs_landing_upload": {"status": "skipped", "reason": "upload_gcs is False"}}
+
+        from sns_trend.storage import StorageError, upload_dir_to_gcs
+
+        run_dir = Path(config["run_dir"])
+        week = config["week"]
+        source = config["source"]
+        run_id = config["run_id"]
+        gcs_landing_prefix = str(
+            config.get("gcs_landing_prefix")
+            or f"gs://ssakda/projects/brandmate/data/landing/sns_trend/week={week}/raw/{source}/run_id={run_id}/"
+        )
+
+        try:
+            upload_result = upload_dir_to_gcs(
+                local_dir=run_dir,
+                gcs_prefix=gcs_landing_prefix,
+            )
+            return {**config, "gcs_landing_upload": upload_result}
+        except StorageError as error:
+            raise AirflowException(
+                f"Failed to upload YouTube landing artifacts to GCS: {error}"
+            ) from error
+
     resolved_config = resolve_youtube_landing_context()
     raw_collected = collect_youtube_trending_raw(resolved_config)
     keywords_built = build_youtube_keyword_snapshot(raw_collected)
-    verify_youtube_landing_contract(keywords_built)
+    verified = verify_youtube_landing_contract(keywords_built)
+    upload_youtube_landing_to_gcs(verified)
 
 
 sns_trend_youtube_landing_collection()

@@ -17,6 +17,7 @@ DAG_FILE = REPO_ROOT / "airflow" / "dags" / "sns_trend_careet_landing_collection
 
 
 def _load_dag_module_with_fake_airflow(monkeypatch: pytest.MonkeyPatch) -> Any:
+    monkeypatch.setenv("BRANDMATE_SNS_TREND_CAREET_LANDING_SCHEDULE", "10 20 * * 3")
     airflow_module = types.ModuleType("airflow")
     decorators_module = types.ModuleType("airflow.decorators")
     exceptions_module = types.ModuleType("airflow.exceptions")
@@ -152,7 +153,7 @@ def test_sns_trend_careet_landing_collection_dag_compiles() -> None:
 def test_dag_defaults_to_weekly_schedule(monkeypatch: pytest.MonkeyPatch) -> None:
     module = _load_dag_module_with_fake_airflow(monkeypatch)
 
-    assert module.sns_trend_careet_landing_collection.dag_kwargs["schedule"] == "0 4 * * 3"
+    assert module.sns_trend_careet_landing_collection.dag_kwargs["schedule"] == "10 20 * * 3"
     assert module.sns_trend_careet_landing_collection.dag_kwargs["catchup"] is False
     assert module.sns_trend_careet_landing_collection.dag_kwargs["max_active_runs"] == 1
 
@@ -206,12 +207,54 @@ def test_resolve_careet_landing_config_defaults_to_kst_iso_week(
         conf={},
         dag_run_id="manual__careet_latest",
         logical_date=datetime(2026, 7, 26, 15, 10, tzinfo=timezone.utc),
+        data_interval_end=datetime(2026, 7, 26, 15, 10, tzinfo=timezone.utc),
         landing_root=tmp_path,
         careet_dir=tmp_path / "careet",
     )
 
     assert config["week"] == "2026-W31"
     assert config["run_date"] == "2026-07-27"
+
+
+def test_resolve_careet_landing_config_requires_data_interval_end_for_defaults(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    module = _load_dag_module_with_fake_airflow(monkeypatch)
+
+    with pytest.raises(module.AirflowException, match="data_interval_end is required"):
+        module._resolve_careet_landing_config(
+            conf={},
+            dag_run_id="scheduled__missing_interval",
+            logical_date=datetime(2026, 7, 22, 20, 10, tzinfo=timezone.utc),
+            landing_root=tmp_path,
+            careet_dir=tmp_path / "careet",
+        )
+
+
+def test_resolve_careet_landing_config_uses_data_interval_end_for_scheduled_runs(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    module = _load_dag_module_with_fake_airflow(monkeypatch)
+
+    config = module._resolve_careet_landing_config(
+        conf={},
+        dag_run_id="scheduled__2026-07-22T20:10:00+00:00",
+        logical_date=datetime(2026, 7, 22, 20, 10, tzinfo=timezone.utc),
+        data_interval_end=datetime(2026, 7, 29, 20, 10, tzinfo=timezone.utc),
+        landing_root=tmp_path,
+        careet_dir=tmp_path / "careet",
+    )
+
+    assert config["week"] == "2026-W31"
+    assert config["run_date"] == "2026-07-30"
+    assert config["stamp"] == "20260730"
+    assert config["article_csv"].endswith(
+        "week=2026-W31/raw/careet/"
+        "run_id=scheduled__2026-07-22T20:10:00+00:00/"
+        "careet_articles_20260730.csv"
+    )
 
 
 def test_collector_command_emits_landing_contract(
@@ -328,4 +371,5 @@ def test_sns_trend_careet_landing_collection_dagbag_imports_when_airflow_is_inst
         "resolve_careet_landing_context",
         "collect_careet_landing",
         "verify_careet_landing_contract",
+        "upload_careet_landing_to_gcs",
     }

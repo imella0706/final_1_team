@@ -120,12 +120,18 @@ configure_api_runtime() {
   if command -v "$CONDA_BIN" >/dev/null 2>&1; then
     API_PYTHON=("$CONDA_BIN" run -n "$API_ENV" python)
     API_RUNTIME_LABEL="conda:$API_ENV"
+  elif [[ -x "$HOME/miniconda3/envs/$API_ENV/bin/python" ]]; then
+    API_PYTHON=("$HOME/miniconda3/envs/$API_ENV/bin/python")
+    API_RUNTIME_LABEL="miniconda3:$API_ENV"
   elif [[ -x "$API_DIR/.venv/bin/python" ]]; then
     API_PYTHON=("$API_DIR/.venv/bin/python")
     API_RUNTIME_LABEL="$API_DIR/.venv"
   elif [[ -f "$API_DIR/.venv/Scripts/python.exe" ]]; then
     API_PYTHON=("$API_DIR/.venv/Scripts/python.exe")
     API_RUNTIME_LABEL="$API_DIR/.venv (Windows)"
+  elif command -v python3 >/dev/null 2>&1; then
+    API_PYTHON=(python3)
+    API_RUNTIME_LABEL="python3"
   else
     echo "[error] API Python runtime not found." >&2
     echo "[hint] create apps/api/.venv or install conda env: $API_ENV" >&2
@@ -133,6 +139,7 @@ configure_api_runtime() {
   fi
   echo "[info] API Python runtime: $API_RUNTIME_LABEL"
 }
+
 
 is_ready() {
   local url="$1"
@@ -300,11 +307,14 @@ run_db_migrations() {
   echo "[run] DB migrations: alembic upgrade head"
   (
     cd "$API_DIR"
-    # [Design Intent] Local startup should be deterministic: the API must see
-    # the auth/session tables expected by the current code before it accepts
-    # login requests. Alembic upgrade head is idempotent when the schema is
-    # already current.
-    "${API_PYTHON[@]}" -m alembic upgrade head
+    # [Design Intent] GCP VM 등 환경에 따라 API 가상환경 패키지가 누락되어 있을 수 있으므로
+    # alembic 설치 여부를 먼저 자가 진단(Self-heal)하고, 미설치 시 자동 설치 후 안정적으로 마이그레이션을 집행한다.
+    if ! "${API_PYTHON[@]}" -c "import alembic" >/dev/null 2>&1; then
+      echo "[warn] alembic이 $API_RUNTIME_LABEL 환경에 설치되어 있지 않습니다. 패키지를 자동 설치합니다..."
+      "${API_PYTHON[@]}" -m pip install -e .
+    fi
+
+    "${API_PYTHON[@]}" -c "from alembic.config import main; main(argv=['upgrade', 'head'])"
   )
 }
 
@@ -465,6 +475,13 @@ ensure_review_dashboard() {
     return 0
   fi
 
+  if ! "${API_PYTHON[@]}" -c "import streamlit" >/dev/null 2>&1; then
+    echo "[error] Streamlit is not installed in API runtime ($API_RUNTIME_LABEL)" >&2
+    echo "[hint] Run: conda activate $API_ENV && pip install streamlit" >&2
+    echo "[hint] Or bypass via: START_REVIEW_DASHBOARD=false ./scripts/manage_brandmate_services_gcp.sh" >&2
+    exit 1
+  fi
+
   PYTHONPATH="$PROJECT_ROOT/gather_data" start_process \
     sns_trend_review_dashboard \
     "$PID_DIR/sns_trend_review_dashboard.pid" \
@@ -483,13 +500,8 @@ ensure_airflow() {
     return 0
   fi
 
-  if is_ready "$AIRFLOW_URL/health"; then
-    echo "[ok] Airflow webserver already running: $AIRFLOW_URL"
-    return 0
-  fi
-
   if [[ -f "$PROJECT_ROOT/scripts/airflow/up.sh" ]]; then
-    echo "[start] Airflow via scripts/airflow/up.sh"
+    echo "[start] Airflow containers (webserver & scheduler) via scripts/airflow/up.sh"
     bash "$PROJECT_ROOT/scripts/airflow/up.sh" >/dev/null 2>&1 || {
       echo "[warn] Airflow startup failed or timed out"
     }
@@ -508,8 +520,8 @@ check_frontend_api_url() {
 
 serve() {
   require_command curl
-  require_command "$CONDA_BIN"
   if [[ "$START_HTTPS_PROXY" == "true" ]]; then
+
     validate_brandmate_domain
   fi
 
@@ -517,8 +529,10 @@ serve() {
   # loopback. Public traffic enters only through the optional HTTPS proxy.
   # Postgres and migrations run first because auth/session endpoints depend on
   # the latest DB schema.
+  configure_api_runtime
   ensure_postgres
   run_db_migrations
+
   ensure_comfyui
   ensure_api
   ensure_frontend
