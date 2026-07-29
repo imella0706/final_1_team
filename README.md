@@ -339,15 +339,20 @@ cp apps/api/.env.gcp.example apps/api/.env
 ./scripts/manage_brandmate_services_gcp.sh restart
 ```
 
-상태, 로그와 종료 명령:
+상태, 로깅 시스템 및 종료 명령:
 
 ```bash
-./scripts/manage_brandmate_services_gcp.sh status
+# 전체 서비스 실시간 로그 통합 모니터링 (fastapi, comfyui, frontend, dashboard 등)
 ./scripts/manage_brandmate_services_gcp.sh logs
+
+# 서비스별 구동 상태 확인
+./scripts/manage_brandmate_services_gcp.sh status
+
+# 스택 전체 안전 종료
 ./scripts/manage_brandmate_services_gcp.sh stop
 ```
 
-이 스크립트는 PostgreSQL, migration, FastAPI, 정적 웹을 관리합니다. 설치 여부와 `START_*` 환경변수에 따라 ComfyUI, 상권 대시보드, 검수 대시보드, Airflow를 함께 실행하거나 건너뜁니다.
+이 스크립트(`scripts/manage_brandmate_services_gcp.sh`)는 **프로세스 격리 및 통합 로깅 시스템**을 내장하고 있습니다. 백그라운드에서 구동되는 모든 서비스의 출력을 `outputs/brandmate_services/` 하위에 각 서비스별 로그 파일(`fastapi.log`, `comfyui.log`, `frontend.log`, `sns_trend_review_dashboard.log` 등)로 영구 저장합니다. 런타임 오류나 패키지 누락 발생 시 `./scripts/manage_brandmate_services_gcp.sh logs` 명령어 또는 특정 서비스의 로그 파일(`cat outputs/brandmate_services/<서비스명>.log`)을 조회하여 막연한 추측 없이 에러가 발생한 정확한 위치와 원인을 즉시 규명할 수 있습니다
 
 ### 접속 주소
 
