@@ -119,6 +119,11 @@ FastAPI, 정적 프론트엔드, Postgres, DB migration, ComfyUI를 같은 명�
 | 대상 | 명령어 | 실행 범위 |
 | --- | --- | --- |
 | 서비스 통합 실행 | `./scripts/manage_brandmate_services_gcp.sh restart` | Postgres, DB migration, FastAPI, web, ComfyUI(자동감지), Streamlit 상권분석 대시보드(포트 8503) |
+| 팀원 기본 실행 | `./scripts/manage_brandmate_services_gcp.sh restart` | Postgres, DB migration, FastAPI, web, ComfyUI 자동 감지. 상권분석 Streamlit은 제외 |
+| Windows 발표용 임시 PWA | `powershell -ExecutionPolicy Bypass -File .\scripts\manage_brandmate_tunnel.ps1 start` | 실행 중인 로컬 웹·API를 하나로 묶고 임시 `trycloudflare.com` HTTPS 주소 발급 |
+| 발표용 외부 PWA | `BRANDMATE_DOMAIN=app.example.com ./scripts/manage_brandmate_services_gcp.sh restart-demo-public` | HTTPS 설치·아이콘 실행·로그인·광고 생성 시연. 운영 이메일 인증은 사용하지 않음 |
+| GCP 외부 HTTPS | `BRANDMATE_DOMAIN=app.example.com ./scripts/manage_brandmate_services_gcp.sh restart-public` | 기본 실행 범위 + HTTPS 인증서·웹/API 단일 도메인 프록시 |
+| 상권분석 담당 개발자 | `START_DASHBOARD=true ./scripts/manage_brandmate_services_gcp.sh restart` | 팀원 기본 실행 범위 + `apps/visitor_flow_l2_dashboard` Streamlit 대시보드 |
 
 ### 팀원 로컬 확인
 
@@ -136,6 +141,36 @@ BrandMate web: http://127.0.0.1:5501
 Visitor-flow dashboard: http://127.0.0.1:8503
 ```
 
+Windows PC에서 실행 중인 웹과 API를 발표용 임시 HTTPS 주소로 공유하려면 Docker Desktop을
+실행한 상태에서 다음 명령을 사용합니다. 도메인이나 Cloudflare 계정은 필요하지 않습니다.
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\manage_brandmate_tunnel.ps1 start
+```
+
+출력된 `https://<random>.trycloudflare.com` 주소를 휴대폰에서 열어 PWA를 설치합니다.
+터널을 다시 시작하면 주소가 바뀌므로 발표 중에는 API와 터널 컨테이너를 유지하고, 발표 후에는
+종료합니다. 주소를 아는 사람은 접속할 수 있으므로 발표용 계정과 데이터만 사용합니다.
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\manage_brandmate_tunnel.ps1 stop
+```
+
+Windows PC에서 실행 중인 웹과 API를 발표용 임시 HTTPS 주소로 공유하려면 Docker Desktop을
+실행한 상태에서 다음 명령을 사용합니다. 도메인이나 Cloudflare 계정은 필요하지 않습니다.
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\manage_brandmate_tunnel.ps1 start
+```
+
+출력된 `https://<random>.trycloudflare.com` 주소를 휴대폰에서 열어 PWA를 설치합니다.
+터널을 다시 시작하면 주소가 바뀌므로 발표 중에는 API와 터널 컨테이너를 유지하고, 발표 후에는
+종료합니다. 주소를 아는 사람은 접속할 수 있으므로 발표용 계정과 데이터만 사용합니다.
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\manage_brandmate_tunnel.ps1 stop
+```
+
 주의:
 
 - ComfyUI가 없는 환경에서는 FLUX 이미지 생성만 사용할 수 없습니다.
@@ -144,20 +179,27 @@ Visitor-flow dashboard: http://127.0.0.1:8503
 
 ### 팀원에게 공유할 로그인 방식
 
-GCP 서버가 떠 있는 경우 팀원은 로컬에 FLUX를 설치하지 않고 GCP의 BrandMate web URL로 접속해서 로그인합니다. GCP 외부 IP 또는 도메인은 보안상 README에 고정하지 말고 팀 채널에 별도로 공유합니다.
+GCP 서버가 떠 있는 경우 팀원은 로컬에 FLUX를 설치하지 않고 GCP의 BrandMate HTTPS URL로 접속해서 로그인합니다. 실제 도메인은 README에 고정하지 말고 팀 채널에 별도로 공유합니다.
 
 ```text
-http://<GCP_EXTERNAL_IP_OR_DOMAIN>:5501
+https://<BRANDMATE_DOMAIN>
 ```
 
-현재 테스트 계정:
+외부 PWA 설치는 HTTPS 주소에서만 지원합니다. DNS가 GCP VM을 가리키고 외부 방화벽은
+80/443만 허용해야 합니다. 5501과 7660은 loopback 전용이므로 외부에 열지 않습니다.
+발표 시연은 `restart-demo-public`을 사용합니다. 이 모드는 HTTPS, Secure cookie, 로컬
+PostgreSQL 기반 rate limit은 유지하지만 이메일 인증과 SMTP 발송은 활성화하지 않으므로
+공개 서비스에는 사용하지 않습니다.
+발표 중에는 80/443 접근 대상을 발표자와 테스트 기기의 공인 IP로 제한하고, 발표가 끝나면
+`./scripts/manage_brandmate_services_gcp.sh stop`으로 종료합니다.
 
 ```text
-id: admin@admin.com
-pw: brandmateadmin
+email: admin@admin.com
+password: 팀 비공개 채널에서 공유
 ```
 
-이 계정은 로컬/시연용 테스트 계정입니다. 공개 배포 계정이나 운영 계정으로 쓰면 안 됩니다.
+이 계정은 로컬/시연용 테스트 계정입니다. 공개 배포 전에 비밀번호를 교체하거나 계정을
+비활성화하고, 운영 계정으로 쓰면 안 됩니다.
 
 아래 스크립트는 협의 전까지 유지하는 legacy 경로입니다. 현재 표준 실행 경로가 아닙니다.
 

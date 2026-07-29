@@ -1,0 +1,29 @@
+{$BRANDMATE_DOMAIN:localhost} {
+	encode zstd gzip
+
+	header {
+		Content-Security-Policy "default-src 'self'; base-uri 'none'; object-src 'none'; script-src 'self'; worker-src 'self'; manifest-src 'self'; style-src 'self'; img-src 'self' data: blob:; media-src 'self' data: blob:; connect-src 'self'; form-action 'self'; frame-ancestors 'none'"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		X-Frame-Options "DENY"
+	}
+
+	@pwa_metadata path / /index.html /manifest.webmanifest /sw.js
+	header @pwa_metadata Cache-Control "no-cache, no-store, must-revalidate"
+
+	@manifest path /manifest.webmanifest
+	header @manifest >Content-Type "application/manifest+json; charset=utf-8"
+
+	@api path /api /api/*
+	handle @api {
+		reverse_proxy 127.0.0.1:{$BRANDMATE_API_PORT:7660} {
+			header_down Cache-Control "no-store"
+			header_down Pragma "no-cache"
+		}
+	}
+
+	handle {
+		root * /srv
+		file_server
+	}
+}

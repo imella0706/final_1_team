@@ -55,7 +55,8 @@ cd /home/imella0707/personal/final_1_team
 개별로 실행하려면 먼저 `apps/api`에서 API를 `http://127.0.0.1:7660`으로 실행합니다. 그다음 별도
 터미널에서 테스트 페이지를 실행합니다.
 
-`index.html`을 직접 열거나 이 폴더에서 정적 서버를 실행합니다.
+기존 화면만 확인할 때는 `index.html`을 직접 열 수 있습니다. PWA 설치와 오프라인 화면을
+확인하려면 이 폴더에서 정적 서버를 실행합니다.
 
 ```bash
 cd apps/web
@@ -67,9 +68,50 @@ python -m http.server 5501
 ## 파일
 
 ```text
-index.html    화면 구조와 입력·결과 영역
-styles.css    통합 테스트 페이지 레이아웃
-app.js        서비스 선택 화면과 광고 문구 + 이미지 생성 파이프라인 호출
+index.html             화면 구조와 입력·결과 영역, PWA 메타데이터 연결
+styles.css             통합 테스트 페이지 레이아웃
+app.js                 기존 기능과 서비스 워커 등록
+manifest.webmanifest   설치 이름, 실행 방식, 테마와 아이콘 설정
+sw.js                  정적 화면 파일의 오프라인 캐시와 업데이트 처리
+icons/                 홈 화면 및 마스커블 앱 아이콘
 ```
 
 API 주소를 바꿀 때는 `app.js` 상단의 `API_BASE_URL`을 수정합니다.
+
+## PWA 설치와 캐시 범위
+
+로컬에서는 `http://localhost:5501`, 외부 배포에서는 HTTPS 주소로 접속한 뒤 브라우저의
+`앱 설치` 또는 `홈 화면에 추가` 메뉴를 사용합니다. 설치 후에도 같은 FastAPI 서버를 사용하므로
+로그인과 광고 생성에는 네트워크 연결이 필요합니다.
+
+외부 배포에서는 웹 화면뿐 아니라 FastAPI도 HTTPS로 제공해야 합니다. 가능하면 같은 도메인의
+`/api/v1` 경로로 연결하고, 별도 도메인을 사용한다면 해당 HTTPS 주소와 CORS 설정을 함께 맞춥니다.
+
+Windows 로컬 PC에서 웹 `127.0.0.1:5501`과 API `127.0.0.1:7660`을 이미 실행 중이라면
+저장소 루트에서 다음 명령으로 발표용 임시 HTTPS 주소를 만들 수 있습니다.
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\manage_brandmate_tunnel.ps1 start
+```
+
+이 구성은 Caddy가 `/api/*`만 API로 전달하고 나머지는 웹으로 전달하므로 외부에서도 같은
+origin을 사용합니다. Cloudflare 계정이나 소유 도메인은 필요하지 않으며, 발표 후에는 `stop`
+명령으로 터널을 종료합니다. 터널을 다시 시작하면 임시 주소와 설치된 PWA의 origin이 바뀝니다.
+
+현재 GCP 표준 경로에서는 저장소 루트에서 다음과 같이 동일 도메인 HTTPS 프록시를 실행합니다.
+
+```bash
+BRANDMATE_DOMAIN=app.example.com ./scripts/manage_brandmate_services_gcp.sh restart-demo-public
+```
+
+실행 전에 DNS가 GCP VM을 가리키고 외부 80/443 포트가 허용되어 있어야 합니다.
+발표용 명령은 FastAPI의 공개 origin을 같은 `https://app.example.com` 주소로 자동 설정하고
+이메일 인증과 SMTP 전송을 비활성화합니다. 공개 운영 배포에서는 `restart-public`을 사용하고
+`BRANDMATE_WEB_ORIGIN`과 `BRANDMATE_AUTH_PUBLIC_WEB_URL`을 직접 운영 설정에 반영합니다.
+
+서비스 워커는 `index.html`, `styles.css`, `app.js`, 매니페스트와 앱 아이콘만 캐시합니다.
+API, 인증, 업로드 이미지와 광고 생성 결과는 캐시하거나 가로채지 않습니다. 화면 파일은
+온라인일 때 서버를 먼저 확인하고, 연결할 수 없을 때만 저장된 파일을 사용합니다.
+
+정적 화면 파일 구성이 바뀌면 `sw.js`의 `CACHE_NAME`을 새 값으로 올리고,
+`APP_SHELL_PATHS`의 버전 쿼리도 `index.html`과 맞춥니다.
