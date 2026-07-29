@@ -104,12 +104,14 @@ flowchart LR
 
 
     subgraph CCTV_ANALYTICS["CCTV 상권 유동 분석 파이프라인"]
-        CCTV_SRC["AIHub CCTV 영상<br/>관측 샘플"]
-        CV_ENGINE["YOLO11s · ROI 필터링<br/>Privacy Masking · Line Crossing"]
-        SEOUL_DATA["서울시 상권분석 API<br/>유동인구 · 연령대·성별 데이터"]
-        MAP_OVERLAY["네이버 지도 Static Map<br/>입간판·배너 위치 시각화"]
-        LLM_CMO["OpenAI LLM<br/>F&B CMO 마케팅 전략 컨설팅"]
-        CCTV_DASH["상권 분석 Streamlit 대시보드 &<br/>고객 전달용 PDF 리포트"]
+        CCTV_SRC["AIHub CCTV 영상 :<br/>관측 샘플&nbsp;&nbsp;"]
+        CV_ENGINE["YOLO11s · ROI 필터링 :<br/>Privacy Masking · Line Crossing&nbsp;&nbsp;"]
+        SEOUL_DATA["서울시 상권분석 API :<br/>유동인구 · 연령대 · 성별 데이터&nbsp;&nbsp;"]
+        MAP_OVERLAY["네이버 지도 Static Map :<br/>입간판 · 배너 위치 시각화&nbsp;&nbsp;"]
+        LLM_CMO["OpenAI LLM :<br/>F&B CMO 마케팅 전략 컨설팅&nbsp;&nbsp;"]
+        CCTV_DASH["상권 분석 Streamlit 대시보드 :<br/>고객 전달용 PDF 리포트&nbsp;&nbsp;&nbsp;&nbsp;"]
+
+
 
         CCTV_SRC --> CV_ENGINE
         CV_ENGINE --> LLM_CMO
