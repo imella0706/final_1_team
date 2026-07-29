@@ -1,4 +1,5 @@
 import asyncio
+from types import SimpleNamespace
 
 import httpx
 from pydantic import SecretStr
@@ -9,6 +10,7 @@ from app.extensions.ad_content.main import app
 from app.extensions.ad_content.schemas import AdImageRequest, AdImageResponse, VisionModel
 from app.extensions.ad_content.image_prompt import build_ad_image_prompt
 from app.extensions.ad_content.image_service import (
+    ImageModelProviderError,
     _build_comfyui_workflow,
     generate_ad_image,
     is_comfyui_available,
@@ -16,9 +18,13 @@ from app.extensions.ad_content.image_service import (
 from app.extensions.ad_content.product_visualizer import ProductVisualization
 from app.extensions.ad_content.reference_search import search_reference_images
 from app.extensions.ad_content.reference_store import ProductVisualProfileStore
-from app.extensions.ad_content.vision_service import request_vision_completion
+from app.extensions.ad_content.vision_service import (
+    VisionModelProviderError,
+    request_vision_completion,
+)
 from app.modules.ad_copy.schemas import AdCopyRequest
 from app.modules.ad_copy.schemas import AdCopyResponse
+from app.modules.ad_copy.service import ModelProviderError
 from tests.api_client import get, post
 
 
@@ -46,6 +52,16 @@ def sample_content_request() -> dict[str, object]:
     }
 
 
+def upstream_http_error(status_code: int) -> httpx.HTTPStatusError:
+    request = httpx.Request("POST", "https://provider.example/v1/generate")
+    response = httpx.Response(status_code, request=request)
+    return httpx.HTTPStatusError(
+        f"provider returned {status_code}",
+        request=request,
+        response=response,
+    )
+
+
 def test_generate_content_rejects_unknown_nested_trend_card() -> None:
     request = sample_content_request()
     request["copy"]["trend_card_id"] = "unknown_meme"
@@ -53,7 +69,121 @@ def test_generate_content_rejects_unknown_nested_trend_card() -> None:
     response = post(app, "/api/v1/ad-content/generate", json=request)
 
     assert response.status_code == 422
-    assert response.json() == {"detail": "TrendCard를 찾을 수 없습니다: unknown_meme"}
+    error = response.json()["error"]
+    assert error["code"] == "COPY_INPUT_INVALID"
+    assert error["stage"] == "copy"
+    assert error["retryable"] is False
+    assert error["message"] == "TrendCard를 찾을 수 없습니다: unknown_meme"
+    assert error["request_id"]
+
+
+def test_generate_content_reports_copy_rate_limit_stage(monkeypatch) -> None:
+    async def fake_generate_ad_copy(request):
+        del request
+        raise ModelProviderError("copy provider rate limited") from upstream_http_error(429)
+
+    monkeypatch.setattr(
+        "app.extensions.ad_content.router.generate_ad_copy",
+        fake_generate_ad_copy,
+    )
+
+    response = post(
+        app,
+        "/api/v1/ad-content/generate",
+        json=sample_content_request(),
+    )
+
+    assert response.status_code == 429
+    error = response.json()["error"]
+    assert error["code"] == "COPY_RATE_LIMITED"
+    assert error["stage"] == "copy"
+    assert error["retryable"] is True
+    assert error["message"] == "copy provider rate limited"
+    assert error["request_id"]
+
+
+def test_generate_content_reports_vision_timeout_stage(monkeypatch) -> None:
+    async def fake_describe_blog_images(blog_images, copy_request, vision_model):
+        del blog_images, copy_request, vision_model
+        timeout = httpx.ReadTimeout(
+            "vision timed out",
+            request=httpx.Request("POST", "https://provider.example/v1/vision"),
+        )
+        raise VisionModelProviderError("vision provider timed out") from timeout
+
+    monkeypatch.setattr(
+        "app.extensions.ad_content.router.describe_blog_images",
+        fake_describe_blog_images,
+    )
+    request = sample_content_request()
+    request["copy"]["channel"] = "naver_blog"
+    request["blog_images"] = [
+        {
+            "id": "photo-1",
+            "name": "food.png",
+            "data_url": "data:image/png;base64,aW1hZ2U=",
+        }
+    ]
+
+    response = post(app, "/api/v1/ad-content/generate", json=request)
+
+    assert response.status_code == 504
+    error = response.json()["error"]
+    assert error["code"] == "VISION_TIMEOUT"
+    assert error["stage"] == "vision"
+    assert error["retryable"] is True
+    assert error["request_id"]
+
+
+def test_generate_content_reports_image_provider_stage(monkeypatch) -> None:
+    async def fake_generate_ad_copy(request):
+        del request
+        return SimpleNamespace()
+
+    async def fake_visualize_products(request, copy):
+        del request, copy
+        return SimpleNamespace()
+
+    def fake_normalize_image_prompt(
+        copy,
+        copy_request,
+        product_visualization,
+        reference_image_context,
+    ):
+        del copy, copy_request, product_visualization, reference_image_context
+        return "image prompt", "negative prompt"
+
+    async def fake_generate_ad_image(request):
+        del request
+        raise ImageModelProviderError("image provider unavailable")
+
+    monkeypatch.setattr(
+        "app.extensions.ad_content.router.generate_ad_copy",
+        fake_generate_ad_copy,
+    )
+    monkeypatch.setattr(
+        "app.extensions.ad_content.router.visualize_products",
+        fake_visualize_products,
+    )
+    monkeypatch.setattr(
+        "app.extensions.ad_content.router.normalize_image_prompt",
+        fake_normalize_image_prompt,
+    )
+    monkeypatch.setattr(
+        "app.extensions.ad_content.router.generate_ad_image",
+        fake_generate_ad_image,
+    )
+    request = sample_content_request()
+    request["use_vision_analysis"] = False
+
+    response = post(app, "/api/v1/ad-content/generate", json=request)
+
+    assert response.status_code == 502
+    error = response.json()["error"]
+    assert error["code"] == "IMAGE_PROVIDER_ERROR"
+    assert error["stage"] == "image"
+    assert error["retryable"] is True
+    assert error["request_id"]
 
 
 def test_image_model_catalog_is_exposed(monkeypatch) -> None:

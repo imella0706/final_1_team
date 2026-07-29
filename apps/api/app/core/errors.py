@@ -14,6 +14,8 @@ class ApiError(Exception):
     code: str
     message: str
     headers: dict[str, str] = field(default_factory=dict)
+    stage: str | None = None
+    retryable: bool | None = None
 
 
 def register_exception_handlers(app: FastAPI) -> None:
@@ -22,16 +24,19 @@ def register_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(ApiError)
     async def handle_api_error(request: Request, exc: ApiError) -> JSONResponse:
         request.state.error_code = exc.code
+        error_payload: dict[str, object] = {
+            "code": exc.code,
+            "message": exc.message,
+            "request_id": getattr(request.state, "request_id", None),
+        }
+        if exc.stage is not None:
+            error_payload["stage"] = exc.stage
+        if exc.retryable is not None:
+            error_payload["retryable"] = exc.retryable
         return JSONResponse(
             status_code=exc.status_code,
             headers=exc.headers,
-            content={
-                "error": {
-                    "code": exc.code,
-                    "message": exc.message,
-                    "request_id": getattr(request.state, "request_id", None),
-                }
-            },
+            content={"error": error_payload},
         )
 
     @app.exception_handler(RequestValidationError)

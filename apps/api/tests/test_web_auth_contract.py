@@ -1,6 +1,11 @@
 from pathlib import Path
 
 WEB_ROOT = Path(__file__).resolve().parents[2] / "web"
+PROJECT_ROOT = WEB_ROOT.parents[1]
+CADDY_CONFIGS = (
+    PROJECT_ROOT / "deploy" / "caddy" / "Caddyfile",
+    PROJECT_ROOT / "deploy" / "caddy" / "Caddyfile.tunnel",
+)
 
 
 def test_web_keeps_tokens_out_of_browser_storage_and_coordinates_refresh() -> None:
@@ -31,7 +36,12 @@ def test_web_allows_and_uses_blob_urls_for_generated_audio() -> None:
     markup = (WEB_ROOT / "index.html").read_text(encoding="utf-8")
     script = (WEB_ROOT / "app.js").read_text(encoding="utf-8")
 
+    assert markup.count('http-equiv="Content-Security-Policy"') == 1
+    assert markup.count('content="default-src') == 1
     assert "media-src 'self' data: blob:" in markup
+    for config_path in CADDY_CONFIGS:
+        proxy_config = config_path.read_text(encoding="utf-8")
+        assert "media-src 'self' data: blob:" in proxy_config
     assert "URL.createObjectURL(audioBlob)" in script
     assert "voicePlayer.src = generatedVoiceObjectUrl" in script
     assert "voicePlayer.load()" in script
