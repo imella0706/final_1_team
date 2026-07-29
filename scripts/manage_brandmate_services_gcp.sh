@@ -311,7 +311,7 @@ run_db_migrations() {
     # the auth/session tables expected by the current code before it accepts
     # login requests. Alembic upgrade head is idempotent when the schema is
     # already current.
-    "${API_PYTHON[@]}" -m alembic upgrade head
+    "${API_PYTHON[@]}" -m alembic.config upgrade head
   )
 }
 
