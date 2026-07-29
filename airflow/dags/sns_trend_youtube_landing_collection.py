@@ -31,10 +31,9 @@ REPO_ROOT = Path(os.getenv("BRANDMATE_REPO_ROOT", AIRFLOW_ROOT.parent))
 YOUTUBE_DIR = REPO_ROOT / "gather_data" / "youtube"
 LANDING_ROOT = REPO_ROOT / "data" / "landing" / "sns_trend"
 CURATED_ROOT = REPO_ROOT / "data" / "curated" / "sns_trend"
-YOUTUBE_LANDING_SCHEDULE = (
-    os.getenv("BRANDMATE_SNS_TREND_YOUTUBE_LANDING_SCHEDULE", "40 18 * * 3").strip()
-    or "40 18 * * 3"
-)
+YOUTUBE_LANDING_SCHEDULE = os.environ[
+    "BRANDMATE_SNS_TREND_YOUTUBE_LANDING_SCHEDULE"
+].strip()
 YOUTUBE_LANDING_LIMIT = int(
     os.getenv("BRANDMATE_SNS_TREND_YOUTUBE_LANDING_LIMIT", str(DEFAULT_LIMIT))
 )
@@ -321,7 +320,7 @@ def _verify_youtube_landing_artifacts(config: dict[str, Any]) -> dict[str, Any]:
 
 @dag(
     dag_id=DAG_ID,
-    start_date=datetime(2026, 7, 27),
+    start_date=datetime(2026, 7, 22, 19, 48, tzinfo=timezone.utc),
     schedule=YOUTUBE_LANDING_SCHEDULE,
     catchup=False,
     max_active_runs=1,
@@ -418,4 +417,3 @@ def sns_trend_youtube_landing_collection() -> None:
 
 
 sns_trend_youtube_landing_collection()
-

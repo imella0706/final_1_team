@@ -30,10 +30,9 @@ GOGUMAFARM_DIR = REPO_ROOT / "gather_data" / "crawling" / "gogumafarm"
 LANDING_ROOT = REPO_ROOT / "data" / "landing" / "sns_trend"
 CURATED_ROOT = REPO_ROOT / "data" / "curated" / "sns_trend"
 
-GOGUMAFARM_LANDING_SCHEDULE = (
-    os.getenv("BRANDMATE_SNS_TREND_GOGUMAFARM_LANDING_SCHEDULE", "40 18 * * 3").strip()
-    or "40 18 * * 3"
-)
+GOGUMAFARM_LANDING_SCHEDULE = os.environ[
+    "BRANDMATE_SNS_TREND_GOGUMAFARM_LANDING_SCHEDULE"
+].strip()
 GOGUMAFARM_CURATED_VERSION = (
     os.getenv(
         "BRANDMATE_SNS_TREND_GOGUMAFARM_CURATED_VERSION",
@@ -337,7 +336,7 @@ def _verify_gogumafarm_landing_artifacts(config: dict[str, Any]) -> dict[str, An
 
 @dag(
     dag_id=DAG_ID,
-    start_date=datetime(2026, 7, 27),
+    start_date=datetime(2026, 7, 22, 19, 48, tzinfo=timezone.utc),
     schedule=GOGUMAFARM_LANDING_SCHEDULE,
     catchup=False,
     max_active_runs=1,
@@ -419,4 +418,3 @@ def sns_trend_gogumafarm_landing_collection() -> None:
 
 
 sns_trend_gogumafarm_landing_collection()
-

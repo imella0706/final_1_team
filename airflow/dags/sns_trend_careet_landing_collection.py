@@ -29,10 +29,9 @@ CAREET_DIR = REPO_ROOT / "gather_data" / "crawling" / "careet"
 LANDING_ROOT = REPO_ROOT / "data" / "landing" / "sns_trend"
 CURATED_ROOT = REPO_ROOT / "data" / "curated" / "sns_trend"
 
-CAREET_LANDING_SCHEDULE = (
-    os.getenv("BRANDMATE_SNS_TREND_CAREET_LANDING_SCHEDULE", "40 18 * * 3").strip()
-    or "40 18 * * 3"
-)
+CAREET_LANDING_SCHEDULE = os.environ[
+    "BRANDMATE_SNS_TREND_CAREET_LANDING_SCHEDULE"
+].strip()
 CAREET_DELAY_SECONDS = float(os.getenv("BRANDMATE_SNS_TREND_CAREET_DELAY", "1.5"))
 CAREET_TIMEOUT_SECONDS = float(os.getenv("BRANDMATE_SNS_TREND_CAREET_TIMEOUT", "15"))
 CAREET_RETRIES = int(os.getenv("BRANDMATE_SNS_TREND_CAREET_RETRIES", "3"))
@@ -358,7 +357,7 @@ def _verify_careet_landing_artifacts(config: dict[str, Any]) -> dict[str, Any]:
 
 @dag(
     dag_id=DAG_ID,
-    start_date=datetime(2026, 7, 27),
+    start_date=datetime(2026, 7, 22, 19, 48, tzinfo=timezone.utc),
     schedule=CAREET_LANDING_SCHEDULE,
     catchup=False,
     max_active_runs=1,
@@ -442,4 +441,3 @@ def sns_trend_careet_landing_collection() -> None:
 
 
 sns_trend_careet_landing_collection()
-
