@@ -1,0 +1,97 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080">
+  <defs>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="10" stdDeviation="15" flood-color="#49372c" flood-opacity=".12"/>
+    </filter>
+    <marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto">
+      <path d="M0,0 L12,6 L0,12 Z" fill="#d7785a"/>
+    </marker>
+    <style>
+      .title{font:700 48px 'Noto Sans KR','Malgun Gothic',sans-serif;fill:#332c28}
+      .sub{font:400 23px 'Noto Sans KR','Malgun Gothic',sans-serif;fill:#756b64}
+      .step{font:800 23px 'Noto Sans KR','Malgun Gothic',sans-serif;fill:#332c28}
+      .desc{font:500 17px 'Noto Sans KR','Malgun Gothic',sans-serif;fill:#6f655e}
+      .num{font:800 17px Arial,sans-serif;fill:white}
+      .mini{font:700 14px 'Noto Sans KR','Malgun Gothic',sans-serif;fill:#8a7569}
+    </style>
+  </defs>
+  <rect width="1920" height="1080" fill="#fbf7f1"/>
+  <circle cx="1700" cy="120" r="300" fill="#f7ded2" opacity=".42"/>
+  <circle cx="190" cy="990" r="310" fill="#dce8df" opacity=".55"/>
+  <text x="110" y="105" class="title">프롬프트를 문장이 아닌 파이프라인으로 설계</text>
+  <text x="110" y="148" class="sub">입력과 출력은 JSON으로 고정하고, 이미지 프롬프트는 백엔드가 동일한 규칙으로 정규화합니다.</text>
+
+  <path d="M310 470 H430 M680 470 H800 M1050 470 H1170 M1420 470 H1540" stroke="#d7785a" stroke-width="5" fill="none" marker-end="url(#arrow)"/>
+
+  <g filter="url(#shadow)">
+    <rect x="90" y="290" width="220" height="360" rx="28" fill="#fff"/>
+    <circle cx="135" cy="335" r="19" fill="#d7785a"/><text x="129" y="341" class="num">1</text>
+    <rect x="120" y="375" width="160" height="115" rx="14" fill="#f7eee6"/>
+    <rect x="140" y="398" width="88" height="12" rx="6" fill="#d7785a"/>
+    <rect x="140" y="425" width="118" height="9" rx="4" fill="#d8cbc0"/>
+    <rect x="140" y="448" width="103" height="9" rx="4" fill="#d8cbc0"/>
+    <text x="120" y="535" class="step">입력 JSON</text>
+    <text x="120" y="573" class="desc">매장 · 상품 · 타깃</text>
+    <text x="120" y="601" class="desc">채널 · 필수어 · 모델</text>
+  </g>
+
+  <g filter="url(#shadow)">
+    <rect x="430" y="250" width="250" height="440" rx="28" fill="#fff"/>
+    <circle cx="475" cy="295" r="19" fill="#d7785a"/><text x="469" y="301" class="num">2</text>
+    <rect x="465" y="335" width="180" height="70" rx="14" fill="#fff0ea"/>
+    <text x="485" y="366" class="mini">MARKETING STRATEGY</text>
+    <text x="485" y="389" class="desc">핵심 메시지 · 감정</text>
+    <rect x="465" y="425" width="180" height="70" rx="14" fill="#f2f6f2"/>
+    <text x="485" y="456" class="mini">COPYWRITING</text>
+    <text x="485" y="479" class="desc">제목 · 본문 · CTA</text>
+    <rect x="465" y="515" width="180" height="70" rx="14" fill="#f5f0f8"/>
+    <text x="485" y="546" class="mini">VISUAL BRIEF</text>
+    <text x="485" y="569" class="desc">구도 · 조명 · 여백</text>
+    <text x="465" y="630" class="step">LLM 1회 호출</text>
+    <text x="465" y="660" class="desc">3가지 역할을 분리</text>
+  </g>
+
+  <g filter="url(#shadow)">
+    <rect x="800" y="290" width="250" height="360" rx="28" fill="#fff"/>
+    <circle cx="845" cy="335" r="19" fill="#d7785a"/><text x="839" y="341" class="num">3</text>
+    <g transform="translate(840 375)">
+      <rect width="170" height="115" rx="16" fill="#eef4ef"/>
+      <path d="M25 31h120M25 58h85M25 85h105" stroke="#486b59" stroke-width="10" stroke-linecap="round" opacity=".75"/>
+    </g>
+    <text x="840" y="535" class="step">Prompt Normalizer</text>
+    <text x="840" y="573" class="desc">Enum → 영어 이미지 지시</text>
+    <text x="840" y="601" class="desc">Negative Prompt 분리</text>
+  </g>
+
+  <g filter="url(#shadow)">
+    <rect x="1170" y="290" width="250" height="360" rx="28" fill="#fff"/>
+    <circle cx="1215" cy="335" r="19" fill="#d7785a"/><text x="1209" y="341" class="num">4</text>
+    <rect x="1210" y="375" width="170" height="135" rx="18" fill="#f1e7db"/>
+    <ellipse cx="1295" cy="458" rx="62" ry="24" fill="#c98b48"/>
+    <path d="M1240 455c12-54 101-54 112 0" fill="#e8ac61"/>
+    <path d="M1254 439h82" stroke="#fff5df" stroke-width="13" stroke-linecap="round"/>
+    <text x="1210" y="555" class="step">이미지 생성 모델</text>
+    <text x="1210" y="593" class="desc">GPT Image · SDXL · FLUX</text>
+  </g>
+
+  <g filter="url(#shadow)">
+    <rect x="1540" y="250" width="290" height="440" rx="28" fill="#fff"/>
+    <circle cx="1585" cy="295" r="19" fill="#486b59"/><text x="1579" y="301" class="num">5</text>
+    <rect x="1580" y="335" width="210" height="235" rx="22" fill="#273e34"/>
+    <rect x="1600" y="355" width="170" height="125" rx="14" fill="#f1d3a4"/>
+    <ellipse cx="1685" cy="438" rx="59" ry="21" fill="#8f6039"/>
+    <path d="M1634 433c12-55 91-55 102 0" fill="#df9951"/>
+    <rect x="1610" y="505" width="115" height="13" rx="6" fill="#fff"/>
+    <rect x="1610" y="532" width="145" height="8" rx="4" fill="#c8d5ce"/>
+    <text x="1580" y="615" class="step">Vision QA · 최종 결과</text>
+    <text x="1580" y="652" class="desc">검수 후 저장 또는 1회 재생성</text>
+  </g>
+
+  <path d="M1685 720 C1685 875 1295 900 1295 675" stroke="#486b59" stroke-width="4" fill="none" stroke-dasharray="12 12" marker-end="url(#arrow)"/>
+  <rect x="1330" y="790" width="310" height="76" rx="20" fill="#e7efe9"/>
+  <text x="1360" y="823" class="step">검수 실패 시 수정 지시 추가</text>
+  <text x="1360" y="850" class="desc">regeneration_prompt_suffix</text>
+
+  <rect x="110" y="920" width="1700" height="75" rx="22" fill="#332c28"/>
+  <text x="160" y="967" style="font:700 24px 'Noto Sans KR','Malgun Gothic',sans-serif;fill:#fff">핵심: 모델의 창의성은 유지하고, 반드시 지켜야 할 정보와 출력 형식은 코드와 JSON으로 통제</text>
+</svg>

@@ -9,6 +9,7 @@ from app.modules.ad_copy.trend_context import (
     TrendCardNotFoundError,
     TrendCardNotUsableError,
     load_trend_cards,
+    list_trend_cards,
     load_trend_card,
 )
 
@@ -58,6 +59,25 @@ def test_load_current_manually_curated_card_without_id() -> None:
     card = load_trend_card()
 
     assert card.meme_id == "gogumafarm:1bf390d89536004b"
+
+
+def test_list_trend_cards_returns_reviewed_instagram_catalog() -> None:
+    cards = list_trend_cards(require_channel="instagram")
+
+    assert {card.meme_id for card in cards} >= {
+        "gogumafarm:1bf390d89536004b",
+        "gogumafarm:d4e6309980c15a81",
+        "manual:prison-comeback",
+    }
+
+
+def test_load_trend_card_by_catalog_id() -> None:
+    card = load_trend_card(
+        "manual:prison-comeback",
+        require_channel="instagram",
+    )
+
+    assert card.display_name == "감옥에서 누가 돌아왔게~"
 
 
 def test_load_trend_card_rejects_mismatched_id() -> None:

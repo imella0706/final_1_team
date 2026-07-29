@@ -51,6 +51,20 @@ class ModelOption(BaseModel):
     recommended: bool = False
 
 
+class TrendCardOption(BaseModel):
+    meme_id: str
+    display_name: str
+    meaning: str
+    copy_markers: list[str] = Field(default_factory=list)
+    suitable_channels: list[str] = Field(default_factory=list)
+    suitable_tones: list[str] = Field(default_factory=list)
+    usage_rules: list[str] = Field(default_factory=list)
+    prohibited_usage: list[str] = Field(default_factory=list)
+    rights_risk_level: str
+    rights_risk_notes: str = ""
+    is_mock: bool = False
+
+
 class BusinessType(StrEnum):
     CAFE = "cafe"
     BAKERY = "bakery"
@@ -138,6 +152,7 @@ class AdCopyRequest(BaseModel):
         max_length=100,
         pattern=r"^[A-Za-z0-9:_-]+$",
     )
+    use_trend_card: bool | None = None
     operating_info: str | None = Field(default=None, max_length=300)
     blog_photo_notes: list[str] = Field(default_factory=list, max_length=10)
 

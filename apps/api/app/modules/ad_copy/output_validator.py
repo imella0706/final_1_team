@@ -1,5 +1,6 @@
 from dataclasses import dataclass, field
 import re
+import unicodedata
 
 from app.modules.ad_copy.schemas import (
     AdCopyContent,
@@ -76,9 +77,56 @@ def _compose_instagram_publish_body(
     return "\n\n".join(part for part in (caption_part, footer) if part)
 
 
+_MEME_POSTER_TITLE_MAX_LENGTH = 48
+
+
+def _trend_title_marker(card: TrendCard) -> tuple[str, str]:
+    structure = card.copy_structure
+    if isinstance(structure, ComebackRevealCopyStructure):
+        return structure.reason_ending.strip(), "!"
+    if isinstance(structure, ContextDanceCopyStructure):
+        return structure.marker_variants[0].strip(), "~"
+    marker = next((item.strip() for item in card.copy_markers if item.strip()), "")
+    return marker or card.display_name.strip(), "~"
+
+
+def _trend_title_emojis(card: TrendCard) -> str:
+    marker_text = " ".join(card.copy_markers).casefold()
+    if "니가 좋아" in marker_text:
+        return "💛"
+    emojis = [
+        character
+        for character in card.display_name
+        if unicodedata.category(character) == "So"
+    ]
+    return emojis[0] if emojis else "✨"
+
+
+def _meme_poster_title(request: AdCopyRequest, card: TrendCard) -> str:
+    """Return a concise product + meme marker + emoji poster title."""
+
+    product = (
+        request.product_names[0]
+        if request.product_names
+        else request.business_name
+    )
+    product = " ".join(product.split())
+    marker, punctuation = _trend_title_marker(card)
+    marker = marker.rstrip("~～!?？！ ").strip()
+    suffix = f" {marker}{punctuation} {_trend_title_emojis(card)}"
+    product_budget = _MEME_POSTER_TITLE_MAX_LENGTH - len(suffix)
+    if product_budget > 1 and len(product) > product_budget:
+        product = f"{product[: product_budget - 1].rstrip()}…"
+    title = f"{product}{suffix}".strip()
+    if len(title) <= _MEME_POSTER_TITLE_MAX_LENGTH:
+        return title
+    return f"{title[: _MEME_POSTER_TITLE_MAX_LENGTH - 1].rstrip()}…"
+
+
 def normalize_copy_output(
     content: AdCopyContent,
     request: AdCopyRequest,
+    trend_card: TrendCard | None = None,
 ) -> AdCopyContent:
     """Normalize derived channel fields without inventing advertising facts.
 
@@ -91,8 +139,26 @@ def normalize_copy_output(
         return content
 
     recommendation = content.channel_recommendation
-    caption = recommendation.caption.strip()
-    publish_cta = recommendation.publish_cta.strip()
+    headlines = [
+        _normalize_product_particles(value.strip(), request.product_names)
+        for value in content.headlines
+    ]
+    body_copies = [
+        _normalize_product_particles(value.strip(), request.product_names)
+        for value in content.body_copies
+    ]
+    ctas = [
+        _normalize_product_particles(value.strip(), request.product_names)
+        for value in content.ctas
+    ]
+    caption = _normalize_product_particles(
+        recommendation.caption.strip(),
+        request.product_names,
+    )
+    publish_cta = _normalize_product_particles(
+        recommendation.publish_cta.strip(),
+        request.product_names,
+    )
     source_hashtags = recommendation.publish_hashtags or content.hashtags
     publish_hashtags = _normalize_hashtags(source_hashtags)
     publish_body = _compose_instagram_publish_body(
@@ -102,14 +168,27 @@ def normalize_copy_output(
     )
     normalized_recommendation = recommendation.model_copy(
         update={
+            "overlay_headline": (
+                _meme_poster_title(request, trend_card)
+                if trend_card is not None
+                else recommendation.overlay_headline
+            ),
             "caption": caption,
             "publish_cta": publish_cta,
             "publish_hashtags": publish_hashtags,
+            "publish_title": (
+                _meme_poster_title(request, trend_card)
+                if trend_card is not None
+                else recommendation.publish_title
+            ),
             "publish_body": publish_body,
         }
     )
     return content.model_copy(
         update={
+            "headlines": headlines,
+            "body_copies": body_copies,
+            "ctas": ctas,
             "hashtags": publish_hashtags,
             "channel_recommendation": normalized_recommendation,
         }
@@ -812,6 +891,26 @@ def validate_copy_output(
             + ", ".join(sorted(set(prohibited_in_copy + prohibited_in_visual))),
         )
 
+    leaked_internal_markers = [
+        marker for marker in _INTERNAL_FEATURE_MARKERS if marker in customer_text
+    ]
+    if leaked_internal_markers:
+        _add_failure(
+            warnings,
+            failure_codes,
+            "internal_instruction_leaked",
+            "고객 문구에 내부 작업 지시문이 노출됨: "
+            + ", ".join(leaked_internal_markers),
+        )
+
+    if "□" in customer_text or "�" in customer_text:
+        _add_failure(
+            warnings,
+            failure_codes,
+            "broken_glyph_in_customer_copy",
+            "고객 문구에 깨진 문자 또는 렌더링 대체 문자가 포함되어 있습니다.",
+        )
+
     non_korean_fields = _non_korean_customer_fields(visible_fields, request)
     if non_korean_fields:
         _add_failure(
@@ -1004,15 +1103,75 @@ _INTERNAL_PROMOTION_PREFIXES = (
     "상권:",
     "세부 타겟:",
 )
+_INTERNAL_FEATURE_MARKERS = (
+    "업로드 사진",
+    "사진 속",
+    "사진에 없는",
+    "중심으로 소개",
+    "작성하세요",
+    "만들지 말",
+    "분석 메모",
+    "내부 작업",
+    "고객에게 노출",
+)
 _OVERLAY_HEADLINE_MAX_LENGTH = 100
+
+
+def _is_customer_facing_feature(feature: str) -> bool:
+    normalized = " ".join(feature.split())
+    return (
+        bool(normalized)
+        and not normalized.startswith(_INTERNAL_PROMOTION_PREFIXES)
+        and not any(marker in normalized for marker in _INTERNAL_FEATURE_MARKERS)
+    )
 
 
 def _sales_features(features: list[str]) -> list[str]:
     return [
         feature.strip()
         for feature in features
-        if feature.strip() and not feature.startswith(_INTERNAL_PROMOTION_PREFIXES)
+        if _is_customer_facing_feature(feature)
     ]
+
+
+def _has_final_consonant(value: str) -> bool:
+    for character in reversed(value.strip()):
+        if "가" <= character <= "힣":
+            return (ord(character) - ord("가")) % 28 != 0
+        if character.isalnum():
+            return False
+    return False
+
+
+def _with_particle(value: str, consonant: str, vowel: str) -> str:
+    return f"{value}{consonant if _has_final_consonant(value) else vowel}"
+
+
+def _normalize_product_particles(text: str, products: list[str]) -> str:
+    normalized = text
+    particle_pairs = (
+        ("을(를)", "을", "를"),
+        ("이(가)", "이", "가"),
+        ("은(는)", "은", "는"),
+        ("와(과)", "과", "와"),
+        ("을", "을", "를"),
+        ("를", "을", "를"),
+        ("이", "이", "가"),
+        ("가", "이", "가"),
+        ("은", "은", "는"),
+        ("는", "은", "는"),
+        ("와", "과", "와"),
+        ("과", "과", "와"),
+    )
+    for product in sorted(products, key=len, reverse=True):
+        if not product:
+            continue
+        for suffix, consonant, vowel in particle_pairs:
+            normalized = normalized.replace(
+                f"{product}{suffix}",
+                _with_particle(product, consonant, vowel),
+            )
+    return normalized
 
 
 def _campaign_context_or_default(promotion: str | None, default: str) -> str:
@@ -1165,29 +1324,29 @@ def _build_instagram_package(
     trend_headline = _render_trend_pattern(trend_card, request)
     overlay_headline = _limit_overlay_headline(
         remove_prohibited_terms(
-            trend_headline or "오늘은 달콤하게, 특별하게", prohibited_terms
+            _meme_poster_title(request, trend_card)
+            if trend_card is not None
+            else "오늘은 달콤하게, 특별하게",
+            prohibited_terms,
         )
     )
-    opening = f"{request.business_name}의 {product_phrase}를 소개합니다."
+    product_object = _with_particle(product_phrase, "을", "를")
     if sales_features:
-        opening = (
-            f"{sales_features[0]}으로 기억될 {request.business_name}의 "
-            f"{product_phrase}를 소개합니다."
+        description = (
+            f"{_with_particle(sales_features[0], '이', '가')} 돋보이는 "
+            f"{product_object} 소개합니다."
         )
+    elif request.situation.value == "new_menu":
+        description = (
+            f"먹음직스러운 비주얼이 눈길을 끄는 신메뉴 "
+            f"{product_object} 소개합니다."
+        )
+    else:
+        description = f"눈길을 끄는 {product_object} 소개합니다."
 
-    relationship_subject = (
-        "이 메뉴 조합이"
-        if len(request.product_names) > 1
-        else f"{product}이(가)"
-    )
-
-    lines = [
-        opening,
-        "",
-        f"{relationship_subject} 필요한 순간에 자연스럽게 어울립니다.",
-    ]
+    lines = [description]
     if trend_headline:
-        lines.insert(0, trend_headline)
+        lines.insert(0, trend_headline if sales_features else overlay_headline)
     missing_required_terms = [
         term
         for term in request.required_terms
@@ -1203,11 +1362,26 @@ def _build_instagram_package(
         lines.extend(["", f"📍{region}"])
 
     caption = remove_prohibited_terms("\n".join(lines), prohibited_terms)
-    publish_cta = remove_prohibited_terms("매장에서 만나보세요.", prohibited_terms)
+    publish_cta = remove_prohibited_terms(
+        f"{request.business_name}에서 직접 만나보세요.",
+        prohibited_terms,
+    )
     hashtags = [
-        _clean_hashtag(region.replace("서울 ", "").replace(" ", "") + "카페") if region else "",
         _clean_hashtag(product),
-        "#디저트맛집",
+        "#신메뉴" if request.situation.value == "new_menu" else "",
+        {
+            "cafe": "#카페",
+            "bakery": "#베이커리",
+            "dessert": "#디저트",
+            "restaurant": "#맛집",
+            "pub": "#주점",
+        }.get(request.business_type.value, ""),
+        "#디저트맛집"
+        if request.business_type.value in {"cafe", "bakery", "dessert"}
+        else "",
+        _clean_hashtag(region.replace("서울 ", "").replace(" ", "") + "카페")
+        if region
+        else "",
     ]
     for interest in interests:
         hashtags.append(_clean_hashtag(interest))
@@ -1240,7 +1414,17 @@ def _build_blog_package(
     )
     trend_opening = _render_trend_pattern(trend_card, request)
     intro = "\n".join(part for part in [trend_opening, opening] if part)
-    title = f"{region_label + ' ' if region_label else ''}카페 {request.business_name}, {title_suffix}"
+    business_type_label = {
+        "cafe": "카페",
+        "bakery": "베이커리",
+        "dessert": "디저트 매장",
+        "restaurant": "음식점",
+        "pub": "주점",
+    }.get(request.business_type.value, "매장")
+    title = (
+        f"{region_label + ' ' if region_label else ''}"
+        f"{business_type_label} {request.business_name}, {title_suffix}"
+    )
     menu_photo_marker = f"[{photo_order[0]} - {product_text}]" if photo_order else ""
     space_photo_marker = (
         f"[{photo_order[1]} - 매장 내부 또는 전경]" if len(photo_order) > 1 else ""
@@ -1250,7 +1434,10 @@ def _build_blog_package(
         for product in products_list
         if _product_price(product, request.product_price)
     ]
-    menu_body = f"{product_text}는 {request.business_name}에서 준비한 메뉴입니다."
+    menu_body = (
+        f"{_with_particle(product_text, '은', '는')} "
+        f"{request.business_name}에서 준비한 메뉴입니다."
+    )
     if price_details:
         menu_body += f" 가격은 {', '.join(price_details)}입니다."
     menu_body += " 방문하신 날의 여유로운 시간과 함께 자연스럽게 즐겨 보세요."
@@ -1262,7 +1449,7 @@ def _build_blog_package(
             "body": intro,
         },
         {
-            "title": f"{product_text}를 소개합니다",
+            "title": f"{_with_particle(product_text, '을', '를')} 소개합니다",
             "photo": photo_order[0] if photo_order else "",
             "body": menu_body,
         },
@@ -1272,7 +1459,10 @@ def _build_blog_package(
             "body": " ".join(
                 part
                 for part in [
-                    f"{request.business_name}은 편안하게 머물며 메뉴를 즐길 수 있는 공간입니다.",
+                    (
+                        f"{_with_particle(request.business_name, '은', '는')} "
+                        "편안하게 머물며 메뉴를 즐길 수 있는 공간입니다."
+                    ),
                     feature_sentence,
                     visit_guidance,
                 ]
@@ -1343,10 +1533,12 @@ def _photo_label(note: str, fallback_index: int) -> str:
 def _blog_situation_copy(
     situation: str, business_name: str, products: str
 ) -> tuple[str, str, str]:
+    product_object = _with_particle(products, "을", "를")
+    product_with = _with_particle(products, "과", "와")
     copies = {
         "new_menu": (
-            f"새롭게 준비한 {products}를 소개합니다",
-            f"오늘은 {business_name}에서 새롭게 준비한 {products}를 소개해 드립니다.",
+            f"새롭게 준비한 {product_object} 소개합니다",
+            f"오늘은 {business_name}에서 새롭게 준비한 {product_object} 소개해 드립니다.",
             "새로운 메뉴가 궁금하셨다면 매장에서 직접 만나보세요.",
         ),
         "discount": (
@@ -1355,23 +1547,23 @@ def _blog_situation_copy(
             "할인 적용 메뉴와 기간은 방문 전 매장 안내를 확인해 주세요.",
         ),
         "event": (
-            f"{products}와 함께하는 이벤트를 안내합니다",
+            f"{product_with} 함께하는 이벤트를 안내합니다",
             f"오늘은 {business_name}에서 준비한 {products} 관련 이벤트 소식을 전해 드립니다.",
             "이벤트 참여 방법과 기간은 매장 안내에 맞춰 확인해 주세요.",
         ),
         "delivery": (
-            f"집에서도 즐길 수 있는 {products}를 소개합니다",
-            f"오늘은 {business_name}의 {products}를 배달로 즐기는 방법을 소개해 드립니다.",
+            f"집에서도 즐길 수 있는 {product_object} 소개합니다",
+            f"오늘은 {business_name}의 {product_object} 배달로 즐기는 방법을 소개해 드립니다.",
             "편안한 자리에서 메뉴를 즐기고 싶을 때 배달 주문을 확인해 보세요.",
         ),
         "takeout": (
-            f"가볍게 포장해 즐기기 좋은 {products}를 소개합니다",
-            f"오늘은 {business_name}의 {products}를 포장으로 즐기는 방법을 소개해 드립니다.",
+            f"가볍게 포장해 즐기기 좋은 {product_object} 소개합니다",
+            f"오늘은 {business_name}의 {product_object} 포장으로 즐기는 방법을 소개해 드립니다.",
             "바쁜 하루 중에도 포장으로 편하게 메뉴를 만나보세요.",
         ),
         "visit": (
-            f"매장에서 즐기기 좋은 {products}를 소개합니다",
-            f"오늘은 {business_name}에서 직접 즐기기 좋은 {products}를 소개해 드립니다.",
+            f"매장에서 즐기기 좋은 {product_object} 소개합니다",
+            f"오늘은 {business_name}에서 직접 즐기기 좋은 {product_object} 소개해 드립니다.",
             "여유로운 시간이 필요할 때 매장에 들러 메뉴를 만나보세요.",
         ),
     }
@@ -1392,7 +1584,11 @@ def build_fallback_copy(
         request.prohibited_terms,
     )
     body = remove_prohibited_terms(
-        f"{request.business_name}에서 {products}을(를) 만나보세요. {feature_sentence}",
+        (
+            f"{request.business_name}에서 "
+            f"{_with_particle(products, '을', '를')} 만나보세요. "
+            f"{feature_sentence}"
+        ).strip(),
         request.prohibited_terms,
     )
     missing_required_terms = [

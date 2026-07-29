@@ -30,6 +30,9 @@ class Settings(BaseSettings):
     auth_refresh_cookie_name: str = "brandmate_refresh"
     auth_refresh_cookie_secure: bool = False
     auth_refresh_cookie_samesite: Literal["lax", "strict"] = "lax"
+    auth_local_login_bypass: bool = True
+    auth_local_login_email: str = "brandmate.demo@example.com"
+    auth_local_login_display_name: str = "BrandMate Demo"
     auth_email_verification_required: bool = False
     auth_email_verification_hours: int = 24
     auth_password_reset_minutes: int = 30
@@ -54,6 +57,7 @@ class Settings(BaseSettings):
     llm_timeout_seconds: float = 120
     hf_image_provider: str = "auto"
     hf_image_edit_model: str = "black-forest-labs/FLUX.1-Kontext-dev"
+    hf_img2img_strength: float = 0.22
     openai_base_url: str = "https://api.openai.com/v1"
     openai_api_key: SecretStr | None = None
     openai_chat_model: str = "gpt-4.1-mini"
@@ -117,7 +121,7 @@ class Settings(BaseSettings):
     comfyui_workflow_path: str | None = None
     comfyui_sdxl_checkpoint: str = "sd_xl_base_1.0.safetensors"
     comfyui_sdxl_turbo_checkpoint: str = "sd_xl_turbo_1.0_fp16.safetensors"
-    comfyui_img2img_denoise: float = 0.58
+    comfyui_img2img_denoise: float = 0.22
     comfyui_timeout_seconds: float = 300
     comfyui_poll_interval_seconds: float = 1
     comfyui_health_timeout_seconds: float = 1
@@ -174,6 +178,8 @@ class Settings(BaseSettings):
         if self.environment.lower() not in {"production", "prod"}:
             return self
 
+        if self.auth_local_login_bypass:
+            raise ValueError("BRANDMATE_AUTH_LOCAL_LOGIN_BYPASS must be false in production")
         secret = self.auth_secret_key.get_secret_value() if self.auth_secret_key else ""
         if len(secret.encode("utf-8")) < 32:
             raise ValueError("BRANDMATE_AUTH_SECRET_KEY must be at least 32 bytes in production")

@@ -648,6 +648,167 @@ fieldset {
   line-height: 1.45;
 }
 
+.trend-card-panel {
+  margin-bottom: 22px;
+  padding: 16px;
+  border: 1px solid #d8b3e8;
+  border-radius: 8px;
+  background:
+    radial-gradient(circle at top right, rgba(226, 184, 244, 0.24), transparent 42%),
+    #fbf7ff;
+}
+
+.trend-card-heading,
+.trend-card-title-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.trend-card-heading legend {
+  margin-bottom: 4px;
+  color: #5c346d;
+}
+
+.trend-card-heading legend span {
+  margin-left: 6px;
+  padding: 3px 6px;
+  border-radius: 999px;
+  color: #744589;
+  background: #eeddf5;
+  font-size: 9px;
+}
+
+.trend-card-heading small,
+.trend-card-disabled-note {
+  margin: 0;
+  color: #817389;
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+.trend-card-toggle {
+  flex: 0 0 auto;
+  margin-top: 0;
+}
+
+.trend-card-select-label {
+  display: block;
+  margin: 14px 0 7px;
+  font-size: 11px;
+  font-weight: 850;
+}
+
+.trend-card-panel select {
+  width: 100%;
+}
+
+.trend-card-detail {
+  margin-top: 12px;
+  padding: 13px;
+  border: 1px solid #e7d7ed;
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.78);
+}
+
+.trend-card-title-row strong {
+  color: #553263;
+  font-size: 14px;
+}
+
+.trend-card-title-row span {
+  padding: 3px 6px;
+  border-radius: 999px;
+  color: #33705a;
+  background: #e5f5ee;
+  font-size: 9px;
+  font-weight: 850;
+}
+
+.trend-card-detail > p {
+  margin: 8px 0 10px;
+  color: #706577;
+  font-size: 11px;
+  line-height: 1.65;
+}
+
+.trend-card-marker {
+  color: #87758e;
+  font-size: 10px;
+}
+
+.trend-card-marker b {
+  margin-left: 7px;
+  color: #6d357f;
+  font-size: 11px;
+}
+
+.trend-card-detail details {
+  margin-top: 10px;
+  color: #66566d;
+  font-size: 10px;
+}
+
+.trend-card-detail summary {
+  cursor: pointer;
+  font-weight: 850;
+}
+
+.trend-card-rules {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-top: 10px;
+}
+
+.trend-card-rules strong {
+  font-size: 10px;
+}
+
+.trend-card-rules ul {
+  margin: 6px 0 0;
+  padding-left: 16px;
+  color: #817389;
+  line-height: 1.55;
+}
+
+.trend-card-disabled-note {
+  margin-top: 10px;
+}
+
+.result-trend-card {
+  margin: 10px 0 16px;
+  padding: 9px 11px;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 2px 8px;
+  align-items: center;
+  border-left: 3px solid #9b64ae;
+  border-radius: 4px;
+  background: #f8f0fb;
+}
+
+.result-trend-card span {
+  grid-row: 1 / span 2;
+  color: #7d6585;
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.result-trend-card strong {
+  color: #573266;
+  font-size: 12px;
+}
+
+.result-trend-card small {
+  color: #8d7c93;
+  font-size: 9px;
+  overflow-wrap: anywhere;
+}
+
 .choice-grid {
   display: grid;
   gap: 7px;
@@ -1245,6 +1406,66 @@ select:focus {
   background: #eee8dd;
 }
 
+.result-mode-tabs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin: 4px 0 22px;
+  padding: 5px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #f7f3ed;
+}
+
+.result-mode-tab {
+  min-width: 0;
+  padding: 14px 16px;
+  display: grid;
+  gap: 4px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  color: #756d66;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color 160ms ease,
+    background 160ms ease,
+    box-shadow 160ms ease,
+    color 160ms ease;
+}
+
+.result-mode-tab span {
+  font-size: 14px;
+  font-weight: 900;
+}
+
+.result-mode-tab small {
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.result-mode-tab:hover {
+  color: #433c36;
+  background: rgba(255, 255, 255, 0.64);
+}
+
+.result-mode-tab.is-active {
+  border-color: #ded4c9;
+  color: #342f2b;
+  background: #fff;
+  box-shadow: 0 5px 16px rgba(67, 54, 43, 0.08);
+}
+
+.result-mode-tab.is-active small {
+  color: #756d66;
+}
+
+.result-mode-panel[hidden] {
+  display: none;
+}
+
 .poster-preview {
   position: relative;
   isolation: isolate;
@@ -1332,9 +1553,10 @@ select:focus {
 }
 
 .voice-ad-section {
-  margin-top: 28px;
-  padding-top: 24px;
-  border-top: 1px solid var(--line);
+  padding: 22px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fffdf9;
 }
 
 .voice-ad-heading,
@@ -1462,6 +1684,12 @@ select:focus {
   .workspace,
   .result-grid,
   .voice-ad-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 640px) {
+  .result-mode-tabs {
     grid-template-columns: 1fr;
   }
 }

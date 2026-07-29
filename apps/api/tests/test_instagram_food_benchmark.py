@@ -68,6 +68,10 @@ def test_select_cases_matches_photos_and_builds_instagram_prompts(tmp_path: Path
         for case in cases
     )
     assert all(
+        case["food"]["product_group"] not in case["instagram_request"]["interests"]
+        for case in cases
+    )
+    assert all(
         "사진 설명:" not in " ".join(case["instagram_request"]["features"])
         and "시각 키워드:" not in " ".join(case["instagram_request"]["features"])
         for case in cases
@@ -120,6 +124,39 @@ def test_build_plan_crosses_every_food_with_every_combination() -> None:
 
     assert len(build_plan(cases, combinations)) == 4
     assert len(build_plan(cases, combinations, max_runs=3)) == 3
+
+
+def test_build_plan_creates_paired_meme_arms() -> None:
+    cases = [
+        {
+            "id": "case-1",
+            "image_id": "IMG_1",
+            "image_path": "data/images/IMG_1.jpg",
+            "food": {"product_name": "food-1"},
+        }
+    ]
+    combinations = [
+        {
+            "llm_model": AdModel.LOCAL_QWEN_2_5_7B,
+            "vision_model": VisionModel.LOCAL_QWEN_3_VL_4B,
+            "image_model": ImageModel.SDXL_BASE,
+        }
+    ]
+
+    plan = build_plan(
+        cases,
+        combinations,
+        compare_meme=True,
+        trend_card_id="test:trend-card",
+    )
+
+    assert [item["meme_arm"] for item in plan] == ["without_meme", "with_meme"]
+    assert plan[0]["use_trend_card"] is False
+    assert plan[0]["trend_card_id"] is None
+    assert plan[1]["use_trend_card"] is True
+    assert plan[1]["trend_card_id"] == "test:trend-card"
+    assert "without_meme" in plan[0]["trial_id"]
+    assert "with_meme" in plan[1]["trial_id"]
 
 
 def test_image_normalization_converts_mislabeled_png_to_rgb_jpeg(tmp_path: Path) -> None:
@@ -210,6 +247,7 @@ def test_render_existing_run_overlays_uses_saved_instagram_headline(tmp_path: Pa
 
     assert len(records) == 1
     assert records[0]["headline"] == "마늘빵의 오늘"
+    assert records[0]["subtitle"] == ""
     assert (trial_dir / "generated-with-copy.png").is_file()
     assert (tmp_path / "text-overlay-manifest.json").is_file()
 

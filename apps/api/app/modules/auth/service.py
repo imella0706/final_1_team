@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+import secrets
 from uuid import UUID, uuid4
 
 from app.core.config import Settings
@@ -131,6 +132,48 @@ class AuthService:
             id=uuid4(),
             user_id=user.id,
             device_name=request.device_name,
+            created_at=now,
+            last_seen_at=now,
+        )
+        self.repository.add_session(auth_session)
+        issued = self._issue_tokens(user, session_id=auth_session.id)
+        await self.repository.commit()
+        return issued
+
+    async def login_for_local_development(
+        self,
+        *,
+        email: str,
+        display_name: str,
+        device_name: str,
+    ) -> IssuedTokens:
+        normalized_email = normalize_email(email)
+        user = await self.repository.get_user_by_email(normalized_email)
+        if user is None:
+            now = datetime.now(UTC)
+            user = User(
+                email_normalized=normalized_email,
+                display_name=display_name,
+                password_hash=await self.security.hash_password(secrets.token_urlsafe(32)),
+                status="active",
+                token_version=0,
+                email_verified_at=now,
+            )
+            try:
+                await self.repository.create_user(user)
+            except DuplicateEmailError:
+                user = await self.repository.get_user_by_email(normalized_email)
+                if user is None:
+                    raise
+
+        if user.status != "active":
+            raise ApiError(403, "AUTH_LOCAL_USER_INACTIVE", "로컬 테스트 계정이 비활성 상태입니다.")
+
+        now = datetime.now(UTC)
+        auth_session = AuthSession(
+            id=uuid4(),
+            user_id=user.id,
+            device_name=device_name,
             created_at=now,
             last_seen_at=now,
         )

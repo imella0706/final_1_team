@@ -340,6 +340,7 @@ async def generate_content(request: AdContentRequest) -> AdContentResponse:
                 copy_request,
                 product_visualization,
                 reference_image_context,
+                reference_image_provided=bool(request.reference_image_data_url),
             )
             image = await generate_ad_image(
                 AdImageRequest(

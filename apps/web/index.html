@@ -17,11 +17,10 @@
       content="default-src 'self'; base-uri 'none'; object-src 'none'; script-src 'self'; worker-src 'self'; manifest-src 'self'; style-src 'self'; img-src 'self' data: blob:; media-src 'self' data: blob:; connect-src 'self' http://localhost:7660 http://127.0.0.1:7660 http://34.55.162.157:7660; form-action 'self'"
     />
     <title>BrandMate Ad Content Studio</title>
-    <link rel="stylesheet" href="./styles.css?v=voice-auth-20260721" />
     <link rel="manifest" href="./manifest.webmanifest" />
     <link rel="icon" type="image/png" sizes="192x192" href="./icons/icon-192.png" />
     <link rel="apple-touch-icon" sizes="180x180" href="./icons/apple-touch-icon.png" />
-    <link rel="stylesheet" href="./styles.css?v=mobile-fit-20260727" />
+    <link rel="stylesheet" href="./styles.css?v=pwa-result-tabs-20260729" />
   </head>
   <body>
     <header class="topbar">
@@ -250,6 +249,50 @@
               <small>선택한 채널에 따라 입력 항목과 모델 프롬프트 구성이 달라집니다.</small>
             </fieldset>
 
+            <fieldset class="trend-card-panel" id="trend-card-panel">
+              <div class="trend-card-heading">
+                <div>
+                  <legend>밈 활용 <span>Instagram</span></legend>
+                  <small>검수된 TrendCard의 문장 구조를 광고 문구에 적용합니다.</small>
+                </div>
+                <label class="inline-toggle trend-card-toggle">
+                  <input id="use-trend-card" name="useTrendCard" type="checkbox" checked />
+                  <span>밈 사용</span>
+                </label>
+              </div>
+              <label class="trend-card-select-label" for="trend-card-select">사용할 밈</label>
+              <select id="trend-card-select" name="trendCardId">
+                <option value="">TrendCard를 불러오는 중입니다.</option>
+              </select>
+              <div class="trend-card-detail" id="trend-card-detail" hidden>
+                <div class="trend-card-title-row">
+                  <strong id="trend-card-name"></strong>
+                  <span id="trend-card-risk"></span>
+                </div>
+                <p id="trend-card-meaning"></p>
+                <div class="trend-card-marker">
+                  핵심 표현
+                  <b id="trend-card-markers"></b>
+                </div>
+                <details>
+                  <summary>사용 규칙과 주의사항</summary>
+                  <div class="trend-card-rules">
+                    <div>
+                      <strong>사용 규칙</strong>
+                      <ul id="trend-card-usage-rules"></ul>
+                    </div>
+                    <div>
+                      <strong>피해야 할 사용</strong>
+                      <ul id="trend-card-prohibited-usage"></ul>
+                    </div>
+                  </div>
+                </details>
+              </div>
+              <p class="trend-card-disabled-note" id="trend-card-disabled-note" hidden>
+                밈을 끄면 일반 광고 문구로 생성합니다.
+              </p>
+            </fieldset>
+
             <fieldset>
               <legend>업종</legend>
               <div class="choice-grid five">
@@ -438,10 +481,49 @@
                 <span class="complete-badge">완료</span>
               </div>
 
-              <div class="result-grid">
+              <div class="result-mode-tabs" role="tablist" aria-label="광고 결과 형식">
+                <button
+                  class="result-mode-tab is-active"
+                  id="image-result-tab"
+                  type="button"
+                  role="tab"
+                  aria-selected="true"
+                  aria-controls="image-result-panel"
+                  data-result-mode="image"
+                >
+                  <span>이미지 광고</span>
+                  <small>포스터와 채널 게시 문구</small>
+                </button>
+                <button
+                  class="result-mode-tab"
+                  id="voice-result-tab"
+                  type="button"
+                  role="tab"
+                  aria-selected="false"
+                  aria-controls="voice-result-panel"
+                  data-result-mode="voice"
+                >
+                  <span>음성 광고</span>
+                  <small>생성된 문구로 내레이션 제작</small>
+                </button>
+              </div>
+
+              <section
+                class="result-mode-panel"
+                id="image-result-panel"
+                role="tabpanel"
+                aria-labelledby="image-result-tab"
+                data-result-panel="image"
+              >
+                <div class="result-grid">
                 <article class="copy-result">
                   <div class="result-label">광고 문구 <span id="result-copy-model"></span></div>
                   <p class="context-line" id="context-line"></p>
+                  <div class="result-trend-card" id="result-trend-card" hidden>
+                    <span>적용된 밈</span>
+                    <strong id="result-trend-card-name"></strong>
+                    <small id="result-trend-card-id"></small>
+                  </div>
                   <h3 id="headline"></h3>
                   <p class="body-copy" id="body-copy"></p>
                   <div class="result-block">
@@ -509,9 +591,17 @@
                   </div>
                   <p class="image-caption" id="image-caption"></p>
                 </article>
-              </div>
+                </div>
+              </section>
 
-              <section class="voice-ad-section" aria-labelledby="voice-ad-title">
+              <section
+                class="result-mode-panel voice-ad-section"
+                id="voice-result-panel"
+                role="tabpanel"
+                aria-labelledby="voice-result-tab voice-ad-title"
+                data-result-panel="voice"
+                hidden
+              >
                 <div class="voice-ad-heading">
                   <div>
                     <div class="result-label">음성 광고 <span id="result-audio-model">gpt-4o-mini-tts</span></div>
@@ -568,6 +658,6 @@
       </section>
     </main>
 
-    <script src="./app.js?v=pwa-20260729-models"></script>
+    <script src="./app.js?v=pwa-models-result-tabs-20260729"></script>
   </body>
 </html>
