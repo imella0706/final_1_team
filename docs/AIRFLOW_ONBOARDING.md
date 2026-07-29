@@ -4,7 +4,20 @@
 
 Airflow는 크롤러도 아니고 데이터 생성기도 아닙니다. 현재 MVP에서 Airflow의 역할은 데이터셋 담당자가 GCS에 올린 공식 processed 패키지를 read-only로 검증하고, API/DVC에서 사용 가능한 상태인지 판단하는 gate입니다.
 
-## 1. 현재 결론
+## 1. Quick Start & 로그인 가이드
+
+Airflow 인프라 초기화 시 `.env.airflow` 파일에 24자리 무작위 보안 비밀번호가 자동 생성됩니다.
+
+```bash
+# Airflow 관리자 로그인 정보 조회 (아이디/비밀번호 확인)
+grep -E "AIRFLOW_ADMIN_USERNAME|AIRFLOW_ADMIN_PASSWORD" .env.airflow
+```
+
+- **기본 아이디 (Username):** `admin`
+- **비밀번호 (Password):** 위 `grep` 명령으로 조회되는 `AIRFLOW_ADMIN_PASSWORD` 값 복사
+- **Web UI 접속:** `http://<GCP_VM_외부_IP>:8080` (또는 SSH 터널링 시 `http://127.0.0.1:8080`)
+
+## 2. 결론
 
 ```text
 # [Design Intent] Airflow가 데이터를 만들지 않게 해서 curated 검수 책임과 processed 소비 책임을 분리한다.
