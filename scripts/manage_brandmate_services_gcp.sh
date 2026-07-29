@@ -120,12 +120,18 @@ configure_api_runtime() {
   if command -v "$CONDA_BIN" >/dev/null 2>&1; then
     API_PYTHON=("$CONDA_BIN" run -n "$API_ENV" python)
     API_RUNTIME_LABEL="conda:$API_ENV"
+  elif [[ -x "$HOME/miniconda3/envs/$API_ENV/bin/python" ]]; then
+    API_PYTHON=("$HOME/miniconda3/envs/$API_ENV/bin/python")
+    API_RUNTIME_LABEL="miniconda3:$API_ENV"
   elif [[ -x "$API_DIR/.venv/bin/python" ]]; then
     API_PYTHON=("$API_DIR/.venv/bin/python")
     API_RUNTIME_LABEL="$API_DIR/.venv"
   elif [[ -f "$API_DIR/.venv/Scripts/python.exe" ]]; then
     API_PYTHON=("$API_DIR/.venv/Scripts/python.exe")
     API_RUNTIME_LABEL="$API_DIR/.venv (Windows)"
+  elif command -v python3 >/dev/null 2>&1; then
+    API_PYTHON=(python3)
+    API_RUNTIME_LABEL="python3"
   else
     echo "[error] API Python runtime not found." >&2
     echo "[hint] create apps/api/.venv or install conda env: $API_ENV" >&2
@@ -133,6 +139,7 @@ configure_api_runtime() {
   fi
   echo "[info] API Python runtime: $API_RUNTIME_LABEL"
 }
+
 
 is_ready() {
   local url="$1"
@@ -508,8 +515,8 @@ check_frontend_api_url() {
 
 serve() {
   require_command curl
-  require_command "$CONDA_BIN"
   if [[ "$START_HTTPS_PROXY" == "true" ]]; then
+
     validate_brandmate_domain
   fi
 
@@ -517,8 +524,10 @@ serve() {
   # loopback. Public traffic enters only through the optional HTTPS proxy.
   # Postgres and migrations run first because auth/session endpoints depend on
   # the latest DB schema.
+  configure_api_runtime
   ensure_postgres
   run_db_migrations
+
   ensure_comfyui
   ensure_api
   ensure_frontend

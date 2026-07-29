@@ -35,6 +35,7 @@ BrandMate AI는 광고 제작에 필요한 여러 작업을 하나의 흐름으�
 7. CosyVoice 또는 OpenAI TTS로 광고 문구를 음성 광고로 변환합니다.
 8. 별도의 CCTV 분석 파이프라인이 매장 전면 유동량, ROI 관측량과 이동 후보를 집계합니다.
 
+
 메인 광고 생성 경로는 `apps/web`과 `apps/api`가 담당합니다. 트렌드 데이터, 이미지 보정, 음성 합성, 음식 광고 검색 DB와 유동 분석은 독립적으로 실행할 수 있는 하위 서비스 또는 데이터 파이프라인으로 구성되어 있습니다.
 
 ## 핵심 기능
@@ -55,8 +56,11 @@ BrandMate AI는 광고 제작에 필요한 여러 작업을 하나의 흐름으�
 
 ## 전체 서비스 구조
 
+### 1. 메인 광고 생성 파이프라인
+
+
 ```mermaid
-flowchart LR
+flowchart TD
     subgraph DATA["트렌드 데이터 파이프라인"]
         SOURCES["YouTube · 고구마팜 · 캐릿"]
         NAVER["네이버 참고 신호<br/>독립 수집"]
@@ -76,12 +80,17 @@ flowchart LR
         API <--> DB
     end
 
-    subgraph GENERATION["광고 생성"]
+    subgraph GENERATION["광고 생성 엔진"]
         LLM["LLM Router<br/>광고 문구 · 전략 · 비주얼 브리프"]
         IMAGE["ComfyUI · OpenAI · Hugging Face<br/>광고 이미지"]
         CLEANUP["음식 이미지 보정<br/>네이버 채널 선택 기능"]
         VOICE["CosyVoice · OpenAI TTS<br/>음성 광고"]
-        ARTIFACT["광고 산출물"]
+        ARTIFACT["광고 산출물<br/>(Web UI로 결과 전달)"]
+
+        LLM --> ARTIFACT
+        IMAGE --> ARTIFACT
+        CLEANUP --> ARTIFACT
+        VOICE --> ARTIFACT
     end
 
     TRENDS -. "환경변수로 사용할 JSON 지정" .-> API
@@ -89,27 +98,32 @@ flowchart LR
     API --> IMAGE
     API -. "네이버 업로드 이미지 + 기능 ON" .-> CLEANUP
     API --> VOICE
-    LLM --> ARTIFACT
-    IMAGE --> ARTIFACT
-    CLEANUP --> ARTIFACT
-    VOICE --> ARTIFACT
-    ARTIFACT --> WEB
+```
 
 
 
+### 2. AIHub 음식 광고 Retrieval DB
+
+```mermaid
+flowchart TD
     subgraph AIHUB["AIHub 음식 광고 Retrieval DB"]
-        RAG["AIHub 음식 광고 Retrieval DB"]
+        RAG["AIHub 음식 광고<br/>Retrieval DB&nbsp;&nbsp;&nbsp;&nbsp;"]
     end
+```
 
+* **AIHub 음식 광고 Retrieval DB:** 음식 이미지와 캡션을 검색할 수 있는 오프라인 데이터베이스입니다.
 
+### 3. CCTV 상권 유동 분석 파이프라인
 
+```mermaid
+flowchart TD
     subgraph CCTV_ANALYTICS["CCTV 상권 유동 분석 파이프라인"]
-        CCTV_SRC["AIHub CCTV 영상<br/>관측 샘플"]
-        CV_ENGINE["YOLO11s · ROI 필터링<br/>Privacy Masking · Line Crossing"]
-        SEOUL_DATA["서울시 상권분석 API<br/>유동인구 · 연령대·성별 데이터"]
-        MAP_OVERLAY["네이버 지도 Static Map<br/>입간판·배너 위치 시각화"]
-        LLM_CMO["OpenAI LLM<br/>F&B CMO 마케팅 전략 컨설팅"]
-        CCTV_DASH["상권 분석 Streamlit 대시보드 &<br/>고객 전달용 PDF 리포트"]
+        CCTV_SRC["AIHub CCTV 영상 :<br/>관측 샘플"]
+        CV_ENGINE["YOLO11s · ROI 필터링 :<br/>Privacy Masking · Line Crossing"]
+        SEOUL_DATA["서울시 상권분석 API :<br/>유동인구 · 연령대 · 성별 데이터"]
+        MAP_OVERLAY["네이버 지도 Static Map :<br/>입간판 · 배너 위치 시각화"]
+        LLM_CMO["OpenAI LLM :<br/>F&B CMO 마케팅 전략 컨설팅"]
+        CCTV_DASH["상권 분석 Streamlit 대시보드 :<br/>고객 전달용 PDF 리포트"]
 
         CCTV_SRC --> CV_ENGINE
         CV_ENGINE --> LLM_CMO
@@ -119,9 +133,9 @@ flowchart LR
     end
 ```
 
-* **AIHub 음식 광고 Retrieval DB:** 음식 이미지와 캡션을 검색할 수 있는 오프라인 데이터베이스입니다.
-
 * **CCTV 상권 유동 분석:** 스트림릿 대시보드에서 매장 주변 유동인구를 분석하고 AI 마케팅 컨설팅 PDF 리포트를 생성하는 기능입니다.
+
+
 
 
 
