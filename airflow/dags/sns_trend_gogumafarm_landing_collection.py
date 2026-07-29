@@ -336,7 +336,7 @@ def _verify_gogumafarm_landing_artifacts(config: dict[str, Any]) -> dict[str, An
 
 @dag(
     dag_id=DAG_ID,
-    start_date=datetime(2026, 7, 22, 19, 48, tzinfo=timezone.utc),
+    start_date=datetime(2026, 7, 22, 20, 10, tzinfo=timezone.utc),
     schedule=GOGUMAFARM_LANDING_SCHEDULE,
     catchup=False,
     max_active_runs=1,
