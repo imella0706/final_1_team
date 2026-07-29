@@ -15,9 +15,9 @@ SAM 마스크의 작은 장식·굴곡이 사라지지 않도록 닫힘 커널�
 
 ## 음식·접시 레이어 분리
 
-접시는 `plate_mask` 단계에서 구조 마스크의 가장 큰 윤곽을 별도 레이어로 만들고, 원형·타원형 접시로 충분히 일치할 때만 윤곽을 보완한다. 음식 마스크와 접시 마스크를 합친 뒤 안정화된 SAM 알파를 만들므로, 생성 배경이 접시의 끊긴 테두리나 내부 결손으로 비치지 않는다. 이 보완은 알파만 확장하고 원본 RGB 픽셀을 그대로 사용하므로 접시를 새로 생성하거나 디자인을 바꾸지 않는다.
+접시는 `plate_mask` 단계에서 구조 마스크의 가장 큰 윤곽을 별도 레이어로 만든다. `PlateMaskService`는 윤곽을 `ellipse`, `quadrilateral`, `irregular`로 분류한다. 타원과 사각형 계열은 형태 신뢰도가 충분할 때만 보완하고, 비정형·저신뢰 용기는 임의 윤곽을 만들지 않고 원본 연결 영역을 유지한다. 음식 마스크와 접시 마스크를 합친 뒤 안정화된 SAM 알파를 만들므로, 생성 배경이 접시 내부 결손으로 비치는 현상을 줄인다.
 
-실행 보고서와 디버그 산출물에는 `food_sam_mask`, `plate_mask`, `sam_stabilized_mask`가 저장된다. `step_2_sam2_food_container.stabilization.plate`의 `used_ellipse_completion`이 `true`이면 접시 외곽 보완이 적용된 경우다.
+실행 보고서와 디버그 산출물에는 `food_sam_mask`, `plate_mask`, `sam_stabilized_mask`, `food_support_mask`가 저장된다. `step_2_sam2_food_container.stabilization.plate`의 `shape_type`, `shape_confidence`, `used_ellipse_completion`, `used_contour_completion`으로 실제 적용 경로를 확인한다. `step_2c_mask_quality`와 `step_5d_plate_edge_repair`도 함께 확인해야 림 보정이 품질 게이트를 통과했는지 알 수 있다.
 
 ## 배경 후보 판정
 

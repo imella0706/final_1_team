@@ -53,8 +53,14 @@
 | `synthetic_rim_bridge_connect_full_top`, `synthetic_rim_bridge_dilate` | 끊긴 상단 림이 여러 조각일 때 더 확실히 이어 보이도록 만든 보조 옵션이다. 핵심 아이디어는 새 모델이 아니라 원본 림 색 기반의 직접 보정이다. |
 | `synthetic_rim_band_enabled` | 별도 림 밴드 실험용 옵션이다. 기본값이 `false`라서 이 문서의 최종 해결 상태에는 포함하지 않는다. |
 | `plate_mask_rim_completion_enabled` | `plate_mask` 기준으로 림을 더 완성하는 실험용 옵션이다. 기본값이 `false`라서 이 문서의 최종 해결 상태에는 포함하지 않는다. |
+| `models.plate_mask.minimum_shape_confidence`, `contour_completion_enabled` | 오전 9시 35분 이후 추가된 타원·사각형 계열·비정형 용기 일반화다. 당시 문제 해결 과정에는 포함하지 않는다. |
+| `models.mask_quality`와 `step_2c_mask_quality` | 오전 9시 35분 이후 추가된 음식·접시 독립 품질 검사다. 현재 코드의 안전 게이트지만 당시 결론은 아니다. |
+| `models.food_support_recovery`와 `step_2d_food_support_recovery` | 오전 9시 35분 이후 추가된 꼬치형 음식 지지 구조 보호 단계다. 기하학만으로는 복구하지 않는다. |
+| `plate_edge_repair.adaptive_rim_observation` | 오전 9시 35분 이후에는 고정 초록색 규칙을 일반화해 원본 RGB 림 관찰 신뢰도를 사용한다. 현재 최소 기준은 `0.53`이다. |
 
 ---
+
+현재 운영 상태는 `README.md`, `docs/ARCHITECTURE.md`, `configs/pipeline.yaml`을 우선한다. 후속으로 시도한 음식 지지 구조 최상단 RGB 재합성은 사용자 요청으로 취소됐으며 현재 코드에는 `step_5e_food_support_layer`가 남아 있지 않다.
 
 ## 2. 전체 문제 해결 순서
 

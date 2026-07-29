@@ -7,10 +7,13 @@
 - 기본 합성 모드는 `preserve_original_plate`다.
 - GroundingDINO가 음식·접시 후보를 먼저 찾고 음식 전용 YOLO11n이 놓친 쪽만 보완한다.
 - SAM 2.1 Small이 기본 마스크를 만들고 HQ-SAM은 `patch_missing` 방식으로 작은 결손만 보완한다.
-- `PlateMaskService`가 접시 전체 마스크를 만들고 `plate_alpha`를 최종 알파에 다시 합쳐 내부 구멍을 방지한다.
+- `PlateMaskService`가 용기 윤곽을 `ellipse`, `quadrilateral`, `irregular`로 판정한다. 형태 신뢰도가 낮으면 임의의 접시 윤곽을 만들지 않고 원본 연결 영역을 유지한다.
+- 음식과 접시 마스크는 별도의 품질 기준으로 검사한다. `generated_plate`는 음식 전용 마스크가 기준을 통과하지 못하면 중단한다.
+- preserve 모드에서는 음식과 연결된 가는 꼬치 후보를 GroundingDINO·Canny·Hough 선분과 SAM 증거로 검사해 `food_support_mask`로 보호한다.
+- `plate_mask`에서 만든 `plate_alpha`를 최종 알파에 다시 합쳐 접시 내부 구멍을 방지한다.
 - 수저·컵·그릇 후보는 보호 영역을 제외한 `safe_removal_mask`에서만 Big-LaMA로 제거한다.
 - 접시나 음식과 분리된 전경 컴포넌트는 후처리로 알파에서 제거한다.
-- preserve 모드에서는 용기 블러와 접시 림 복원을 적용한다.
+- preserve 모드에서는 용기 블러와 접시 림 복원을 적용한다. 림 복원은 원본 RGB의 실제 림 색·윤곽 신뢰도가 기준을 통과할 때만 합성 브리지를 허용한다.
 - EfficientNet-B0가 `top` 또는 `45`를 판별하고 SANA 1.6B가 기본 배경 후보를 만든다.
 - OpenCLIP·배경 객체·기하·화질 검증을 통과한 결과만 JPG로 저장한다.
 
@@ -55,6 +58,12 @@ models:
     enabled: true
   plate_segmenter:
     enabled: false
+  food_support_recovery:
+    enabled: true
+    preserve_mode_only: true
+    allow_geometry_only: false
+  plate_mask:
+    enabled: true
   inpainter:
     enabled: true
   preserved_container_blur:
@@ -72,6 +81,8 @@ models:
 `preserved_container_blur`와 `plate_edge_repair`는 `preserve_original_plate`에서만 실행된다. `plate_segmenter`는 현재 기본값이 꺼져 있다. `generated_plate`에서 `require_food_visible_mask: true`를 유지하려면 활성화된 접시 분할 모델이 유효한 `food_visible` 마스크를 만들어야 한다.
 
 현재 후보 가중치는 `models/yolo_seg_best.pt`에 있지만 YAML의 기본 가중치 경로는 `models/yolo11n_plate_seg.pt`다. 접시 분할 모델을 켜려면 성능 검증 후 `weights`를 실제 파일 경로로 바꾸고 `enabled: true`로 설정해야 한다.
+
+`food_support_recovery`는 얇은 선을 모두 복구하지 않는다. 접시 경계를 통과하고 음식과 연결되며 SAM/HQ-SAM 후보 증거가 있는 구조만 채택한다. `plate_edge_repair.adaptive_rim_observation.enabled: true`와 `quality_gate_enabled: true`는 실제 림 관찰 신뢰도가 낮을 때 합성 림과 알파 확장을 차단한다.
 
 ## 설치
 
@@ -145,6 +156,15 @@ python -m scripts.run_background_replacement `
 | Colab 실험 보관본 | `data/experiments/background_replacement/<실행시각>/` |
 
 성공 여부는 보고서 최상위 `status`로 확인한다. `completed`일 때만 `output_path`가 생성된다. 주요 실패 상태는 `food_detection_failed`, `food_visible_segmentation_required`, `plate_preservation_failed`, `background_candidate_generation_failed`, `semantic_validation_failed`, `geometry_validation_failed`다.
+
+최근 마스크·림 일반화 작업은 다음 항목으로 확인한다.
+
+- `step_2c_mask_quality`: 음식과 접시 마스크의 독립 품질 결과
+- `step_2d_food_support_recovery`: 음식 연결 지지 구조의 채택 수와 복구 픽셀
+- `step_5d_plate_edge_repair`: 적응형 림 관찰 신뢰도, 실제 림 보존과 합성 브리지 적용 여부
+- `data/masks/<입력명>_food_support_mask.png`: 실제로 보호된 얇은 지지 구조
+
+음식 지지 구조를 모든 후처리 뒤 최상단 RGB 레이어로 다시 그리는 실험은 취소되었다. 현재 코드에는 `step_5e_food_support_layer`가 없으며, `step_2d_food_support_recovery`의 보수적인 마스크 보호만 남아 있다.
 
 네이버 API 응답에서는 다음도 확인한다.
 

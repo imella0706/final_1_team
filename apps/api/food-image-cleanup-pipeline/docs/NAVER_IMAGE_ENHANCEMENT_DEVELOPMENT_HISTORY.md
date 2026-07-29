@@ -204,7 +204,11 @@ BRANDMATE_NAVER_IMAGE_CLEANUP_TIMEOUT_SECONDS=600
 | `app/services/background_prompt.py` | 업종·촬영 각도에 따른 빈 배경 프롬프트 구성 |
 | `app/services/background_generation.py` | Sana 또는 FLUX 배경 후보 생성과 후보 반환 |
 | `app/services/foreground_extraction.py` | 음식·접시 마스크를 이용한 원본 전경 RGBA 구성 |
-| `app/services/plate_mask.py` | 원형·타원형 접시 후보 보완과 접시 보존 알파 생성 |
+| `app/services/plate_mask.py` | 타원·사각형 계열·비정형 용기 판정, 신뢰도 기반 접시 마스크 정리 |
+| `app/services/mask_quality.py` | 음식 마스크와 접시 마스크를 서로 다른 기준으로 검사 |
+| `app/services/food_support_recovery.py` | 음식과 연결된 꼬치형 지지 구조의 보수적 복구 후보 생성 |
+| `app/services/rim_observation.py` | 원본 RGB에서 실제 용기 림의 색·형태·관찰 신뢰도 추정 |
+| `app/services/plate_edge_repair.py` | 품질 게이트와 적응형 림 관찰을 이용한 제한적 림 보존·복원 |
 | `app/services/camera_angle.py` | EfficientNet-B0 촬영 각도 분류 |
 | `app/services/contact_shadow.py` | 촬영 각도와 광원에 맞는 접지 그림자 생성 |
 | `app/services/harmonization.py` | 제한된 색상·밝기 조화 및 가장자리 색 번짐 완화 |
@@ -230,6 +234,7 @@ BRANDMATE_NAVER_IMAGE_CLEANUP_TIMEOUT_SECONDS=600
 - `*_sam_structural_mask.png`: 원본 SAM 구조 마스크
 - `*_sam_stabilized_mask.png`: 구멍 채움과 작은 연결 요소 제거 후 마스크
 - `*_plate_mask.png`: 접시 전체 보존 마스크
+- `*_food_support_mask.png`: 음식 연결 증거를 통과해 보호된 꼬치형 지지 구조
 - `*_sam_alpha.png`: BiRefNet 없이 만든 SAM 기반 알파
 - `*_foreground_rgba.png`: 합성 전에 확인하는 원본 전경
 - `*_generated_background_candidate_*.jpg`: 생성·선택된 배경 후보
@@ -241,12 +246,13 @@ BRANDMATE_NAVER_IMAGE_CLEANUP_TIMEOUT_SECONDS=600
 1. 최신 성공 결과는 한 장의 탑뷰 음식 사진 기준이다. 다양한 접시 재질, 투명 용기, 어두운 음식, 45도 사진에 대한 정량 평가는 더 필요하다.
 2. 생성 배경이 가장자리에 컵·식물·식기를 만들 수 있다. 중앙 배치 영역은 검사하지만 장면 전체가 완전히 비어 있다는 보장은 아니다.
 3. 현재는 원본 음식과 접시의 픽셀을 보존하는 정책이라, 원본과 생성 배경의 조명 색온도가 크게 다르면 완벽한 광원 일치는 어렵다. 직접 재조명은 음식 외형을 바꿀 위험이 있어 기본 경로에서 사용하지 않는다.
-4. 접시 전용 YOLO11-seg 후보 가중치는 있지만 기본 설정에서 비활성화되어 있다. 현재의 원형·타원형 보완은 일반 접시에는 효과적이지만 사각 접시·투명 유리 그릇·강하게 가려진 접시에는 제한이 있다.
+4. 접시 전용 YOLO11-seg 후보 가중치는 있지만 기본 설정에서 비활성화되어 있다. 타원·사각형 계열·비정형 용기 분기는 추가됐지만, 투명 유리 그릇이나 강하게 가려진 접시는 림 관찰 신뢰도가 낮아 보정이 생략될 수 있다.
 5. Colab L4에서 기능은 실험했지만, 모델별 지연 시간·최대 VRAM·실행 비용을 구조적으로 기록하지 않았다.
+6. 음식 지지 구조 복구는 오탐을 줄이기 위해 기하학만으로 채택하지 않는다. 이 때문에 실제 꼬치도 `food_support_mask`에 포함되지 않을 수 있다.
 
 ## 10. 다음 검증과 개선 계획
 
-1. 탑뷰·45도 각각 최소 30장 이상, 총 60장 이상으로 평가셋을 만들고 성공률·사람 평가·실패 유형을 기록한다.
+1. 준비된 50장 용기 일반화 회귀 세트 생성·집계 스크립트로 먼저 고정 평가를 실행하고, 이후 탑뷰·45도 각각 최소 30장 이상으로 확대해 성공률·사람 평가·실패 유형을 기록한다.
 2. 접시 전용 YOLO11-seg 후보 가중치를 더 넓은 평가셋에서 검증하고 현재 기하학 보완과 IoU·접시 외곽 보존율을 비교한 뒤 활성화 여부를 결정한다.
 3. 배경 후보 평가에 중앙 객체 검출뿐 아니라 테이블 평면성, 광원 방향, 접시 크기 적합성 점수를 추가한다.
 4. Colab L4에서 모델 다운로드 시간, 단계별 추론 시간, 최고 GPU 메모리, 후보 수별 성공률을 자동 기록한다.
@@ -271,3 +277,35 @@ python -m scripts.run_background_replacement --input data/input/example.jpg --me
 ```
 
 실행 후 최종 이미지 하나만 보지 말고 실행 보고서와 접시 마스크, SAM 알파, RGBA 전경, 선택된 배경 후보를 함께 확인해야 원인을 정확히 판단할 수 있다.
+
+## 12. 2026년 7월 28일 오후 6:14 이후 일반화와 안전성 보완
+
+마지막 문서 갱신 이후 코드에는 특정 초록색 원형 접시에 맞춘 림 복원을 다양한 용기로 확장하기 위한 변경이 추가되었다.
+
+### 12.1 용기 형태별 마스크 정리
+
+`PlateMaskService`는 용기를 `ellipse`, `quadrilateral`, `irregular`로 판정한다. 타원과 사각형 계열은 형태 신뢰도가 충분할 때만 완성하고, 저신뢰·비정형 결과는 원본 연결 영역을 유지한다. 목적은 흰 접시, 유색 접시, 그릇과 트레이에 임의의 초록색 타원을 그리지 않는 것이다.
+
+### 12.2 음식·접시 품질 검사 분리
+
+음식은 여러 조각으로 나뉠 수 있지만 접시는 큰 연결 영역이어야 하므로 두 마스크를 별도 규칙으로 검사한다. 결과는 `step_2c_mask_quality`에 기록한다. `generated_plate`에서 음식 마스크가 실패하면 원본 용기가 섞일 위험 때문에 합성을 중단하고, preserve 모드에서는 저신뢰 림 보정을 차단한다.
+
+### 12.3 꼬치형 음식 지지 구조
+
+GroundingDINO 프롬프트에 `wooden skewer`, `food skewer`, `chopstick`을 추가했다. Canny와 HoughLinesP로 가는 선 후보를 찾되 접시 경계 통과, 음식 연결, 방향·길이·면적, SAM/HQ-SAM 후보 증거를 모두 확인한다. `allow_geometry_only: false`이므로 수저나 테이블 선처럼 모양만 비슷한 구조는 복구하지 않는다.
+
+음식 지지 구조를 용기 블러와 림 보정 뒤 최상단 RGB 레이어로 다시 그리는 실험도 진행했지만 사용자 요청으로 롤백했다. 현재 코드에는 `step_5e_food_support_layer`가 없고 `step_2d_food_support_recovery`에서 만든 보호 마스크만 사용한다.
+
+### 12.4 원본 RGB 기반 적응형 림 관찰
+
+고정된 초록색 HSV 범위 대신 원본 용기 외곽에서 색 군집, 경계 기울기와 윤곽 적합도를 계산한다. 관찰 신뢰도가 `minimum_confidence: 0.53`보다 낮거나 음식·접시 품질 검사가 실패하면 합성 림 브리지와 접시 알파 확장을 적용하지 않는다. 이 정책은 잘못된 선 생성을 줄이지만, 확신이 부족한 실제 결손도 그대로 남길 수 있다.
+
+중간 실행에서는 음식·접시 품질 검사는 통과했지만 림 관찰 신뢰도 `0.480164`가 기준보다 낮고 음식 지지 구조도 `kept_components: 0`, `recovered_pixels: 0`으로 기록된 사례가 있었다. 이 값은 안전 게이트 조정 과정의 이전 실패 사례이며 최신 결과가 아니다.
+
+이후 Colab 최종 결과 `example_background_replaced.jpg`를 시각 검증한 결과, 접시 상단의 초록색 림이 꼬치 교차 구간을 포함해 연속적으로 복원됐고 여러 꼬치 끝도 접시 바깥까지 보존됐다. 최신 시각 결과는 림 복원과 꼬치 보존이 적용된 성공 사례다. 대응 JSON 리포트가 함께 제공되지 않았으므로 정확한 브리지·복구 픽셀 수는 기록하지 않는다.
+
+### 12.5 Colab 호환성과 회귀 도구
+
+OpenCV HoughLinesP 결과가 환경에 따라 `(N, 1, 4)` 또는 `(N, 4)`로 반환되는 차이를 `reshape(-1, 4)` 정규화로 처리했다. 이 수정은 검출 임계값이나 모델 출력을 바꾸지 않고 `numpy.int32 object is not iterable` 실행 오류만 방지한다.
+
+`scripts/build_container_generalization_regression.py`와 `scripts/evaluate_container_generalization_regression.py`는 접시·그릇·트레이·컵 조건의 고정 회귀 세트와 실행 보고서 집계를 위한 도구다. 도구가 추가된 것과 전체 50장 E2E 평가가 완료된 것은 다르므로, 집계 보고서를 만들기 전에는 일반화 완료로 판단하지 않는다.
