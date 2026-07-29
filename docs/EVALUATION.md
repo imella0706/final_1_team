@@ -4,6 +4,10 @@ BrandMate의 광고 문구 모델과 추후 연결할 이미지 모델을 동일
 평가 체계입니다. 예시 수치를 결과처럼 사용하지 않고 실제 호출에서 측정한 값만 보고서에
 기록합니다.
 
+현재 수동 TrendCard 한 장에 대해 TrendCard-only, good-only few-shot, good+bad few-shot,
+내부 계획, QLoRA를 비교하는 별도 실험은 [MEME_EVALUATION.md](MEME_EVALUATION.md)를
+따릅니다. 기존 `evaluate_models.py`는 모델 ID 비교용이며 prompt 전략 비교에는 사용하지 않습니다.
+
 ## LLM 평가 실행
 
 `apps/api`에서 실행합니다.

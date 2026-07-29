@@ -1,0 +1,41 @@
+name: brandmate-demo-tunnel
+
+services:
+  brandmate-local-proxy:
+    image: caddy:2-alpine
+    restart: "no"
+    ports:
+      - "127.0.0.1:${BRANDMATE_TUNNEL_PROXY_PORT:-8787}:8080"
+    environment:
+      BRANDMATE_WEB_UPSTREAM: "host.docker.internal:${WEB_PORT:-5501}"
+      BRANDMATE_API_UPSTREAM: "host.docker.internal:${API_PORT:-7660}"
+    volumes:
+      - ./deploy/caddy/Caddyfile.tunnel:/etc/caddy/Caddyfile:ro
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "wget",
+          "-qO-",
+          "http://127.0.0.1:8080/__brandmate_proxy_health",
+        ]
+      interval: 2s
+      timeout: 2s
+      retries: 15
+    security_opt:
+      - no-new-privileges:true
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    restart: "no"
+    depends_on:
+      brandmate-local-proxy:
+        condition: service_healthy
+    command:
+      - tunnel
+      - --no-autoupdate
+      - --url
+      - http://brandmate-local-proxy:8080
+    security_opt:
+      - no-new-privileges:true
+

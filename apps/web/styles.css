@@ -666,6 +666,9 @@ fieldset {
 }
 
 .choice-grid input {
+  /* Sized explicitly: absolute position resolves against the initial containing
+     block, so the global input width: 100% would stretch these to the viewport
+     width at their static offset and widen the document past the screen. */
   position: absolute;
   width: 1px;
   height: 1px;
@@ -1465,7 +1468,24 @@ select:focus {
 
 @media (max-width: 760px) {
   .topbar {
-    padding: 0 18px;
+    padding: 0 14px;
+    gap: 10px;
+  }
+
+  .brand,
+  .brand > span {
+    min-width: 0;
+  }
+
+  .brand strong {
+    overflow: hidden;
+    font-size: 17px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .brand small {
+    display: none;
   }
 
   .topbar-status {
@@ -1475,10 +1495,16 @@ select:focus {
   .auth-user {
     padding-left: 0;
     border-left: 0;
+    gap: 8px;
   }
 
   .auth-user > span {
-    max-width: 90px;
+    max-width: 72px;
+  }
+
+  .topbar-command {
+    padding: 7px 8px;
+    white-space: nowrap;
   }
 
   .auth-surface {

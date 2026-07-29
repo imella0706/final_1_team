@@ -6,6 +6,7 @@ API_DIR="$PROJECT_ROOT/apps/api"
 WEB_DIR="$PROJECT_ROOT/apps/web"
 DASHBOARD_DIR="$PROJECT_ROOT/apps/visitor_flow_l2_dashboard"
 API_COMPOSE_FILE="$PROJECT_ROOT/docker-compose.api.yml"
+EDGE_COMPOSE_FILE="$PROJECT_ROOT/docker-compose.edge.yml"
 
 if [[ -d "$HOME/ComfyUI" ]]; then
   DEFAULT_COMFYUI_DIR="$HOME/ComfyUI"
@@ -22,9 +23,9 @@ API_RUNTIME_LABEL=""
 DOCKER_BIN="${DOCKER_BIN:-}"
 DOCKER_COMPOSE_FILE="$API_COMPOSE_FILE"
 
-API_HOST="${API_HOST:-0.0.0.0}"
+API_HOST="${API_HOST:-127.0.0.1}"
 API_PORT="${API_PORT:-7660}"
-WEB_HOST="${WEB_HOST:-0.0.0.0}"
+WEB_HOST="${WEB_HOST:-127.0.0.1}"
 WEB_PORT="${WEB_PORT:-5501}"
 if [[ -n "${BRANDMATE_POSTGRES_PORT:-}" ]]; then
   POSTGRES_PORT="$BRANDMATE_POSTGRES_PORT"
@@ -57,6 +58,10 @@ START_COMFYUI="${START_COMFYUI:-auto}"
 START_DASHBOARD="${START_DASHBOARD:-auto}"
 START_REVIEW_DASHBOARD="${START_REVIEW_DASHBOARD:-auto}"
 START_AIRFLOW="${START_AIRFLOW:-auto}"
+START_HTTPS_PROXY="${START_HTTPS_PROXY:-false}"
+BRANDMATE_DOMAIN="${BRANDMATE_DOMAIN:-}"
+START_HTTPS_PROXY="${START_HTTPS_PROXY:-false}"
+BRANDMATE_DOMAIN="${BRANDMATE_DOMAIN:-}"
 
 API_URL="http://127.0.0.1:${API_PORT}"
 WEB_URL="http://127.0.0.1:${WEB_PORT}"
@@ -73,12 +78,17 @@ mkdir -p "$LOG_DIR" "$PID_DIR"
 usage() {
   cat <<'USAGE'
 Usage:
-  scripts/manage_brandmate_services_gcp.sh             Start Postgres, migrations, FastAPI, frontend, ComfyUI, and Streamlit dashboard when available.
-  scripts/manage_brandmate_services_gcp.sh serve       Start Postgres, migrations, FastAPI, frontend, ComfyUI, and Streamlit dashboard when available.
+  scripts/manage_brandmate_services_gcp.sh             Start Postgres, migrations, FastAPI, frontend, and ComfyUI when available.
+  scripts/manage_brandmate_services_gcp.sh serve       Start Postgres, migrations, FastAPI, frontend, and ComfyUI when available.
+  scripts/manage_brandmate_services_gcp.sh public      Start the stack plus the public HTTPS reverse proxy.
   scripts/manage_brandmate_services_gcp.sh status      Check service readiness.
   scripts/manage_brandmate_services_gcp.sh logs        Tail service logs.
   scripts/manage_brandmate_services_gcp.sh stop        Stop processes started by this script.
   scripts/manage_brandmate_services_gcp.sh restart     Stop once, then start services once.
+  scripts/manage_brandmate_services_gcp.sh restart-public
+                                                       Restart the stack plus the public HTTPS reverse proxy.
+  scripts/manage_brandmate_services_gcp.sh restart-demo-public
+                                                       Restart in presentation-only HTTPS demo mode.
   scripts/manage_brandmate_services_gcp.sh qa [args]   Start services, then run run_local_vision_eval.sh.
 
 Environment overrides:
@@ -91,7 +101,9 @@ Environment overrides:
   COMFYUI_PORT=8188
   RUN_DB_MIGRATIONS=true
   START_COMFYUI=auto      # auto | true | false
-  START_DASHBOARD=auto     # auto | true | false. Auto-starts Streamlit visitor-flow dashboard when available.
+  START_DASHBOARD=false   # true | false. Keep false while visitor-flow Streamlit is under development.
+  START_HTTPS_PROXY=false # true | false. Requires BRANDMATE_DOMAIN.
+  BRANDMATE_DOMAIN=app.example.com
   BRANDMATE_SERVICE_LOG_DIR=outputs/brandmate_services
 USAGE
 }
@@ -124,16 +136,7 @@ configure_api_runtime() {
 
 is_ready() {
   local url="$1"
-  if curl -fsS "$url" >/dev/null 2>&1; then
-    return 0
-  fi
-  if [[ -n "${WSL_DISTRO_NAME:-}" ]] && command -v powershell.exe >/dev/null 2>&1; then
-    powershell.exe -NoProfile -Command \
-      "\$ProgressPreference='SilentlyContinue'; try { \$response = Invoke-WebRequest -UseBasicParsing -Uri '$url' -TimeoutSec 2; if (\$response.StatusCode -lt 500) { exit 0 } } catch {}; exit 1" \
-      >/dev/null 2>&1
-    return $?
-  fi
-  return 1
+  curl --connect-timeout 3 --max-time 10 -fsS "$url" >/dev/null 2>&1
 }
 
 require_docker_compose() {
@@ -319,6 +322,8 @@ ensure_api() {
     "${API_PYTHON[@]}" -m uvicorn app.main:app \
       --host "$API_HOST" \
       --port "$API_PORT" \
+      --proxy-headers \
+      --forwarded-allow-ips "127.0.0.1" \
       --log-level debug \
       --access-log
 
@@ -340,6 +345,62 @@ ensure_frontend() {
       --bind "$WEB_HOST"
 
   wait_until_ready frontend "$WEB_URL/" 30
+}
+
+validate_brandmate_domain() {
+  if [[ -z "$BRANDMATE_DOMAIN" || "$BRANDMATE_DOMAIN" == "localhost" ]]; then
+    echo "[error] BRANDMATE_DOMAIN is required for public HTTPS" >&2
+    echo "[hint] use a DNS name such as app.example.com, without https:// or a path" >&2
+    exit 1
+  fi
+
+  if [[ "$BRANDMATE_DOMAIN" == *"://"* || "$BRANDMATE_DOMAIN" == *"/"* ||
+        "$BRANDMATE_DOMAIN" == *":"* || "$BRANDMATE_DOMAIN" == *" "* ||
+        "$BRANDMATE_DOMAIN" == *"*"* ||
+        "$BRANDMATE_DOMAIN" != *"."* ]]; then
+    echo "[error] invalid BRANDMATE_DOMAIN: $BRANDMATE_DOMAIN" >&2
+    echo "[hint] provide a fully qualified hostname only, for example app.example.com" >&2
+    exit 1
+  fi
+}
+
+configure_demo_public() {
+  START_HTTPS_PROXY=true
+  validate_brandmate_domain
+
+  # [Design Intent] Presentation mode keeps the real HTTPS and Secure cookie
+  # path, but does not pretend that SMTP, public signup, or production rate
+  # limiting have been completed.
+  export BRANDMATE_ENVIRONMENT=demo
+  export BRANDMATE_WEB_ORIGIN="https://$BRANDMATE_DOMAIN"
+  export BRANDMATE_ADDITIONAL_WEB_ORIGINS="https://$BRANDMATE_DOMAIN"
+  export BRANDMATE_DATABASE_URL="postgresql+asyncpg://brandmate:brandmate-local-only@127.0.0.1:5433/brandmate"
+  export BRANDMATE_AUTH_PUBLIC_WEB_URL="https://$BRANDMATE_DOMAIN"
+  export BRANDMATE_AUTH_REFRESH_COOKIE_NAME="__Host-brandmate_refresh"
+  export BRANDMATE_AUTH_REFRESH_COOKIE_SECURE=true
+  export BRANDMATE_AUTH_REFRESH_COOKIE_SAMESITE=lax
+  export BRANDMATE_AUTH_EMAIL_VERIFICATION_REQUIRED=false
+  export BRANDMATE_AUTH_EMAIL_DELIVERY_ENABLED=false
+  export BRANDMATE_AUTH_RATE_LIMIT_BACKEND=postgres
+
+  echo "[info] presentation demo mode enabled"
+  echo "[info] email verification and SMTP delivery are disabled for this run"
+  echo "[warn] limit 80/443 access to presentation devices and stop the stack after the demo"
+}
+
+ensure_https_proxy() {
+  if [[ "$START_HTTPS_PROXY" != "true" ]]; then
+    echo "[skip] Public HTTPS proxy disabled: START_HTTPS_PROXY=$START_HTTPS_PROXY"
+    return 0
+  fi
+
+  validate_brandmate_domain
+
+  echo "[start] public HTTPS proxy: https://$BRANDMATE_DOMAIN"
+  BRANDMATE_DOMAIN="$BRANDMATE_DOMAIN" API_PORT="$API_PORT" \
+    docker compose -f "$EDGE_COMPOSE_FILE" up -d brandmate-edge
+
+  wait_until_ready https_proxy "https://$BRANDMATE_DOMAIN/manifest.webmanifest" 180
 }
 
 ensure_dashboard() {
@@ -447,10 +508,13 @@ check_frontend_api_url() {
 
 serve() {
   require_command curl
-  configure_api_runtime
+  require_command "$CONDA_BIN"
+  if [[ "$START_HTTPS_PROXY" == "true" ]]; then
+    validate_brandmate_domain
+  fi
 
-  # [Design Intent] ComfyUI is kept private on localhost while FastAPI and the
-  # static frontend bind externally for browser access through the GCP firewall.
+  # [Design Intent] ComfyUI, FastAPI, and the development frontend stay on
+  # loopback. Public traffic enters only through the optional HTTPS proxy.
   # Postgres and migrations run first because auth/session endpoints depend on
   # the latest DB schema.
   ensure_postgres
@@ -458,6 +522,7 @@ serve() {
   ensure_comfyui
   ensure_api
   ensure_frontend
+  ensure_https_proxy
   ensure_dashboard
   ensure_review_dashboard
   ensure_airflow
@@ -467,6 +532,11 @@ serve() {
   echo "[ready] BrandMate stack is running"
   echo "  Frontend local: $WEB_URL"
   echo "  FastAPI health: $API_URL/health"
+  if [[ "$START_HTTPS_PROXY" == "true" ]]; then
+    echo "  Public HTTPS: https://$BRANDMATE_DOMAIN"
+  else
+    echo "  Public HTTPS: skipped"
+  fi
   if is_ready "$DASHBOARD_URL/"; then
     echo "  Visitor-flow dashboard: $DASHBOARD_URL"
   else
@@ -517,7 +587,15 @@ stop_one() {
 }
 
 stop_stack() {
-  stop_one sns_trend_review_dashboard "$PID_DIR/sns_trend_review_dashboard.pid"
+  if command -v docker >/dev/null 2>&1 &&
+     docker compose version >/dev/null 2>&1 &&
+     docker compose -f "$EDGE_COMPOSE_FILE" ps --status running --quiet brandmate-edge 2>/dev/null |
+       grep -q .; then
+    echo "[stop] public HTTPS proxy"
+    docker compose -f "$EDGE_COMPOSE_FILE" stop brandmate-edge
+  else
+    echo "[skip] public HTTPS proxy is not running"
+  fi
   stop_one visitor_flow_dashboard "$PID_DIR/visitor_flow_dashboard.pid"
   stop_one frontend "$PID_DIR/frontend.pid"
   stop_one fastapi "$PID_DIR/fastapi.pid"
@@ -537,7 +615,14 @@ status_one() {
 }
 
 status_stack() {
-  require_docker_compose
+  if command -v docker >/dev/null 2>&1 &&
+     docker compose version >/dev/null 2>&1 &&
+     docker compose -f "$EDGE_COMPOSE_FILE" ps --status running --quiet brandmate-edge 2>/dev/null |
+       grep -q .; then
+    echo "[ok] public HTTPS proxy container"
+  else
+    echo "[down] public HTTPS proxy container"
+  fi
   status_one frontend "$WEB_URL/"
   status_one fastapi "$API_URL/health"
   status_one visitor_flow_dashboard "$DASHBOARD_URL/"
@@ -577,6 +662,11 @@ case "$action" in
   serve)
     serve
     ;;
+  public)
+    START_HTTPS_PROXY=true
+    validate_brandmate_domain
+    serve
+    ;;
   status)
     status_stack
     ;;
@@ -587,6 +677,22 @@ case "$action" in
     stop_stack
     ;;
   restart)
+    if [[ "$START_HTTPS_PROXY" == "true" ]]; then
+      validate_brandmate_domain
+    fi
+    stop_stack
+    sleep 2
+    serve
+    ;;
+  restart-public)
+    START_HTTPS_PROXY=true
+    validate_brandmate_domain
+    stop_stack
+    sleep 2
+    serve
+    ;;
+  restart-demo-public)
+    configure_demo_public
     stop_stack
     sleep 2
     serve

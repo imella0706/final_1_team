@@ -1128,12 +1128,16 @@ async function requestJson(path, options = {}, useAccessToken = false) {
     ...options,
     headers,
     credentials: "include",
+    cache: "no-store",
   });
   let body = {};
-  try {
-    body = await response.json();
-  } catch {
-    body = {};
+  const responseText = await response.text();
+  if (responseText.trim()) {
+    try {
+      body = JSON.parse(responseText);
+    } catch {
+      body = { detail: responseText.trim().slice(0, 500) };
+    }
   }
   return { response, body };
 }
@@ -1360,6 +1364,17 @@ function fillSelect(select, models) {
   });
 }
 
+function selectFirstEnabledIfNeeded(select) {
+  const selected = select.selectedOptions[0];
+  if (selected && !selected.disabled) {
+    return;
+  }
+  const firstEnabled = [...select.options].find((option) => !option.disabled);
+  if (firstEnabled) {
+    firstEnabled.selected = true;
+  }
+}
+
 function fillCopySelect(models) {
   copyModelSelect.replaceChildren();
   const groups = new Map();
@@ -1379,12 +1394,14 @@ function fillCopySelect(models) {
     }
     const option = document.createElement("option");
     option.value = model.id;
-    option.textContent = model.name;
+    option.textContent = model.enabled === false ? `${model.name} (설정 필요)` : model.name;
     option.dataset.note = model.note;
     option.dataset.provider = model.provider || "";
-    option.selected = Boolean(model.recommended);
+    option.disabled = model.enabled === false;
+    option.selected = Boolean(model.recommended && model.enabled !== false);
     groups.get(provider).append(option);
   });
+  selectFirstEnabledIfNeeded(copyModelSelect);
 }
 
 function fillVisionSelect(models) {
@@ -1407,6 +1424,7 @@ function fillVisionSelect(models) {
     option.selected = Boolean(model.recommended && model.enabled !== false);
     groups.get(provider).append(option);
   });
+  selectFirstEnabledIfNeeded(visionModelSelect);
 }
 
 function imageProviderGroup(provider) {
@@ -1435,12 +1453,14 @@ function fillImageSelect(models) {
     }
     const option = document.createElement("option");
     option.value = model.id;
-    option.textContent = model.name;
+    option.textContent = model.enabled === false ? `${model.name} (사용 불가)` : model.name;
     option.dataset.note = model.note;
     option.dataset.provider = model.provider || "";
-    option.selected = Boolean(model.recommended);
+    option.disabled = model.enabled === false;
+    option.selected = Boolean(model.recommended && model.enabled !== false);
     groups.get(groupName).append(option);
   });
+  selectFirstEnabledIfNeeded(imageModelSelect);
 }
 
 function updateModelHelp() {
@@ -2042,3 +2062,20 @@ logoutButton.addEventListener("click", async () => {
 showEmptyState();
 updateChannelMode();
 bootstrapAuth();
+
+function registerServiceWorker() {
+  if (!("serviceWorker" in navigator) || !window.isSecureContext) {
+    return;
+  }
+
+  navigator.serviceWorker
+    .register("./sw.js", {
+      scope: "./",
+      updateViaCache: "none",
+    })
+    .catch((error) => {
+      console.warn("BrandMate service worker registration failed.", error);
+    });
+}
+
+window.addEventListener("load", registerServiceWorker, { once: true });
