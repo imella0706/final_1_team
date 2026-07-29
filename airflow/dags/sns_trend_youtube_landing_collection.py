@@ -74,16 +74,16 @@ def _dataset_version_conf(value: Any, *, default: str) -> str:
     return version
 
 
-def _date_from_logical_date(value: Any) -> datetime:
+def _date_from_data_interval_end(value: Any) -> datetime:
     if value is None:
-        return datetime.now(timezone.utc).astimezone(KST)
+        raise AirflowException("data_interval_end is required to derive run_date/week")
     if hasattr(value, "in_timezone"):
         return value.in_timezone("Asia/Seoul")
     if isinstance(value, datetime):
         if value.tzinfo is None:
             value = value.replace(tzinfo=timezone.utc)
         return value.astimezone(KST)
-    return datetime.now(timezone.utc).astimezone(KST)
+    raise AirflowException("data_interval_end must be a datetime-like value")
 
 
 def _iso_week(value: datetime) -> str:
@@ -96,13 +96,20 @@ def _resolve_youtube_landing_config(
     conf: dict[str, Any],
     dag_run_id: str,
     logical_date: Any,
+    data_interval_end: Any = None,
     landing_root: Path = LANDING_ROOT,
     youtube_dir: Path = YOUTUBE_DIR,
     curated_root: Path = CURATED_ROOT,
 ) -> dict[str, Any]:
-    run_datetime = _date_from_logical_date(logical_date)
-    run_date = str(conf.get("run_date") or conf.get("date") or run_datetime.date())
-    week = str(conf.get("week") or _iso_week(run_datetime)).strip().upper()
+    explicit_run_date = conf.get("run_date") or conf.get("date")
+    explicit_week = conf.get("week")
+    run_datetime = (
+        None
+        if explicit_run_date and explicit_week
+        else _date_from_data_interval_end(data_interval_end)
+    )
+    run_date = str(explicit_run_date or run_datetime.date())
+    week = str(explicit_week or _iso_week(run_datetime)).strip().upper()
     region = str(conf.get("region") or DEFAULT_REGION).strip().upper()
     run_id = _safe_path_fragment(str(conf.get("run_id") or dag_run_id))
     limit = _int_conf(conf.get("limit"), default=YOUTUBE_LANDING_LIMIT)
@@ -355,6 +362,7 @@ def sns_trend_youtube_landing_collection() -> None:
             conf=conf,
             dag_run_id=dag_run_id,
             logical_date=context.get("logical_date"),
+            data_interval_end=context.get("data_interval_end"),
         )
 
     @task
