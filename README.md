@@ -483,6 +483,7 @@ python -m pytest airflow/tests
 python -m pytest tests
 ```
 
+<<<<<<< HEAD
 ### 웹 정적 파일
 
 ```powershell
@@ -526,3 +527,24 @@ node --check apps\web\sw.js
 - 박채빈 : [397e900739a38014ad40d949e8a96b85](https://app.notion.com/p/397e900739a38014ad40d949e8a96b85?source=copy_link)
 - 안수진 : [397e900739a380aca6ccc01c1efa4159](https://app.notion.com/p/397e900739a380aca6ccc01c1efa4159?source=copy_link)
 - 양기우 : [397e900739a380e5955bdd2741b6057b](https://app.notion.com/p/397e900739a380e5955bdd2741b6057b?source=copy_link)
+=======
+
+## 제출 자료 
+- 1조 조원 협업일지: https://app.notion.com/p/397e900739a380d5a3d1d7467451f0f4?source=copy_link
+- 최종 보고서: https://drive.google.com/file/d/1xuIoya-BDLyGxLTm8TnsaxeV0EMa3Om4/view?usp=drive_link
+
+## 주요 문서
+- 인증 백엔드 구현 범위: [docs/Backend.md](docs/Backend.md)
+- 로컬 Qwen + ComfyUI FLUX 온보딩: [docs/LOCAL_AI_PIPELINE_ONBOARDING.md](docs/LOCAL_AI_PIPELINE_ONBOARDING.md)
+- API 실행 문서: [apps/api/README.md](apps/api/README.md)
+- 브라우저 실행 문서: [apps/web/README.md](apps/web/README.md)
+- AI 음성 광고 서비스: [services/cosyvoice/README.md](services/cosyvoice/README.md)
+- 광고 콘텐츠 확장 모듈: [apps/api/app/extensions/ad_content/README.md](apps/api/app/extensions/ad_content/README.md)
+- 광고 문구 모듈: [apps/api/app/modules/ad_copy/README.md](apps/api/app/modules/ad_copy/README.md)
+- 모델 런타임 구조: [apps/api/app/modules/model_runtime/README.md](apps/api/app/modules/model_runtime/README.md)
+- LLM 실행 방식: [apps/api/app/modules/model_runtime/llm/README.md](apps/api/app/modules/model_runtime/llm/README.md)
+- 이미지 실행 방식: [apps/api/app/modules/model_runtime/image/README.md](apps/api/app/modules/model_runtime/image/README.md)
+- 광고 콘텐츠 파이프라인: [apps/api/app/modules/model_runtime/docs/AD_CONTENT_PIPELINE_README.md](apps/api/app/modules/model_runtime/docs/AD_CONTENT_PIPELINE_README.md)
+- 프롬프트 전략: [apps/api/app/modules/model_runtime/docs/PROMPT_STRATEGY.md](apps/api/app/modules/model_runtime/docs/PROMPT_STRATEGY.md)
+- 기준 브랜치 대비 변경점: [apps/api/app/modules/model_runtime/docs/CHANGES_FROM_AD_COPY_MODEL_BRANCH.md](apps/api/app/modules/model_runtime/docs/CHANGES_FROM_AD_COPY_MODEL_BRANCH.md)
+>>>>>>> origin/dev
