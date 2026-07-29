@@ -80,13 +80,16 @@ flowchart TD
         API <--> DB
     end
 
-    subgraph GENERATION["광고 생성 "]
+    subgraph GENERATION["광고 생성 엔진"]
         LLM["LLM Router<br/>광고 문구 · 전략 · 비주얼 브리프"]
         IMAGE["ComfyUI · OpenAI · Hugging Face<br/>광고 이미지"]
         CLEANUP["음식 이미지 보정<br/>네이버 채널 선택 기능"]
         VOICE["CosyVoice · OpenAI TTS<br/>음성 광고"]
-        ARTIFACT["광고 산출물"]
+        ARTIFACT["광고 산출물<br/>(Web UI로 결과 전달)"]
     end
+
+    DATA --> APP
+    APP --> GENERATION
 
     TRENDS -. "환경변수로 사용할 JSON 지정" .-> API
     API --> LLM
@@ -97,10 +100,21 @@ flowchart TD
     IMAGE --> ARTIFACT
     CLEANUP --> ARTIFACT
     VOICE --> ARTIFACT
-    ARTIFACT --> WEB
 ```
 
-### 2. CCTV 상권 유동 분석 파이프라인
+
+### 2. AIHub 음식 광고 Retrieval DB
+
+```mermaid
+flowchart TD
+    subgraph AIHUB["AIHub 음식 광고 Retrieval DB"]
+        RAG["AIHub 음식 광고<br/>Retrieval DB&nbsp;&nbsp;&nbsp;&nbsp;"]
+    end
+```
+
+* **AIHub 음식 광고 Retrieval DB:** 음식 이미지와 캡션을 검색할 수 있는 오프라인 데이터베이스입니다.
+
+### 3. CCTV 상권 유동 분석 파이프라인
 
 ```mermaid
 flowchart TD
@@ -122,17 +136,6 @@ flowchart TD
 
 * **CCTV 상권 유동 분석:** 스트림릿 대시보드에서 매장 주변 유동인구를 분석하고 AI 마케팅 컨설팅 PDF 리포트를 생성하는 기능입니다.
 
-### 3. AIHub 음식 광고 Retrieval DB
-
-```mermaid
-flowchart TD
-    subgraph AIHUB["AIHub 음식 광고 Retrieval DB"]
-        RAG["AIHub 음식 광고<br/>Retrieval DB&nbsp;&nbsp;&nbsp;&nbsp;"]
-    end
-```
-
-
-* **AIHub 음식 광고 Retrieval DB:** 음식 이미지와 캡션을 검색할 수 있는 오프라인 데이터베이스입니다.
 
 
 
