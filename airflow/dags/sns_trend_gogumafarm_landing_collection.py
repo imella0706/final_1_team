@@ -31,8 +31,8 @@ LANDING_ROOT = REPO_ROOT / "data" / "landing" / "sns_trend"
 CURATED_ROOT = REPO_ROOT / "data" / "curated" / "sns_trend"
 
 GOGUMAFARM_LANDING_SCHEDULE = (
-    os.getenv("BRANDMATE_SNS_TREND_GOGUMAFARM_LANDING_SCHEDULE", "30 18 * * 3").strip()
-    or "30 18 * * 3"
+    os.getenv("BRANDMATE_SNS_TREND_GOGUMAFARM_LANDING_SCHEDULE", "40 18 * * 3").strip()
+    or "40 18 * * 3"
 )
 GOGUMAFARM_CURATED_VERSION = (
     os.getenv(

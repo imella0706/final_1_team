@@ -18,6 +18,10 @@ airflow_health_url="http://127.0.0.1:${airflow_web_port}/health"
 for attempt in {1..30}; do
   if curl --fail --silent --show-error "${airflow_health_url}" >/dev/null 2>&1; then
     echo "Airflow webserver is healthy: http://127.0.0.1:${airflow_web_port}"
+    echo "[auto] Unpausing core SNS trend collection & validation DAGs..."
+    for dag in sns_trend_youtube_landing_collection sns_trend_gogumafarm_landing_collection sns_trend_careet_landing_collection sns_trend_processed_validation; do
+      airflow_compose exec -T airflow-scheduler airflow dags unpause "$dag" >/dev/null 2>&1 || true
+    done
     airflow_compose ps airflow-postgres airflow-webserver airflow-scheduler
     exit 0
   fi
