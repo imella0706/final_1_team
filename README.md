@@ -2,7 +2,7 @@
 
 소상공인의 업종, 상품, 광고 채널, 타깃, 분위기와 최신 트렌드를 입력받아 광고 문구, 이미지, 음성을 생성하고, 매장 전면 유동 데이터를 분석하는 E2E 광고 제작 및 상권 분석 서비스입니다.
 
-[프로젝트 보고서 보기](docs/reports/코드잇_1팀_보고서.pdf) | [프로젝트 보고서 다운로드](docs/reports/코드잇_1팀_보고서.pdf?raw=1)
+[최종 프로젝트 보고서 보기](https://drive.google.com/file/d/1xuIoya-BDLyGxLTm8TnsaxeV0EMa3Om4/view?usp=drive_link)
 
 ## 목차
 
@@ -17,6 +17,7 @@
 - [선택 기능 실행](#선택-기능-실행)
 - [주요 API](#주요-api)
 - [테스트](#테스트)
+- [제출 자료](#제출-자료)
 - [문서](#문서)
 - [현재 구현 범위와 한계](#현재-구현-범위와-한계)
 - [협업일지](#협업일지)
@@ -57,12 +58,14 @@ BrandMate AI는 광고 제작에 필요한 여러 작업을 하나의 흐름으�
 ```mermaid
 flowchart LR
     subgraph DATA["트렌드 데이터 파이프라인"]
-        SOURCES["YouTube · 고구마팜 · 캐릿 · 네이버"]
+        SOURCES["YouTube · 고구마팜 · 캐릿"]
+        NAVER["네이버 참고 신호<br/>독립 수집"]
         COLLECT["수집 및 정규화"]
         REVIEW["Streamlit 검수 대시보드"]
         AIRFLOW["Airflow 검증 · release"]
-        TRENDS["Processed TrendCard"]
+        TRENDS["검증된 TrendCard v3"]
         SOURCES --> COLLECT --> REVIEW --> AIRFLOW --> TRENDS
+        NAVER -. "참고 정보<br/>네이버 단독 승인 불가" .-> REVIEW
     end
 
     subgraph APP["사용자 서비스"]
@@ -81,7 +84,7 @@ flowchart LR
         ARTIFACT["광고 산출물"]
     end
 
-    TRENDS --> API
+    TRENDS -. "환경변수로 사용할 JSON 지정" .-> API
     API --> LLM
     API --> IMAGE
     API -. "네이버 업로드 이미지 + 기능 ON" .-> CLEANUP
@@ -111,15 +114,20 @@ flowchart LR
   -> 업종·상품·상황·타깃·톤·채널·모델 선택
   -> POST /api/v1/ad-content/generate
   -> Pydantic 요청 검증
-  -> TrendCard 조회 및 광고 문구 LLM 호출
+  -> TrendCard 사용 여부 결정
+     -> Instagram은 기본 사용
+     -> 사용자가 기능을 켜거나 TrendCard ID를 지정해도 사용
+  -> 사용하는 경우에만 TrendCard 조회
+  -> 광고 문구 LLM 호출
   -> 구조화 결과 검증과 재시도 또는 fallback
-  -> ProductVisualization과 visual_brief 정규화
+  -> Product Visualizer fallback 결과와 visual_brief 정규화
   -> image prompt / negative prompt 생성
   -> 채널별 이미지 처리
      -> 일반 채널: 선택한 이미지 provider로 새 이미지 생성
+        -> 설정된 경우 생성 이미지 검증과 재생성
      -> 네이버 블로그: 업로드 이미지 반환
         -> 이미지 보정 기능이 ON이면 음식 이미지 보정 파이프라인 실행
-  -> 선택적 이미지 검증
+        -> 일반 채널용 validate_generated_image는 다시 실행하지 않음
   -> outputs/ad-content에 산출물 저장
   -> 문구·이미지·모델·검증 정보 응답
 ```
@@ -139,14 +147,22 @@ flowchart LR
 ### 3. 트렌드 수집과 검수
 
 ```text
-소스별 landing 수집
+YouTube·고구마팜·캐릿 landing 수집
   -> 스키마 정규화와 후보 점수 계산
   -> review queue 생성
   -> 검수자가 accept / reject / hold 결정
-  -> Airflow processed release
+  -> Airflow가 processed v3 release 생성
   -> JSON·CSV 일관성, schema, 상태와 checksum 검증
-  -> FastAPI TrendCard loader가 processed JSON 사용
+  -> BRANDMATE_TREND_CARD_PAYLOAD_PATH에 사용할 v3 JSON 지정
+  -> API를 재시작하면 FastAPI TrendCard loader가 지정된 JSON 사용
+
+네이버 수집
+  -> 독립 수집기로 참고 신호 생성
+  -> 현재 네이버 landing 수집용 Airflow DAG는 없음
+  -> 네이버 정보만으로 TrendCard를 승인하지 않음
 ```
+
+FastAPI의 기본 설정은 processed v2 파일을 가리킵니다. Airflow가 만든 v3 release를 서비스에 적용하려면 `BRANDMATE_TREND_CARD_PAYLOAD_PATH`를 해당 v3 JSON으로 바꿔야 합니다.
 
 ### 4. 네이버 음식 이미지 보정
 
@@ -417,13 +433,13 @@ python -m streamlit run apps/visitor_flow_l2_dashboard/app.py --server.port 8503
 
 ### Airflow
 
-Airflow는 수집 DAG, review queue, processed 검증과 release 작업을 담당합니다. 먼저 `.env.airflow.example`을 참고해 필수 비밀값을 설정하세요.
+Airflow는 YouTube·고구마팜·캐릿 수집 DAG, review queue, processed 검증과 release 작업을 담당합니다. 저장소 스크립트로 실행하면 첫 실행 때 비공개 `.env.airflow`와 필요한 키를 준비합니다.
 
 ```bash
-docker compose --env-file .env.airflow -f docker-compose.airflow.yml up -d --build
+bash scripts/airflow/up.sh
 ```
 
-운영 규칙과 DAG 입력 계약은 [Airflow Onboarding](docs/AIRFLOW_ONBOARDING.md)을 참고하세요.
+이미 유효한 `.env.airflow`를 직접 준비한 운영자만 `docker compose --env-file .env.airflow -f docker-compose.airflow.yml up -d --build`를 사용할 수 있습니다. 운영 규칙과 DAG 입력 계약은 [Airflow Onboarding](docs/AIRFLOW_ONBOARDING.md)을 참고하세요.
 
 ### 음식 광고 Retrieval DB
 
@@ -483,7 +499,6 @@ python -m pytest airflow/tests
 python -m pytest tests
 ```
 
-<<<<<<< HEAD
 ### 웹 정적 파일
 
 ```powershell
@@ -492,6 +507,11 @@ node --check apps\web\sw.js
 ```
 
 이미지 보정, CosyVoice와 유동 분석은 모델·GPU·데이터 요구 사항이 다르므로 각 하위 README의 테스트 명령을 사용합니다.
+
+## 제출 자료
+
+- [1조 조원 협업일지](https://app.notion.com/p/397e900739a380d5a3d1d7467451f0f4?source=copy_link)
+- [최종 프로젝트 보고서](https://drive.google.com/file/d/1xuIoya-BDLyGxLTm8TnsaxeV0EMa3Om4/view?usp=drive_link)
 
 ## 문서
 
@@ -508,14 +528,22 @@ node --check apps\web\sw.js
 - [네이버 음식 이미지 보정](apps/api/food-image-cleanup-pipeline/README.md)
 - [음식 광고 Retrieval DB](rag/aihub-food-ad-rag/README.md)
 - [상권 유동 분석](apps/visitor_flow_l2_dashboard/README.md)
+- [광고 콘텐츠 확장 모듈](apps/api/app/extensions/ad_content/README.md)
+- [광고 문구 모듈](apps/api/app/modules/ad_copy/README.md)
+- [모델 런타임 구조](apps/api/app/modules/model_runtime/README.md)
+- [LLM 실행 방식](apps/api/app/modules/model_runtime/llm/README.md)
+- [이미지 실행 방식](apps/api/app/modules/model_runtime/image/README.md)
+- [광고 콘텐츠 파이프라인](apps/api/app/modules/model_runtime/docs/AD_CONTENT_PIPELINE_README.md)
+- [프롬프트 전략](apps/api/app/modules/model_runtime/docs/PROMPT_STRATEGY.md)
+- [기준 브랜치 대비 변경점](apps/api/app/modules/model_runtime/docs/CHANGES_FROM_AD_COPY_MODEL_BRANCH.md)
 - [기여 가이드](CONTRIBUTING.md)
 
 ## 현재 구현 범위와 한계
 
 - 메인 광고 생성은 실제 모델 provider를 호출하는 동기식 MVP입니다. 긴 이미지 생성 작업을 위한 job queue와 worker 분리는 아직 없습니다.
 - 광고 산출물은 기본적으로 로컬 `outputs/ad-content`에 저장합니다. 다중 서버 운영에서는 object storage가 필요합니다.
-- 이미지 검증은 설정형 hook이며 기본값은 `false`입니다.
-- Product Visualizer의 고급 reference 분석 경로와 음식 Retrieval DB는 메인 요청에 항상 자동 연결되지 않습니다.
+- 일반 채널의 생성 이미지 검증은 설정형 hook이며 기본값은 `false`입니다. 네이버 분기에서는 이 검증 함수를 별도로 호출하지 않습니다.
+- 현재 메인 광고 생성 요청은 Product Visualizer의 fallback만 사용합니다. 고급 reference 분석과 음식 Retrieval DB는 메인 요청 경로에 연결되어 있지 않습니다.
 - 네이버 이미지 보정은 모델과 GPU 메모리가 준비된 환경에서만 사용하며, 기본 스위치는 `false`입니다.
 - 상권 유동 분석은 관측·검수용 POC입니다. 카메라별 ROI와 추적 품질 검증 없이 실제 방문자 수로 단정하지 않습니다.
 - 저장소에는 별도의 공개 라이선스 파일이 없습니다. 외부 사용과 배포 전에는 팀의 라이선스 정책을 확인해야 합니다.
@@ -527,24 +555,3 @@ node --check apps\web\sw.js
 - 박채빈 : [397e900739a38014ad40d949e8a96b85](https://app.notion.com/p/397e900739a38014ad40d949e8a96b85?source=copy_link)
 - 안수진 : [397e900739a380aca6ccc01c1efa4159](https://app.notion.com/p/397e900739a380aca6ccc01c1efa4159?source=copy_link)
 - 양기우 : [397e900739a380e5955bdd2741b6057b](https://app.notion.com/p/397e900739a380e5955bdd2741b6057b?source=copy_link)
-=======
-
-## 제출 자료 
-- 1조 조원 협업일지: https://app.notion.com/p/397e900739a380d5a3d1d7467451f0f4?source=copy_link
-- 최종 보고서: https://drive.google.com/file/d/1xuIoya-BDLyGxLTm8TnsaxeV0EMa3Om4/view?usp=drive_link
-
-## 주요 문서
-- 인증 백엔드 구현 범위: [docs/Backend.md](docs/Backend.md)
-- 로컬 Qwen + ComfyUI FLUX 온보딩: [docs/LOCAL_AI_PIPELINE_ONBOARDING.md](docs/LOCAL_AI_PIPELINE_ONBOARDING.md)
-- API 실행 문서: [apps/api/README.md](apps/api/README.md)
-- 브라우저 실행 문서: [apps/web/README.md](apps/web/README.md)
-- AI 음성 광고 서비스: [services/cosyvoice/README.md](services/cosyvoice/README.md)
-- 광고 콘텐츠 확장 모듈: [apps/api/app/extensions/ad_content/README.md](apps/api/app/extensions/ad_content/README.md)
-- 광고 문구 모듈: [apps/api/app/modules/ad_copy/README.md](apps/api/app/modules/ad_copy/README.md)
-- 모델 런타임 구조: [apps/api/app/modules/model_runtime/README.md](apps/api/app/modules/model_runtime/README.md)
-- LLM 실행 방식: [apps/api/app/modules/model_runtime/llm/README.md](apps/api/app/modules/model_runtime/llm/README.md)
-- 이미지 실행 방식: [apps/api/app/modules/model_runtime/image/README.md](apps/api/app/modules/model_runtime/image/README.md)
-- 광고 콘텐츠 파이프라인: [apps/api/app/modules/model_runtime/docs/AD_CONTENT_PIPELINE_README.md](apps/api/app/modules/model_runtime/docs/AD_CONTENT_PIPELINE_README.md)
-- 프롬프트 전략: [apps/api/app/modules/model_runtime/docs/PROMPT_STRATEGY.md](apps/api/app/modules/model_runtime/docs/PROMPT_STRATEGY.md)
-- 기준 브랜치 대비 변경점: [apps/api/app/modules/model_runtime/docs/CHANGES_FROM_AD_COPY_MODEL_BRANCH.md](apps/api/app/modules/model_runtime/docs/CHANGES_FROM_AD_COPY_MODEL_BRANCH.md)
->>>>>>> origin/dev
