@@ -86,21 +86,20 @@ flowchart TD
         CLEANUP["음식 이미지 보정<br/>네이버 채널 선택 기능"]
         VOICE["CosyVoice · OpenAI TTS<br/>음성 광고"]
         ARTIFACT["광고 산출물<br/>(Web UI로 결과 전달)"]
-    end
 
-    DATA --> APP
-    APP --> GENERATION
+        LLM --> ARTIFACT
+        IMAGE --> ARTIFACT
+        CLEANUP --> ARTIFACT
+        VOICE --> ARTIFACT
+    end
 
     TRENDS -. "환경변수로 사용할 JSON 지정" .-> API
     API --> LLM
     API --> IMAGE
     API -. "네이버 업로드 이미지 + 기능 ON" .-> CLEANUP
     API --> VOICE
-    LLM --> ARTIFACT
-    IMAGE --> ARTIFACT
-    CLEANUP --> ARTIFACT
-    VOICE --> ARTIFACT
 ```
+
 
 
 ### 2. AIHub 음식 광고 Retrieval DB
