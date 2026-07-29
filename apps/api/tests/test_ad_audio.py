@@ -2,9 +2,13 @@ import asyncio
 
 import httpx
 from pydantic import SecretStr
+import pytest
 
 from app.core.config import settings
-from app.extensions.ad_content.audio_service import generate_ad_audio
+from app.extensions.ad_content.audio_service import (
+    generate_ad_audio,
+    list_audio_provider_statuses,
+)
 from app.extensions.ad_content.main import app
 from app.extensions.ad_content.schemas import AdAudioRequest
 from tests.api_client import post
@@ -68,7 +72,11 @@ def test_audio_generation_uses_configured_model(monkeypatch) -> None:
     }
 
 
-def test_audio_generation_falls_back_for_unavailable_model(monkeypatch) -> None:
+@pytest.mark.parametrize("failure_status", [404, 429, 503])
+def test_audio_generation_falls_back_for_unavailable_model(
+    monkeypatch,
+    failure_status: int,
+) -> None:
     payloads: list[dict[str, object]] = []
 
     class FakeAsyncClient:
@@ -86,7 +94,7 @@ def test_audio_generation_falls_back_for_unavailable_model(monkeypatch) -> None:
             payloads.append(json)
             if len(payloads) == 1:
                 return httpx.Response(
-                    404,
+                    failure_status,
                     json={"error": {"message": "model_not_found"}},
                     request=httpx.Request("POST", url),
                 )
@@ -134,7 +142,12 @@ def test_audio_endpoint_reports_missing_api_key(monkeypatch) -> None:
     )
 
     assert response.status_code == 503
-    assert "openai_api_key" in response.json()["detail"]
+    error = response.json()["error"]
+    assert error["code"] == "AUDIO_NOT_CONFIGURED"
+    assert error["stage"] == "audio"
+    assert error["retryable"] is False
+    assert "openai_api_key" in error["message"]
+    assert error["request_id"]
 
 
 def test_cosyvoice_generation_returns_local_wav(monkeypatch) -> None:
@@ -243,3 +256,155 @@ def test_cosyvoice_failure_falls_back_to_openai(monkeypatch) -> None:
     assert requested_payloads[0]["voice"] == "default"
     assert requested_payloads[1]["voice"] == "coral"
     assert result.voice == "coral"
+
+
+def test_audio_endpoint_returns_rate_limit_after_model_fallbacks_fail(
+    monkeypatch,
+    caplog,
+) -> None:
+    requested_models: list[str] = []
+
+    class FakeAsyncClient:
+        def __init__(self, **kwargs) -> None:
+            del kwargs
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args) -> None:
+            del args
+
+        async def post(self, url, *, headers, json):
+            del headers
+            requested_models.append(json["model"])
+            return httpx.Response(
+                429,
+                json={"error": {"message": "sensitive-provider-detail"}},
+                request=httpx.Request("POST", url),
+            )
+
+    monkeypatch.setattr(settings, "openai_api_key", SecretStr("openai-test-token"))
+    monkeypatch.setattr(settings, "voice_provider", "openai")
+    monkeypatch.setattr(settings, "openai_tts_model", "gpt-4o-mini-tts")
+    monkeypatch.setattr(settings, "openai_tts_fallback_models", "tts-1")
+    monkeypatch.setattr(
+        "app.extensions.ad_content.audio_service.httpx.AsyncClient",
+        FakeAsyncClient,
+    )
+
+    with caplog.at_level("WARNING"):
+        response = post(
+            app,
+            "/api/v1/ad-content/audio/generate",
+            json={"input": "rate limit test", "voice": "coral"},
+        )
+
+    assert response.status_code == 429
+    error = response.json()["error"]
+    assert error["code"] == "AUDIO_RATE_LIMITED"
+    assert error["stage"] == "audio"
+    assert error["retryable"] is True
+    assert error["request_id"]
+    assert requested_models == ["gpt-4o-mini-tts", "tts-1"]
+    assert "sensitive-provider-detail" not in caplog.text
+    assert "openai-test-token" not in caplog.text
+
+
+def test_audio_endpoint_returns_gateway_timeout(monkeypatch) -> None:
+    class FakeAsyncClient:
+        def __init__(self, **kwargs) -> None:
+            del kwargs
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args) -> None:
+            del args
+
+        async def post(self, url, *, headers, json):
+            del headers, json
+            raise httpx.ReadTimeout(
+                "speech timed out",
+                request=httpx.Request("POST", url),
+            )
+
+    monkeypatch.setattr(settings, "openai_api_key", SecretStr("openai-test-token"))
+    monkeypatch.setattr(settings, "voice_provider", "openai")
+    monkeypatch.setattr(settings, "openai_tts_model", "gpt-4o-mini-tts")
+    monkeypatch.setattr(settings, "openai_tts_fallback_models", "")
+    monkeypatch.setattr(
+        "app.extensions.ad_content.audio_service.httpx.AsyncClient",
+        FakeAsyncClient,
+    )
+
+    response = post(
+        app,
+        "/api/v1/ad-content/audio/generate",
+        json={"input": "timeout test", "voice": "coral"},
+    )
+
+    assert response.status_code == 504
+    error = response.json()["error"]
+    assert error["code"] == "AUDIO_TIMEOUT"
+    assert error["stage"] == "audio"
+    assert error["retryable"] is True
+
+
+def test_cosyvoice_fallback_missing_openai_key_remains_configuration_error(
+    monkeypatch,
+) -> None:
+    class FakeAsyncClient:
+        def __init__(self, **kwargs) -> None:
+            del kwargs
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args) -> None:
+            del args
+
+        async def post(self, url, *, json, headers=None):
+            del json, headers
+            return httpx.Response(
+                503,
+                json={"detail": "model starting"},
+                request=httpx.Request("POST", url),
+            )
+
+    monkeypatch.setattr(settings, "voice_provider", "cosyvoice")
+    monkeypatch.setattr(settings, "cosyvoice_base_url", "http://cosyvoice.test:50000")
+    monkeypatch.setattr(settings, "cosyvoice_fallback_to_openai", True)
+    monkeypatch.setattr(settings, "openai_api_key", None)
+    monkeypatch.setattr(
+        "app.extensions.ad_content.audio_service.httpx.AsyncClient",
+        FakeAsyncClient,
+    )
+
+    response = post(
+        app,
+        "/api/v1/ad-content/audio/generate",
+        json={"input": "fallback configuration test", "voice": "default"},
+    )
+
+    assert response.status_code == 503
+    error = response.json()["error"]
+    assert error["code"] == "AUDIO_NOT_CONFIGURED"
+    assert error["stage"] == "audio"
+    assert error["retryable"] is False
+    assert "openai_api_key" in error["message"]
+
+
+def test_audio_provider_status_marks_selected_provider_and_fallback(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "voice_provider", "cosyvoice")
+    monkeypatch.setattr(settings, "cosyvoice_base_url", "")
+    monkeypatch.setattr(settings, "cosyvoice_fallback_to_openai", True)
+    monkeypatch.setattr(settings, "openai_api_key", SecretStr("openai-test-token"))
+
+    statuses = asyncio.run(list_audio_provider_statuses())
+    statuses_by_provider = {item.provider: item for item in statuses}
+
+    assert statuses_by_provider["cosyvoice"].selected is True
+    assert statuses_by_provider["cosyvoice"].fallback_enabled is True
+    assert statuses_by_provider["cosyvoice"].available is False
+    assert statuses_by_provider["openai"].selected is False
+    assert statuses_by_provider["openai"].available is True

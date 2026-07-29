@@ -598,7 +598,14 @@ def test_legacy_target_age_values_are_moved_to_age_groups() -> None:
     assert request.target_audiences == [TargetAudience.OFFICE_WORKERS]
 
 
-def test_model_catalog_contains_all_comparison_models() -> None:
+def test_model_catalog_contains_all_comparison_models(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "local_llm_base_url", None)
+    monkeypatch.setattr(settings, "openai_api_key", SecretStr("openai-test-token"))
+    monkeypatch.setattr(settings, "llm_api_key", None)
+    monkeypatch.setattr(settings, "qwen_api_key", None)
+    monkeypatch.setattr(settings, "llama_api_key", None)
+    monkeypatch.setattr(settings, "nvidia_api_key", None)
+
     response = get(app, "/api/v1/ad-copies/models")
 
     assert response.status_code == 200
@@ -607,11 +614,15 @@ def test_model_catalog_contains_all_comparison_models() -> None:
     models_by_id = {model["id"]: model for model in models}
     assert models[0]["id"] == "local/qwen2.5:1.5b"
     assert models[0]["provider"] == "ollama"
-    assert models_by_id["local/qwen2.5:7b"]["recommended"] is True
+    assert models_by_id["local/qwen2.5:7b"]["enabled"] is False
+    assert models_by_id["local/qwen2.5:7b"]["recommended"] is False
     assert models_by_id["local/mistral:7b"]["provider"] == "ollama"
     assert models_by_id["meta-llama/Llama-3.1-8B-Instruct"]["availability"] == "gated"
     assert models_by_id["nvidia/meta/llama-3.1-8b-instruct"]["provider"] == "nvidia"
     assert models_by_id["openai/gpt-5.4"]["provider"] == "openai"
+    assert models_by_id["openai/gpt-5.4-mini"]["enabled"] is True
+    assert models_by_id["openai/gpt-5.4-mini"]["recommended"] is True
+    assert sum(model["recommended"] for model in models) == 1
     assert "openai/gpt-4.1-mini" not in models_by_id
     assert "openai/gpt-5.5" not in models_by_id
     assert "google/gemma-2-9b-it" not in models_by_id
@@ -619,6 +630,60 @@ def test_model_catalog_contains_all_comparison_models() -> None:
         get_model_spec(AdModel.NVIDIA_LLAMA_3_1_8B).supports_structured_output
         is False
     )
+
+
+def test_model_catalog_recommends_only_the_highest_priority_configured_provider(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(settings, "local_llm_base_url", "http://127.0.0.1:11434")
+    monkeypatch.setattr(settings, "openai_api_key", None)
+    monkeypatch.setattr(settings, "llm_api_key", None)
+    monkeypatch.setattr(settings, "qwen_api_key", None)
+    monkeypatch.setattr(settings, "llama_api_key", None)
+    monkeypatch.setattr(settings, "nvidia_api_key", None)
+
+    def catalog() -> dict[str, dict[str, object]]:
+        response = get(app, "/api/v1/ad-copies/models")
+        assert response.status_code == 200
+        models = response.json()
+        assert sum(model["recommended"] for model in models) == 1
+        return {model["id"]: model for model in models}
+
+    local_models = catalog()
+    assert local_models["local/qwen2.5:7b"]["recommended"] is True
+    assert local_models["openai/gpt-5.4-mini"]["enabled"] is False
+
+    monkeypatch.setattr(settings, "nvidia_api_key", SecretStr("nvidia-test-token"))
+    nvidia_models = catalog()
+    assert nvidia_models["nvidia/meta/llama-3.1-8b-instruct"]["recommended"] is True
+    assert nvidia_models["local/qwen2.5:7b"]["recommended"] is False
+
+    monkeypatch.setattr(settings, "llm_api_key", SecretStr("hf-test-token"))
+    hosted_models = catalog()
+    assert hosted_models["Qwen/Qwen2.5-7B-Instruct"]["recommended"] is True
+    assert hosted_models["nvidia/meta/llama-3.1-8b-instruct"]["recommended"] is False
+
+    monkeypatch.setattr(settings, "openai_api_key", SecretStr("openai-test-token"))
+    openai_models = catalog()
+    assert openai_models["openai/gpt-5.4-mini"]["recommended"] is True
+    assert openai_models["Qwen/Qwen2.5-7B-Instruct"]["recommended"] is False
+
+
+def test_model_catalog_has_no_recommendation_without_a_configured_provider(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(settings, "local_llm_base_url", None)
+    monkeypatch.setattr(settings, "openai_api_key", None)
+    monkeypatch.setattr(settings, "llm_api_key", None)
+    monkeypatch.setattr(settings, "qwen_api_key", None)
+    monkeypatch.setattr(settings, "llama_api_key", None)
+    monkeypatch.setattr(settings, "nvidia_api_key", None)
+
+    response = get(app, "/api/v1/ad-copies/models")
+
+    assert response.status_code == 200
+    assert not any(model["enabled"] for model in response.json())
+    assert not any(model["recommended"] for model in response.json())
 
 
 def test_generate_returns_clear_error_without_api_key(monkeypatch) -> None:
@@ -746,6 +811,30 @@ def test_local_ollama_model_uses_native_json_output(monkeypatch) -> None:
     assert captured["json"]["stream"] is False
     assert captured["json"]["format"] == "json"
     assert captured["json"]["options"]["num_predict"] == 2000
+
+
+def test_local_model_without_local_url_returns_503_before_hosted_call(
+    monkeypatch,
+) -> None:
+    class UnexpectedAsyncClient:
+        def __init__(self, **kwargs) -> None:
+            del kwargs
+            raise AssertionError("A local model must not call the hosted provider.")
+
+    monkeypatch.setattr(settings, "local_llm_base_url", None)
+    monkeypatch.setattr(settings, "llm_base_url", "https://router.huggingface.co/v1")
+    monkeypatch.setattr(settings, "llm_api_key", SecretStr("hf-test-token"))
+    monkeypatch.setattr(
+        "app.modules.ad_copy.service.httpx.AsyncClient",
+        UnexpectedAsyncClient,
+    )
+    request = sample_request()
+    request["model"] = "local/qwen2.5:7b"
+
+    response = post(app, "/api/v1/ad-copies/generate", json=request)
+
+    assert response.status_code == 503
+    assert "BRANDMATE_LOCAL_LLM_BASE_URL" in response.json()["detail"]
 
 
 def test_generate_uses_selected_model_and_returns_structured_copy(monkeypatch) -> None:

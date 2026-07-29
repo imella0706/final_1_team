@@ -1,8 +1,13 @@
 import asyncio
+import logging
+from collections.abc import Iterator
+from typing import NoReturn
 
-from fastapi import APIRouter, HTTPException, status
+import httpx
+from fastapi import APIRouter, status
 
 from app.core.config import settings
+from app.core.errors import ApiError
 from app.extensions.ad_content.audio_service import (
     AudioModelNotConfiguredError,
     AudioModelProviderError,
@@ -15,6 +20,7 @@ from app.extensions.ad_content.image_service import (
     ImageModelNotConfiguredError,
     ImageModelProviderError,
     generate_ad_image,
+    is_comfyui_available,
 )
 from app.extensions.ad_content.image_prompt import describe_blog_images, describe_reference_image
 from app.extensions.ad_content.naver_background_prompts import build_naver_background_prompt
@@ -58,10 +64,110 @@ from app.modules.ad_copy.trend_context import (
 )
 
 router = APIRouter(prefix="/ad-content", tags=["ad-content"])
+logger = logging.getLogger("brandmate.ad_content")
 
 TRANSPARENT_PNG_BASE64 = (
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII="
 )
+
+
+def _raise_stage_error(
+    *,
+    status_code: int,
+    code: str,
+    stage: str,
+    error: Exception,
+    retryable: bool,
+) -> NoReturn:
+    # ApiError keeps the original human-readable string in ``error.message``
+    # and adds stable stage metadata plus the middleware-generated request id.
+    raise ApiError(
+        status_code,
+        code,
+        str(error),
+        stage=stage,
+        retryable=retryable,
+    ) from error
+
+
+def _exception_chain(error: Exception) -> Iterator[BaseException]:
+    current: BaseException | None = error
+    seen: set[int] = set()
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        yield current
+        current = current.__cause__ or current.__context__
+
+
+def _provider_http_status(error: Exception) -> int:
+    for item in _exception_chain(error):
+        if isinstance(item, httpx.TimeoutException):
+            return status.HTTP_504_GATEWAY_TIMEOUT
+        if isinstance(item, httpx.HTTPStatusError):
+            upstream_status = item.response.status_code
+            if upstream_status == status.HTTP_429_TOO_MANY_REQUESTS:
+                return status.HTTP_429_TOO_MANY_REQUESTS
+            if upstream_status in {
+                status.HTTP_408_REQUEST_TIMEOUT,
+                status.HTTP_504_GATEWAY_TIMEOUT,
+            }:
+                return status.HTTP_504_GATEWAY_TIMEOUT
+
+        upstream_status = getattr(item, "upstream_status", None)
+        if upstream_status == status.HTTP_429_TOO_MANY_REQUESTS:
+            return status.HTTP_429_TOO_MANY_REQUESTS
+        if upstream_status in {
+            status.HTTP_408_REQUEST_TIMEOUT,
+            status.HTTP_504_GATEWAY_TIMEOUT,
+        } or bool(getattr(item, "timed_out", False)):
+            return status.HTTP_504_GATEWAY_TIMEOUT
+
+    message = str(error).lower()
+    if "timed out" in message or "timeout" in message:
+        return status.HTTP_504_GATEWAY_TIMEOUT
+    return status.HTTP_502_BAD_GATEWAY
+
+
+def _upstream_status_for_log(error: Exception) -> int | None:
+    for item in _exception_chain(error):
+        if isinstance(item, httpx.HTTPStatusError):
+            return item.response.status_code
+        upstream_status = getattr(item, "upstream_status", None)
+        if isinstance(upstream_status, int):
+            return upstream_status
+    return None
+
+
+def _raise_provider_error(
+    error: Exception,
+    *,
+    stage: str,
+    provider_code: str,
+) -> NoReturn:
+    status_code = _provider_http_status(error)
+    if status_code == status.HTTP_429_TOO_MANY_REQUESTS:
+        code = f"{stage.upper()}_RATE_LIMITED"
+    elif status_code == status.HTTP_504_GATEWAY_TIMEOUT:
+        code = f"{stage.upper()}_TIMEOUT"
+    else:
+        code = provider_code
+
+    logger.warning(
+        "Provider stage failed stage=%s code=%s status=%s upstream_status=%s "
+        "error_type=%s",
+        stage,
+        code,
+        status_code,
+        _upstream_status_for_log(error),
+        type(error).__name__,
+    )
+    _raise_stage_error(
+        status_code=status_code,
+        code=code,
+        stage=stage,
+        error=error,
+        retryable=True,
+    )
 
 
 def _extract_data_url_image(data_url: str | None) -> tuple[str, str]:
@@ -90,7 +196,12 @@ def _uploaded_blog_image_response(request: AdContentRequest) -> AdImageResponse:
 
 @router.get("/image-models", response_model=list[ImageModelOption])
 async def image_models() -> list[ImageModelOption]:
-    return list_image_model_options()
+    comfyui_available = (
+        await is_comfyui_available()
+        if settings.image_provider.lower() == "comfyui"
+        else False
+    )
+    return list_image_model_options(comfyui_available=comfyui_available)
 
 
 @router.post("/audio/generate", response_model=AdAudioResponse)
@@ -98,15 +209,19 @@ async def generate_audio(request: AdAudioRequest) -> AdAudioResponse:
     try:
         return await generate_ad_audio(request)
     except AudioModelNotConfiguredError as error:
-        raise HTTPException(
+        _raise_stage_error(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=str(error),
-        ) from error
+            code="AUDIO_NOT_CONFIGURED",
+            stage="audio",
+            error=error,
+            retryable=False,
+        )
     except AudioModelProviderError as error:
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=str(error),
-        ) from error
+        _raise_provider_error(
+            error,
+            stage="audio",
+            provider_code="AUDIO_PROVIDER_ERROR",
+        )
 
 
 @router.get("/audio/providers", response_model=list[AudioProviderStatus])
@@ -124,15 +239,19 @@ async def generate_image(request: AdImageRequest) -> AdImageResponse:
     try:
         return await generate_ad_image(request)
     except ImageModelNotConfiguredError as error:
-        raise HTTPException(
+        _raise_stage_error(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=str(error),
-        ) from error
+            code="IMAGE_NOT_CONFIGURED",
+            stage="image",
+            error=error,
+            retryable=False,
+        )
     except ImageModelProviderError as error:
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=str(error),
-        ) from error
+        _raise_provider_error(
+            error,
+            stage="image",
+            provider_code="IMAGE_PROVIDER_ERROR",
+        )
 
 
 @router.post("/generate", response_model=AdContentResponse)
@@ -263,35 +382,71 @@ async def generate_content(request: AdContentRequest) -> AdContentResponse:
             visual_brief_payload = copy.visual_brief.model_dump(mode="json")
             product_visualization_payload = product_visualization.model_dump(mode="json")
     except (TrendCardNotFoundError, TrendCardNotUsableError) as error:
-        raise HTTPException(
+        _raise_stage_error(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=str(error),
-        ) from error
-    except (TrendCardDataError, ModelNotConfiguredError) as error:
-        raise HTTPException(
+            code="COPY_INPUT_INVALID",
+            stage="copy",
+            error=error,
+            retryable=False,
+        )
+    except TrendCardDataError as error:
+        _raise_stage_error(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=str(error),
-        ) from error
-    except ImageModelNotConfiguredError as error:
-        raise HTTPException(
+            code="COPY_DATA_UNAVAILABLE",
+            stage="copy",
+            error=error,
+            retryable=True,
+        )
+    except ModelNotConfiguredError as error:
+        _raise_stage_error(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=str(error),
-        ) from error
-    except VisionModelNotConfiguredError as error:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=str(error),
-        ) from error
-    except (
-        ModelProviderError,
-        InvalidModelOutputError,
-        ImageModelProviderError,
-        VisionModelProviderError,
-    ) as error:
-        raise HTTPException(
+            code="COPY_NOT_CONFIGURED",
+            stage="copy",
+            error=error,
+            retryable=False,
+        )
+    except ModelProviderError as error:
+        _raise_provider_error(
+            error,
+            stage="copy",
+            provider_code="COPY_PROVIDER_ERROR",
+        )
+    except InvalidModelOutputError as error:
+        _raise_stage_error(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=str(error),
-        ) from error
+            code="COPY_INVALID_OUTPUT",
+            stage="copy",
+            error=error,
+            retryable=False,
+        )
+    except ImageModelNotConfiguredError as error:
+        _raise_stage_error(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            code="IMAGE_NOT_CONFIGURED",
+            stage="image",
+            error=error,
+            retryable=False,
+        )
+    except ImageModelProviderError as error:
+        _raise_provider_error(
+            error,
+            stage="image",
+            provider_code="IMAGE_PROVIDER_ERROR",
+        )
+    except VisionModelNotConfiguredError as error:
+        _raise_stage_error(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            code="VISION_NOT_CONFIGURED",
+            stage="vision",
+            error=error,
+            retryable=False,
+        )
+    except VisionModelProviderError as error:
+        _raise_provider_error(
+            error,
+            stage="vision",
+            provider_code="VISION_PROVIDER_ERROR",
+        )
 
     response = AdContentResponse(
         input=copy_request.model_dump(mode="json"),

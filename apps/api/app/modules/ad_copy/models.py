@@ -1,5 +1,7 @@
 from dataclasses import dataclass
+from typing import Any
 
+from app.core.config import settings
 from app.modules.ad_copy.schemas import AdModel, ModelAvailability, ModelOption
 
 
@@ -36,7 +38,6 @@ MODEL_CATALOG = (
         routed_model="qwen2.5:7b",
         availability=ModelAvailability.LOCAL_ONLY,
         note="한국어 광고 문구 품질 비교용 로컬 7B 모델입니다.",
-        recommended=True,
         supports_structured_output=True,
     ),
     ModelSpec(
@@ -106,8 +107,74 @@ MODEL_CATALOG = (
     ),
 )
 
+LOCAL_MODEL_IDS = frozenset(
+    {
+        AdModel.LOCAL_QWEN_2_5_1_5B,
+        AdModel.LOCAL_QWEN_2_5_7B,
+        AdModel.LOCAL_MISTRAL_7B,
+    }
+)
+OPENAI_MODEL_IDS = frozenset(
+    {
+        AdModel.OPENAI_GPT_5_4_NANO,
+        AdModel.OPENAI_GPT_5_4_MINI,
+        AdModel.OPENAI_GPT_5_4,
+    }
+)
+HUGGING_FACE_MODEL_KEY_SETTINGS = {
+    AdModel.QWEN_2_5_7B: "qwen_api_key",
+    AdModel.LLAMA_3_1_8B: "llama_api_key",
+}
+MODEL_RECOMMENDATION_PRIORITY = (
+    AdModel.OPENAI_GPT_5_4_MINI,
+    AdModel.OPENAI_GPT_5_4_NANO,
+    AdModel.OPENAI_GPT_5_4,
+    AdModel.QWEN_2_5_7B,
+    AdModel.LLAMA_3_1_8B,
+    AdModel.NVIDIA_LLAMA_3_1_8B,
+    AdModel.LOCAL_QWEN_2_5_7B,
+    AdModel.LOCAL_QWEN_2_5_1_5B,
+    AdModel.LOCAL_MISTRAL_7B,
+)
+
+
+def _has_secret(value: Any) -> bool:
+    if value is None:
+        return False
+    if hasattr(value, "get_secret_value"):
+        value = value.get_secret_value()
+    return bool(str(value).strip())
+
+
+def _model_is_enabled(spec: ModelSpec) -> bool:
+    if spec.id in LOCAL_MODEL_IDS:
+        return bool(settings.local_llm_base_url)
+    if spec.id in OPENAI_MODEL_IDS:
+        return bool(settings.openai_base_url) and _has_secret(settings.openai_api_key)
+    if spec.id in HUGGING_FACE_MODEL_KEY_SETTINGS:
+        provider_key = getattr(
+            settings,
+            HUGGING_FACE_MODEL_KEY_SETTINGS[spec.id],
+            None,
+        )
+        return bool(settings.llm_base_url) and (
+            _has_secret(provider_key) or _has_secret(settings.llm_api_key)
+        )
+    if spec.id == AdModel.NVIDIA_LLAMA_3_1_8B:
+        return bool(settings.nvidia_base_url) and _has_secret(settings.nvidia_api_key)
+    return False
+
 
 def list_model_options() -> list[ModelOption]:
+    enabled_by_id = {spec.id: _model_is_enabled(spec) for spec in MODEL_CATALOG}
+    recommended_id = next(
+        (
+            model_id
+            for model_id in MODEL_RECOMMENDATION_PRIORITY
+            if enabled_by_id.get(model_id, False)
+        ),
+        None,
+    )
     return [
         ModelOption(
             id=spec.id,
@@ -116,7 +183,8 @@ def list_model_options() -> list[ModelOption]:
             provider=spec.provider,
             availability=spec.availability,
             note=spec.note,
-            recommended=spec.recommended,
+            enabled=enabled_by_id[spec.id],
+            recommended=spec.id == recommended_id,
         )
         for spec in MODEL_CATALOG
     ]

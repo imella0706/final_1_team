@@ -1,4 +1,5 @@
 import base64
+import logging
 from time import perf_counter
 
 import httpx
@@ -10,13 +11,28 @@ from app.extensions.ad_content.schemas import (
     AudioProviderStatus,
 )
 
+logger = logging.getLogger("brandmate.ad_content.audio")
+
 
 class AudioModelNotConfiguredError(RuntimeError):
-    pass
+    def __init__(self, message: str, *, provider: str | None = None) -> None:
+        super().__init__(message)
+        self.provider = provider
 
 
 class AudioModelProviderError(RuntimeError):
-    pass
+    def __init__(
+        self,
+        message: str,
+        *,
+        provider: str | None = None,
+        upstream_status: int | None = None,
+        timed_out: bool = False,
+    ) -> None:
+        super().__init__(message)
+        self.provider = provider
+        self.upstream_status = upstream_status
+        self.timed_out = timed_out
 
 
 OPENAI_TTS_VOICES = {
@@ -82,6 +98,27 @@ def _provider_message(response: httpx.Response, provider: str) -> str:
     return str(message or detail or f"{provider} API error ({response.status_code})")
 
 
+def _log_provider_failure(
+    provider: str,
+    *,
+    status_code: int | None = None,
+    error_type: str | None = None,
+) -> None:
+    # Do not log response bodies, request payloads, keys, or provider messages.
+    logger.warning(
+        "Audio provider failed provider=%s status=%s error_type=%s",
+        provider,
+        status_code if status_code is not None else "network",
+        error_type or "HTTPError",
+    )
+
+
+def _can_try_fallback_model(status_code: int, index: int, model_count: int) -> bool:
+    if index >= model_count - 1:
+        return False
+    return status_code in {400, 403, 404, 408, 409, 422, 429} or status_code >= 500
+
+
 async def _generate_cosyvoice_audio(request: AdAudioRequest) -> AdAudioResponse:
     endpoint = f"{settings.cosyvoice_base_url.rstrip('/')}/v1/tts"
     started_at = perf_counter()
@@ -94,15 +131,33 @@ async def _generate_cosyvoice_audio(request: AdAudioRequest) -> AdAudioResponse:
     try:
         async with httpx.AsyncClient(timeout=settings.cosyvoice_timeout_seconds) as client:
             response = await client.post(endpoint, json=payload)
-    except httpx.HTTPError as error:
+    except httpx.TimeoutException as error:
+        _log_provider_failure("cosyvoice", error_type=type(error).__name__)
         raise AudioModelProviderError(
-            f"CosyVoice 서버에 연결하지 못했습니다: {type(error).__name__}"
+            "CosyVoice 요청 시간이 제한을 초과했습니다.",
+            provider="cosyvoice",
+            timed_out=True,
+        ) from error
+    except httpx.HTTPError as error:
+        _log_provider_failure("cosyvoice", error_type=type(error).__name__)
+        raise AudioModelProviderError(
+            f"CosyVoice 서버에 연결하지 못했습니다: {type(error).__name__}",
+            provider="cosyvoice",
         ) from error
 
     if not response.is_success:
-        raise AudioModelProviderError(_provider_message(response, "CosyVoice"))
+        _log_provider_failure("cosyvoice", status_code=response.status_code)
+        raise AudioModelProviderError(
+            _provider_message(response, "CosyVoice"),
+            provider="cosyvoice",
+            upstream_status=response.status_code,
+        )
     if not response.content:
-        raise AudioModelProviderError("CosyVoice가 빈 음성 파일을 반환했습니다.")
+        _log_provider_failure("cosyvoice", error_type="EmptyAudioResponse")
+        raise AudioModelProviderError(
+            "CosyVoice가 빈 음성 파일을 반환했습니다.",
+            provider="cosyvoice",
+        )
 
     model = response.headers.get("x-brandmate-model", settings.cosyvoice_model)
     voice = response.headers.get("x-brandmate-voice", str(payload["voice"]))
@@ -127,12 +182,16 @@ async def _generate_openai_audio(
     api_key = _secret_value(settings.openai_api_key)
     if not api_key:
         raise AudioModelNotConfiguredError(
-            "openai_api_key가 없습니다. API 서버의 .env를 설정해주세요."
+            "openai_api_key가 없습니다. API 서버의 .env를 설정해주세요.",
+            provider="openai",
         )
 
     models = _tts_models()
     if not models:
-        raise AudioModelNotConfiguredError("OpenAI TTS 모델이 설정되지 않았습니다.")
+        raise AudioModelNotConfiguredError(
+            "OpenAI TTS 모델이 설정되지 않았습니다.",
+            provider="openai",
+        )
 
     endpoint = f"{settings.openai_base_url.rstrip('/')}/audio/speech"
     response_format = settings.openai_tts_format.strip().lower() or "mp3"
@@ -142,26 +201,38 @@ async def _generate_openai_audio(
     }
     started_at = perf_counter()
     errors: list[str] = []
+    failure_statuses: list[int] = []
 
-    try:
-        async with httpx.AsyncClient(timeout=settings.openai_tts_timeout_seconds) as client:
-            for index, model in enumerate(models):
-                payload: dict[str, object] = {
-                    "model": model,
-                    "input": request.input,
-                    "voice": _openai_voice(request.voice),
-                    "response_format": response_format,
-                    "speed": request.speed,
-                }
-                if request.instructions and not model.startswith("tts-1"):
-                    payload["instructions"] = request.instructions
+    async with httpx.AsyncClient(timeout=settings.openai_tts_timeout_seconds) as client:
+        for index, model in enumerate(models):
+            payload: dict[str, object] = {
+                "model": model,
+                "input": request.input,
+                "voice": _openai_voice(request.voice),
+                "response_format": response_format,
+                "speed": request.speed,
+            }
+            if request.instructions and not model.startswith("tts-1"):
+                payload["instructions"] = request.instructions
 
+            try:
                 response = await client.post(endpoint, headers=headers, json=payload)
-                if response.is_success:
-                    if not response.content:
-                        raise AudioModelProviderError(
-                            f"{model} 모델이 빈 음성 파일을 반환했습니다."
-                        )
+            except httpx.TimeoutException as error:
+                _log_provider_failure("openai", error_type=type(error).__name__)
+                raise AudioModelProviderError(
+                    "OpenAI Speech 요청 시간이 제한을 초과했습니다.",
+                    provider="openai",
+                    timed_out=True,
+                ) from error
+            except httpx.HTTPError as error:
+                _log_provider_failure("openai", error_type=type(error).__name__)
+                raise AudioModelProviderError(
+                    f"OpenAI Speech API에 연결하지 못했습니다: {type(error).__name__}",
+                    provider="openai",
+                ) from error
+
+            if response.is_success:
+                if response.content:
                     return AdAudioResponse(
                         provider="openai",
                         requested_provider=requested_provider,
@@ -173,27 +244,45 @@ async def _generate_openai_audio(
                         audio_base64=base64.b64encode(response.content).decode("ascii"),
                         latency_ms=round((perf_counter() - started_at) * 1000),
                     )
+                _log_provider_failure("openai", error_type="EmptyAudioResponse")
+                message = f"{model} 모델이 빈 음성 파일을 반환했습니다."
+                errors.append(message)
+                if index < len(models) - 1:
+                    continue
+                raise AudioModelProviderError(message, provider="openai")
 
-                message = _provider_message(response, "OpenAI Speech")
-                errors.append(f"{model}: {message}")
-                can_fallback = response.status_code in {400, 403, 404} and index < len(models) - 1
-                if not can_fallback:
-                    raise AudioModelProviderError(message)
-    except AudioModelProviderError:
-        raise
-    except httpx.HTTPError as error:
-        raise AudioModelProviderError(
-            f"OpenAI Speech API에 연결하지 못했습니다: {type(error).__name__}"
-        ) from error
+            _log_provider_failure("openai", status_code=response.status_code)
+            message = _provider_message(response, "OpenAI Speech")
+            errors.append(f"{model}: {message}")
+            failure_statuses.append(response.status_code)
+            if _can_try_fallback_model(response.status_code, index, len(models)):
+                continue
 
-    raise AudioModelProviderError("사용 가능한 TTS 모델이 없습니다. " + " | ".join(errors))
+            effective_status = (
+                429 if 429 in failure_statuses else response.status_code
+            )
+            raise AudioModelProviderError(
+                message,
+                provider="openai",
+                upstream_status=effective_status,
+            )
+
+    effective_status = 429 if 429 in failure_statuses else (
+        failure_statuses[-1] if failure_statuses else None
+    )
+    raise AudioModelProviderError(
+        "사용 가능한 TTS 모델이 없습니다. " + " | ".join(errors),
+        provider="openai",
+        upstream_status=effective_status,
+    )
 
 
 async def generate_ad_audio(request: AdAudioRequest) -> AdAudioResponse:
     provider = settings.voice_provider.strip().lower()
     if provider not in {"openai", "cosyvoice"}:
         raise AudioModelNotConfiguredError(
-            f"지원하지 않는 voice_provider입니다: {settings.voice_provider}"
+            f"지원하지 않는 voice_provider입니다: {settings.voice_provider}",
+            provider=provider or None,
         )
 
     if provider == "openai":
@@ -206,18 +295,28 @@ async def generate_ad_audio(request: AdAudioRequest) -> AdAudioResponse:
             raise
         try:
             return await _generate_openai_audio(request, requested_provider="cosyvoice")
-        except (AudioModelNotConfiguredError, AudioModelProviderError) as openai_error:
+        except AudioModelNotConfiguredError:
+            # Preserve configuration errors so the API returns 503 rather than
+            # misclassifying an unavailable fallback as an upstream 502.
+            raise
+        except AudioModelProviderError as openai_error:
             raise AudioModelProviderError(
-                f"CosyVoice 실패: {cosyvoice_error}; OpenAI 폴백 실패: {openai_error}"
+                f"CosyVoice 실패: {cosyvoice_error}; OpenAI 폴백 실패: {openai_error}",
+                provider="openai",
+                upstream_status=openai_error.upstream_status,
+                timed_out=openai_error.timed_out,
             ) from openai_error
 
 
 async def list_audio_provider_statuses() -> list[AudioProviderStatus]:
+    selected_provider = settings.voice_provider.strip().lower()
     cosyvoice_status = AudioProviderStatus(
         provider="cosyvoice",
         configured=bool(settings.cosyvoice_base_url.strip()),
         available=False,
         model=settings.cosyvoice_model,
+        selected=selected_provider == "cosyvoice",
+        fallback_enabled=settings.cosyvoice_fallback_to_openai,
         detail="CosyVoice 서버에 연결할 수 없습니다.",
     )
     if cosyvoice_status.configured:
@@ -256,6 +355,7 @@ async def list_audio_provider_statuses() -> list[AudioProviderStatus]:
             configured=openai_configured,
             available=openai_configured,
             model=settings.openai_tts_model,
+            selected=selected_provider == "openai",
             detail=(
                 "OpenAI API 키가 설정되었습니다."
                 if openai_configured

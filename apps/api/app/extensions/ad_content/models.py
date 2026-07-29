@@ -121,8 +121,30 @@ COMFYUI_IMAGE_MODEL_CATALOG = (
 )
 
 
-def list_image_model_options() -> list[ImageModelOption]:
-    if settings.image_provider.lower() == "comfyui":
+def _has_secret(value: object | None) -> bool:
+    if value is None:
+        return False
+    if hasattr(value, "get_secret_value"):
+        value = value.get_secret_value()
+    return bool(str(value).strip())
+
+
+def _model_is_enabled(spec: ImageModelSpec, *, comfyui_available: bool) -> bool:
+    if spec.provider == "Local ComfyUI":
+        return comfyui_available
+    if spec.provider in {"OpenAI", "OpenAI Responses API"}:
+        return _has_secret(settings.openai_api_key)
+    if spec.provider == "Hugging Face Router":
+        return _has_secret(settings.llm_api_key)
+    return False
+
+
+def list_image_model_options(
+    *,
+    comfyui_available: bool | None = None,
+) -> list[ImageModelOption]:
+    comfyui_configured = settings.image_provider.lower() == "comfyui"
+    if comfyui_configured:
         catalog = (
             *COMFYUI_IMAGE_MODEL_CATALOG,
             *[
@@ -139,20 +161,47 @@ def list_image_model_options() -> list[ImageModelOption]:
     else:
         catalog = IMAGE_MODEL_CATALOG
 
+    if comfyui_available is None:
+        comfyui_available = comfyui_configured
+    model_states = [
+        (spec, _model_is_enabled(spec, comfyui_available=comfyui_available))
+        for spec in catalog
+    ]
+
+    recommended_id: ImageModel | None = None
+    if comfyui_configured and comfyui_available:
+        recommended_id = next(
+            (
+                spec.id
+                for spec, enabled in model_states
+                if enabled and spec.provider == "Local ComfyUI" and spec.recommended
+            ),
+            None,
+        )
+    if recommended_id is None:
+        recommended_id = next(
+            (
+                spec.id
+                for spec, enabled in model_states
+                if enabled and spec.id == ImageModel.OPENAI_GPT_IMAGE_1_MINI
+            ),
+            None,
+        )
+    if recommended_id is None:
+        recommended_id = next(
+            (spec.id for spec, enabled in model_states if enabled),
+            None,
+        )
+
     return [
         ImageModelOption(
             id=spec.id,
             name=spec.name,
             provider=spec.provider,
             availability=spec.availability,
-            recommended=(
-                spec.recommended
-                and (
-                    settings.image_provider.lower() != "comfyui"
-                    or spec.provider == "Local ComfyUI"
-                )
-            ),
+            enabled=enabled,
+            recommended=enabled and spec.id == recommended_id,
             note=spec.note,
         )
-        for spec in catalog
+        for spec, enabled in model_states
     ]

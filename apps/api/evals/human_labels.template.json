@@ -1,0 +1,22 @@
+{
+  "schema_version": "1.0",
+  "rubric_version": "meme-human-rubric-v1",
+  "labels": [
+    {
+      "output_id": "",
+      "output_sha256": "",
+      "trial_id": "",
+      "card_id": "",
+      "card_sha256": "",
+      "case_id": "",
+      "rater_id": "",
+      "naturalness": "",
+      "pattern_fidelity": "",
+      "product_relevance": "",
+      "factuality": "",
+      "channel_readiness": "",
+      "acceptable": "",
+      "comment": ""
+    }
+  ]
+}

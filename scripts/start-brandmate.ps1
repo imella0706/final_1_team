@@ -16,7 +16,9 @@ $ApiDir = Join-Path $Root "apps\api"
 $WebDir = Join-Path $Root "apps\web"
 $ApiPython = Join-Path $ApiDir ".venv\Scripts\python.exe"
 $ComposeFile = Join-Path $Root "docker-compose.api.yml"
-$ApiUrl = "http://127.0.0.1:7660"
+$ApiHost = "127.0.0.1"
+$ApiPort = 7660
+$ApiUrl = "http://${ApiHost}:$ApiPort"
 $WebUrl = "http://127.0.0.1:5501"
 $CosyVoiceUrl = "http://127.0.0.1:50000"
 $LocalPostgresPort = if ($env:BRANDMATE_POSTGRES_PORT) {
@@ -28,6 +30,22 @@ $env:BRANDMATE_POSTGRES_PORT = $LocalPostgresPort
 if (-not $env:BRANDMATE_DATABASE_URL) {
     $env:BRANDMATE_DATABASE_URL = `
         "postgresql+asyncpg://brandmate:brandmate-local-only@127.0.0.1:$LocalPostgresPort/brandmate"
+}
+$LocalDatabaseMatch = [regex]::Match(
+    $env:BRANDMATE_DATABASE_URL,
+    "@(?:127\.0\.0\.1|localhost):(?<port>\d+)(?:/|$)",
+    [System.Text.RegularExpressions.RegexOptions]::IgnoreCase
+)
+if (
+    $LocalDatabaseMatch.Success -and
+    $LocalDatabaseMatch.Groups["port"].Value -ne [string]$LocalPostgresPort
+) {
+    throw (
+        "Local database port mismatch: BRANDMATE_DATABASE_URL uses port " +
+        "$($LocalDatabaseMatch.Groups['port'].Value), but BRANDMATE_POSTGRES_PORT " +
+        "uses port $LocalPostgresPort. Set them to the same value or unset " +
+        "BRANDMATE_DATABASE_URL before starting BrandMate."
+    )
 }
 $ApiLog = Join-Path $Root "api-server.log"
 $ApiErrorLog = Join-Path $Root "api-server-error.log"
@@ -68,6 +86,95 @@ function Wait-Url {
         Start-Sleep -Seconds 1
     }
     return $false
+}
+
+function Get-TcpListenerProcessIds {
+    param([int]$Port)
+
+    $listenerProcessIds = @()
+    try {
+        $listenerProcessIds = @(
+            Get-NetTCPConnection `
+                -State Listen `
+                -LocalPort $Port `
+                -ErrorAction Stop |
+                Select-Object -ExpandProperty OwningProcess
+        )
+    } catch {
+        # Get-NetTCPConnection can be unavailable or restricted on some Windows
+        # installations. netstat provides a read-only fallback.
+        $listenerPattern = "^\s*TCP\s+\S+:$Port\s+\S+\s+LISTENING\s+(\d+)\s*$"
+        $listenerProcessIds = @(
+            & netstat -ano -p TCP 2>$null |
+                ForEach-Object {
+                    if ($_ -match $listenerPattern) {
+                        [int]$Matches[1]
+                    }
+                }
+        )
+    }
+
+    return @(
+        $listenerProcessIds |
+            Where-Object { $_ -and [int]$_ -gt 0 } |
+            Sort-Object -Unique
+    )
+}
+
+function Stop-StaleBrandMateApi {
+    $listenerProcessIds = @(Get-TcpListenerProcessIds -Port $ApiPort)
+    if ($listenerProcessIds.Count -eq 0) {
+        return
+    }
+    if ($listenerProcessIds.Count -ne 1) {
+        throw (
+            "API port $ApiPort has multiple listener processes " +
+            "($($listenerProcessIds -join ', ')). BrandMate did not stop them automatically."
+        )
+    }
+
+    $listenerProcessId = [int]$listenerProcessIds[0]
+    try {
+        $processInfo = Get-CimInstance `
+            -ClassName Win32_Process `
+            -Filter "ProcessId = $listenerProcessId" `
+            -ErrorAction Stop
+    } catch {
+        throw (
+            "API port $ApiPort is occupied by PID $listenerProcessId, but BrandMate " +
+            "could not verify that process. It was not stopped automatically. " +
+            "Close the process using port $ApiPort and run start-brandmate.cmd again."
+        )
+    }
+
+    $commandLine = [string]$processInfo.CommandLine
+    $isBrandMateApi = (
+        $commandLine -match [regex]::Escape($ApiPython) -and
+        $commandLine -match "(?:^|\s)-m\s+uvicorn(?:\s|$)" -and
+        $commandLine -match "(?:^|\s)app\.main:app(?:\s|$)" -and
+        $commandLine -match "(?:^|\s)--port(?:\s+|=)$ApiPort(?:\s|$)"
+    )
+    if (-not $isBrandMateApi) {
+        throw (
+            "API port $ApiPort is occupied by PID $listenerProcessId, which is not " +
+            "the BrandMate API from this project. It was not stopped automatically."
+        )
+    }
+
+    Write-Warning (
+        "Replacing stale BrandMate API PID $listenerProcessId because its " +
+        "database readiness check failed."
+    )
+    Stop-Process -Id $listenerProcessId -Force -ErrorAction Stop
+
+    for ($index = 0; $index -lt 50; $index += 1) {
+        if (@(Get-TcpListenerProcessIds -Port $ApiPort).Count -eq 0) {
+            return
+        }
+        Start-Sleep -Milliseconds 100
+    }
+
+    throw "BrandMate API port $ApiPort did not become available after stopping PID $listenerProcessId."
 }
 
 function Test-Docker {
@@ -206,6 +313,7 @@ if (-not (Test-Path -LiteralPath $ApiPython)) {
 }
 
 $startedProcesses = @()
+$apiProcess = $null
 
 try {
     Write-Host "Starting BrandMate..." -ForegroundColor Cyan
@@ -216,10 +324,19 @@ try {
     if (Test-Url "$ApiUrl/ready") {
         Write-Host "API is already running: $ApiUrl" -ForegroundColor Yellow
     } else {
+        Stop-StaleBrandMateApi
         Write-Host "Starting API: $ApiUrl"
         $apiProcess = Start-Process `
             -FilePath $ApiPython `
-            -ArgumentList @("-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", "7660") `
+            -ArgumentList @(
+                "-m",
+                "uvicorn",
+                "app.main:app",
+                "--host",
+                $ApiHost,
+                "--port",
+                [string]$ApiPort
+            ) `
             -WorkingDirectory $ApiDir `
             -RedirectStandardOutput $ApiLog `
             -RedirectStandardError $ApiErrorLog `
@@ -229,6 +346,9 @@ try {
     }
 
     if (-not (Wait-Url "$ApiUrl/ready" 25)) {
+        if ($apiProcess -and $apiProcess.HasExited) {
+            Write-Host "API process exited with code $($apiProcess.ExitCode)." -ForegroundColor Red
+        }
         Write-Host "API did not become ready. Check these logs:" -ForegroundColor Red
         Write-Host "  $ApiLog"
         Write-Host "  $ApiErrorLog"

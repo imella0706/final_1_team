@@ -1,6 +1,9 @@
+import pytest
+
 from app.core.config import settings
 from app.extensions.ad_content.main import app
 from app.modules.model_runtime.llm.registry import (
+    TextModelEndpointNotConfiguredError,
     get_text_model_config,
     infer_provider,
     resolve_base_url,
@@ -61,6 +64,29 @@ def test_local_ollama_settings_resolve_each_benchmark_model(monkeypatch) -> None
         assert infer_provider(resolve_base_url(config), config.provider) == (
             TextRuntimeProvider.OLLAMA
         )
+
+
+def test_local_model_never_falls_back_to_hosted_llm_url(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "local_llm_base_url", None)
+    monkeypatch.setattr(settings, "llm_base_url", "https://router.huggingface.co/v1")
+
+    config = get_text_model_config("local/qwen2.5:7b")
+
+    with pytest.raises(
+        TextModelEndpointNotConfiguredError,
+        match="BRANDMATE_LOCAL_LLM_BASE_URL",
+    ):
+        resolve_base_url(config)
+
+
+def test_hosted_model_keeps_shared_llm_url_fallback(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "local_llm_base_url", None)
+    monkeypatch.setattr(settings, "qwen_base_url", None)
+    monkeypatch.setattr(settings, "llm_base_url", "https://router.huggingface.co/v1")
+
+    config = get_text_model_config("Qwen/Qwen2.5-7B-Instruct")
+
+    assert resolve_base_url(config) == "https://router.huggingface.co/v1"
 
 
 def test_llm_generate_endpoint_delegates_to_service(monkeypatch) -> None:

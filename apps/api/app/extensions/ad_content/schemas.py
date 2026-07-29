@@ -51,6 +51,7 @@ class ImageModelOption(BaseModel):
     name: str
     provider: str
     availability: ImageModelAvailability
+    enabled: bool = True
     recommended: bool = False
     note: str
 
@@ -99,6 +100,8 @@ class AudioProviderStatus(BaseModel):
     configured: bool
     available: bool
     model: str
+    selected: bool = False
+    fallback_enabled: bool = False
     voices: list[str] = Field(default_factory=list)
     instructions_supported: bool = True
     detail: str = ""

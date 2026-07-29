@@ -18,6 +18,7 @@ from app.modules.ad_copy.prompt import PROMPT_VERSION, build_prompt
 from app.modules.ad_copy.schemas import AdCopyContent, AdCopyRequest, AdCopyResponse
 from app.modules.ad_copy.trend_context import TrendCard, load_trend_card
 from app.modules.model_runtime.llm.registry import (
+    TextModelEndpointNotConfiguredError,
     get_text_model_config,
     infer_provider,
     resolve_api_key,
@@ -205,7 +206,10 @@ async def _call_model(
         raise ModelNotConfiguredError(str(error)) from error
 
     model_spec = get_model_spec(request.model)
-    base_url = resolve_base_url(config)
+    try:
+        base_url = resolve_base_url(config)
+    except TextModelEndpointNotConfiguredError as error:
+        raise ModelNotConfiguredError(str(error)) from error
     provider_model_name = resolve_model_name(config)
     api_key = resolve_api_key(config)
     provider = infer_provider(base_url, config.provider)

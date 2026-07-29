@@ -37,6 +37,20 @@ LOCAL_SDXL_MODELS = {ImageModel.SDXL_BASE, ImageModel.SDXL_TURBO}
 LOCAL_COMFYUI_MODELS = {*LOCAL_SDXL_MODELS, ImageModel.FLUX_SCHNELL}
 
 
+async def is_comfyui_available() -> bool:
+    if settings.image_provider.lower() != "comfyui":
+        return False
+
+    try:
+        async with httpx.AsyncClient(
+            timeout=settings.comfyui_health_timeout_seconds
+        ) as client:
+            response = await client.get(_comfyui_url("/system_stats"))
+        return response.status_code == 200
+    except (httpx.HTTPError, ValueError):
+        return False
+
+
 def _secret_value(value) -> str | None:
     if value is None:
         return None
