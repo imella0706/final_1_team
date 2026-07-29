@@ -7,7 +7,7 @@
 ```powershell
 cd C:\dev\final_1_team\apps\api\food-image-cleanup-pipeline
 python -m pip install -r requirements-local.txt
-python -m scripts.download_models --models yolo sam2 big-lama openclip sana grounding-dino
+python -m scripts.download_models --models yolo sam2 big-lama openclip sana grounding-dino hq-sam
 python -m scripts.run_background_replacement --input data/input/example.jpg --metadata data/input/example_metadata.json --enable-background-generator
 ```
 
@@ -26,7 +26,7 @@ python -m scripts.run_background_replacement --input data/input/example.jpg --me
 
 ## 안전 종료 상태
 
-- `food_detection_failed`: YOLO11n이 음식·용기를 찾지 못함. 광고 JPG를 저장하지 않는다.
+- `food_detection_failed`: GroundingDINO와 YOLO11n이 모두 음식·용기를 찾지 못함. 광고 JPG를 저장하지 않는다.
 - `semantic_validation_failed`: OpenCLIP 유사도 0.8 미만. 현재 코드는 재합성하지 않고 광고 JPG 저장을 거부한다.
 - `completed`: 최종 합성 JPG를 저장했다.
 
@@ -36,13 +36,21 @@ python -m scripts.run_background_replacement --input data/input/example.jpg --me
 
 실행 보고서 `data/reports/<입력명>_background_replacement_report.json`의 `debug_artifacts`를 확인한다. 원본 SAM과 안정화 SAM 마스크를 먼저 비교한다. 안정화 마스크는 내부 투명 구멍과 작은 잡음을 제거한 합성용 마스크다. 이어서 접시 보존 마스크, SAM 기반 알파, RGBA 전경 미리보기, `semantic_*_reference`·`semantic_*_candidate` 전경 비교 이미지를 확인한다. OpenCLIP 검증에 실패한 경우에는 최종 합성 대신 거부된 합성 이미지가 기록된다.
 
+최신 마스크·림 문제는 다음 순서로 확인한다.
+
+1. `step_2c_mask_quality`: 음식과 접시 마스크를 각각 통과했는지 확인한다.
+2. `step_2d_food_support_recovery`: `kept_components`, `recovered_pixels`, `applied`와 `*_food_support_mask.png`를 확인한다.
+3. `step_5d_plate_edge_repair`: `adaptive_rim_observation`의 신뢰도와 브리지·알파 확장 픽셀을 확인한다.
+
+HoughLinesP의 OpenCV 반환 배열은 코드에서 `(N, 4)`로 정규화하므로 Colab과 로컬의 `(N, 1, 4)`/`(N, 4)` 차이는 마스크 기준을 바꾸지 않는다.
+
 ## 결과 품질 점검
 
 로컬 실행 후 보고서에서 다음 순서로 확인한다.
 
 1. `step_7_camera_angle_classification`: EfficientNet-B0가 `top` 또는 `45`를 정상 분류했는지 확인한다. 필요하면 JSON 수동 지정값을 사용한다.
 2. `step_8_background_generation`: 3~4개 후보 중 선택된 후보가 `food_detections: 0`인지와 중앙 여백·색온도 점수를 확인한다.
-3. `step_9_foreground_placement`: `width_ratio`가 0.55~0.70인지, 탑뷰는 `center`, 45도는 `center_lower`인지 확인한다.
+3. `step_9_foreground_placement`: preserve 모드의 유효 범위는 0.30~0.70이고 기본 목표는 탑뷰 `0.40`, 45도 `0.48`이다. 탑뷰는 `center`, 45도는 `center_lower`인지 확인한다.
 4. `step_14_background_geometry_validation`: 배경 음식·기하 검증이 통과했는지 확인한다.
 
 추가 종료 상태는 다음과 같다.

@@ -11,7 +11,9 @@
 - JPG, JPEG, PNG, WEBP 형식의 음식 사진
 - 선택 메타데이터 JSON
   - `business_type`: 카페, 베이커리, 디저트, 음식점, 주점 등 업종
+  - `desired_mood`: 생성 배경에 반영할 분위기
   - `food_category`: 음식 분류 또는 메뉴 설명
+  - `composition_mode`: `preserve_original_plate` 또는 `generated_plate`
   - `camera_angle_manual`: `true`이면 자동 분류 대신 수동 각도를 사용한다.
   - `camera_angle_label`: 수동 촬영 각도(`top` 또는 `45`). 수동 모드가 아니면 EfficientNet-B0가 예측한다.
 - 선택 설정 파일: 기본값은 `configs/pipeline.yaml`
@@ -36,7 +38,9 @@
   → 학습한 음식 전용 YOLO11n(best.pt) 탐지 보강
   → SAM 2.1 Small 음식·접시 구조 마스크
   → HQ-SAM patch_missing 경계 보완
-  → PlateMaskService 접시 외곽 완성과 음식 마스크 안정화
+  → PlateMaskService 용기 형태 판정과 접시 마스크 정리
+  → 음식 연결 꼬치·지지 구조 후보의 안전 복구
+  → 음식·접시 마스크 품질 독립 검사
   → 안전 제거·분리 전경 정리·용기 블러·접시 림 복원
   → SAM 마스크 기반 RGBA 전경 생성
   → EfficientNet-B0 촬영 각도 판별 또는 JSON 각도 사용
@@ -52,8 +56,10 @@
 
 1. 원본 접시와 음식 픽셀은 생성 모델에 전달하지 않는다.
 2. 접시 외곽은 SAM 구조 마스크와 접시 보존 마스크로 유지한다.
-3. 현재 기본 경로는 BiRefNet을 사용하지 않는다(`models.matting.enabled: false`). 알파는 안정화된 SAM 음식·접시 분할 마스크만 사용한다.
-4. 접시 전체를 새로 생성하는 `generated_plate` 모드는 선택 실험 기능이며 기본값이 아니다.
+3. 용기 형태가 확실하면 타원 또는 실제 윤곽으로 제한적으로 보완하고, 비정형·저신뢰 용기는 원본 연결 영역을 유지한다.
+4. 음식과 연결된 얇은 꼬치는 기하학·음식 연결·SAM 후보 증거를 모두 통과한 경우에만 보호한다.
+5. 현재 기본 경로는 BiRefNet을 사용하지 않는다(`models.matting.enabled: false`). 알파는 SAM2·HQ-SAM 음식/접시 마스크와 `plate_alpha`를 기준으로 하며, 안전 조건을 통과한 경우에만 `food_support_mask`를 추가한다.
+6. 접시 전체를 새로 생성하는 `generated_plate` 모드는 선택 실험 기능이며 기본값이 아니다.
 
 ## 5. 사용하는 모델과 이유
 
@@ -70,6 +76,16 @@
 | Big-LaMa | 선택적 이물질 제거 | 전경 보호 마스크 밖의 포크·나이프·작은 이물질을 제한적으로 제거한다. |
 
 BiRefNet HR은 과거 경계 실험에 사용했지만 접시 외곽이 투명해지거나 일부가 끊기는 사례가 있어 현재 기본 경로에서 껐다. 관련 모델 파일을 별도로 내려받거나 실행할 필요가 없다.
+
+### 모델이 아닌 최신 마스크 서비스
+
+| 서비스 | 역할 | 안전 조건 |
+| --- | --- | --- |
+| `PlateMaskService` | 용기 윤곽을 `ellipse`, `quadrilateral`, `irregular`로 판정하고 `plate_mask`를 정리한다. | 형태 신뢰도가 낮으면 합성 윤곽 대신 원본 연결 영역을 유지한다. |
+| `assess_food_mask_quality` | 음식 면적, 연결 성분, 경계 접촉과 접시 겹침을 검사한다. | `generated_plate`에서 실패하면 원본 용기가 섞일 위험이 있어 합성을 중단한다. |
+| `assess_plate_mask_quality` | 접시 면적, 내부 구멍, solidity, 확장 비율을 검사한다. | 실패하면 합성 림 보정은 허용하지 않는다. |
+| `recover_food_supports` | 꼬치처럼 음식과 연결된 가는 지지 구조 후보를 만든다. | 기하학만으로는 채택하지 않고 GroundingDINO·SAM 증거와 음식 연결을 요구한다. |
+| `observe_container_rim` / `repair_plate_edge` | 원본 RGB에서 실제 림 색과 윤곽을 관찰해 결손을 제한적으로 보완한다. | 관찰 신뢰도 `0.53` 미만이면 브리지와 알파 확장을 적용하지 않는다. |
 
 ## 6. 네이버 채널과의 연결
 
@@ -89,7 +105,7 @@ BiRefNet HR은 과거 경계 실험에 사용했지만 접시 외곽이 투명�
 
 ```powershell
 pip install -r requirements-local.txt
-python -m scripts.download_models --models yolo sam2 big-lama openclip sana grounding-dino
+python -m scripts.download_models --models yolo sam2 big-lama openclip sana grounding-dino hq-sam
 ```
 
 실행 예시는 다음과 같다.
@@ -117,6 +133,9 @@ python -m scripts.run_background_replacement `
 - 업종별 배경 프롬프트, 다중 후보 생성·선택, 접지 그림자, 제한적 색 조화 완료
 - 원본 접시 보존 모드와 접시 마스크 디버그 산출물 저장 완료
 - HQ-SAM 경계 보완, Big-LaMA 안전 제거, 분리 전경 제거, 용기 블러와 접시 림 복원 연결 완료
+- 음식·접시 마스크 독립 품질 검사와 용기 형태별 타원·사각·비정형 처리 연결 완료
+- GroundingDINO·Canny/Hough·SAM 증거를 결합한 음식 지지 구조 보호 단계와 Colab OpenCV 반환 형태 호환 처리 완료
+- 원본 RGB 기반 적응형 림 관찰과 저신뢰 시 합성 림을 차단하는 안전 게이트 연결 완료
 - OpenCLIP·배경 음식 검출·기하·기본 품질 검증 완료
 - YOLO11-seg 기반 `plate_full` / `food_visible` 어댑터와 후보 가중치는 존재하지만 `models.plate_segmenter.enabled: false`이므로 현재 기본 실행에는 참여하지 않는다.
 
@@ -133,13 +152,23 @@ Google Colab L4 환경에서 BiRefNet을 끈 상태로 수행한 최근 예시�
 
 이 값은 한 장의 검증 사례이며 전체 데이터셋의 일반 성능 지표는 아니다.
 
+### 최신 림·꼬치 보정 결과를 읽는 법
+
+중간 실행 중에는 적응형 림 신뢰도 `0.480164`가 최소 기준 `0.53`보다 낮고 음식 지지 구조도 `kept_components: 0`, `recovered_pixels: 0`으로 기록된 실패 사례가 있었다. 이 값은 최신 결과가 아니라 안전 게이트를 조정하는 과정에서 나온 이전 실행 사례다.
+
+이후 Colab에서 생성한 `example_background_replaced.jpg`를 시각 검증한 결과, 접시 상단의 초록색 림이 꼬치 교차 구간을 지나 연속적으로 복원됐고 여러 꼬치 끝도 접시 바깥까지 보존됐다. 따라서 최신 시각 결과는 **림 복원 성공 및 꼬치 보존 확인**으로 기록한다. 다만 이 이미지와 짝을 이루는 JSON 실행 리포트가 문서 검증 시 함께 제공되지 않았으므로, `synthetic_rim_bridge_pixels`나 `recovered_pixels` 같은 단계별 수치는 별도로 단정하지 않는다.
+
+음식 지지 구조를 블러·림 복원 뒤 최상단 RGB 레이어로 다시 합성하는 실험은 취소되었으며 현재 파이프라인에는 남아 있지 않다.
+
 ## 9. 남아 있는 문제와 다음 개선
 
-- 원형 접시에는 기하 보정이 효과적이지만, 사각 접시·유리 그릇·접시가 거의 보이지 않는 경우에는 오검출 가능성이 남아 있다.
+- 사각 접시·비정형 용기용 실제 윤곽 경로가 추가됐지만, 투명 유리 그릇이나 접시가 음식에 크게 가려진 경우에는 림 관찰 신뢰도가 낮아 보정이 생략될 수 있다.
+- 얇은 꼬치 복구는 오탐을 막기 위해 보수적으로 설정되어 실제 꼬치도 선택하지 못할 수 있다. `food_support_mask`와 `step_2d_food_support_recovery`를 함께 확인해야 한다.
 - 생성 배경은 음식·접시·컵을 금지해도 일부 소품이 생길 수 있다. 후보 선택 단계에서 더 강한 객체 검출과 재생성 정책이 필요하다.
 - 조명 방향은 현재 프롬프트와 단순 그림자에 의존한다. 배경과 전경의 물리적 조명 차이를 더 줄이려면 별도 조명 조화 모델을 검증해야 한다.
 - 후보 YOLO11-seg 모델은 더 넓은 평가셋에서 접시 외곽 보존율을 검증한 뒤 기본 활성화 여부를 결정해야 한다.
 - 다양한 업종·촬영 각도·접시 재질에 대해 성공률, 전경 보존율, 사용자 선호도 평가셋을 구축해야 한다.
+- 50장 고정 회귀 세트 생성·집계 스크립트는 준비됐지만 전체 E2E 집계 보고서는 아직 별도로 생성·검토해야 한다.
 
 ## 10. 관련 문서
 

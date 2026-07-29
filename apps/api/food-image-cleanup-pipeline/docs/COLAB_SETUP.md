@@ -27,6 +27,10 @@
 
 노트북 마지막 셀에서 실행 보고서의 `debug_artifacts`를 통해 원본·안정화 SAM 구조 마스크, 접시 보존 마스크, SAM 기반 알파 마스크, RGBA 전경, OpenCLIP 전경 비교 이미지, 최종 또는 거부된 합성 이미지를 확인한다.
 
+최신 코드에서는 `food_support_mask`도 저장한다. `step_2c_mask_quality`, `step_2d_food_support_recovery`, `step_5d_plate_edge_repair`를 함께 확인해야 음식·접시 품질, 꼬치형 지지 구조 채택, 적응형 림 관찰과 브리지 적용 여부를 구분할 수 있다. 음식 지지 구조를 최상단 RGB 레이어로 다시 합성하는 단계는 취소됐으므로 `step_5e_food_support_layer`는 현재 보고서에 존재하지 않는다.
+
+OpenCV 빌드에 따라 HoughLinesP가 `(N, 1, 4)` 또는 `(N, 4)` 배열을 반환할 수 있다. 현재 코드는 이를 `(N, 4)`로 정규화하므로 과거의 `numpy.int32 object is not iterable` 오류를 피하며, 이 호환 처리는 검출 임계값이나 모델 출력을 바꾸지 않는다.
+
 ## 노트북의 모드 덮어쓰기
 
 `configs/pipeline.yaml`의 기본 모드는 `preserve_original_plate`이지만, 현재 `01_colab_background_replacement.ipynb` 위젯 기본값은 `generated_plate`다. 노트북은 선택값을 메타데이터의 `composition_mode`로 전달하므로 YAML보다 위젯 선택이 우선한다. 또한 generated 모드 테스트에서는 `require_food_visible_mask: false`를 전달해 SAM 음식 마스크 fallback을 허용한다. 운영과 같은 엄격한 조건을 검증하려면 위젯에서 preserve 모드를 선택하거나 메타데이터의 해당 값을 직접 확인해야 한다.
@@ -42,4 +46,4 @@
 }
 ```
 
-`step_8_background_generation`에는 기본 3개 후보의 시드·중앙 여백 점수·색온도 점수·배경 음식 탐지 결과·선택 후보 번호가 기록된다. 후보 파일은 `data/intermediate/*_generated_background_candidate_*.jpg`에 저장된다. 마지막으로 `step_9_foreground_placement`의 전경 너비 비율이 0.55~0.70인지, `step_14_background_geometry_validation`이 통과했는지 확인한다.
+`step_8_background_generation`에는 기본 3개 후보의 시드·중앙 여백 점수·색온도 점수·배경 음식 탐지 결과·선택 후보 번호가 기록된다. 후보 파일은 `data/intermediate/*_generated_background_candidate_*.jpg`에 저장된다. 마지막으로 `step_9_foreground_placement`의 기본 목표가 탑뷰 `0.40`, 45도 `0.48`인지 확인한다. preserve 모드의 허용 범위는 0.30~0.70이며, `step_14_background_geometry_validation`도 통과해야 한다.

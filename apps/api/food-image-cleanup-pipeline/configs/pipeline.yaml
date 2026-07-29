@@ -94,7 +94,18 @@ models:
     device: auto
     box_threshold: 0.28
     text_threshold: 0.22
-    prompts: [plate, dish, bowl, food, meal, bread, cake, dessert]
+    prompts:
+    - plate
+    - dish
+    - bowl
+    - food
+    - meal
+    - bread
+    - cake
+    - dessert
+    - wooden skewer
+    - food skewer
+    - chopstick
   removal_detector:
     enabled: true
     provider: yolo
@@ -141,15 +152,92 @@ models:
     sam_fill_holes: true
   foreground_protection:
     dilation: 11
+  food_support_recovery:
+    # 접시 경계를 실제로 가로지르고 SAM/HQ-SAM 후보에도 근거가 있는
+    # 가늘고 긴 전경만 복구한다. 접시와 떨어진 수저는 보호하지 않는다.
+    enabled: true
+    preserve_mode_only: true
+    maximum_outside_distance_ratio: 0.34
+    inside_anchor_depth_ratio: 0.22
+    minimum_line_length_ratio: 0.045
+    maximum_line_length_ratio: 0.55
+    maximum_line_gap_ratio: 0.025
+    corridor_width_ratio: 0.008
+    hough_threshold: 28
+    canny_low: 35
+    canny_high: 120
+    candidate_dilation: 5
+    expand_with_candidate_mask: false
+    minimum_inside_samples: 4
+    minimum_outside_samples: 5
+    anchor_probe_extension_ratio: 0.04
+    minimum_radial_alignment: 0.35
+    continuation_maximum_angle_degrees: 8.0
+    continuation_axis_distance_ratio: 0.015
+    continuation_maximum_gap_ratio: 0.12
+    continuation_passes: 2
+    minimum_line_votes: 4
+    base_food_guard_dilation: 5
+    attachment_guard_dilation: 11
+    minimum_outside_reach_ratio: 0.045
+    minimum_component_aspect_ratio: 1.0
+    minimum_component_candidate_overlap: 0.10
+    allow_geometry_only: false
+    geometry_only_minimum_outside_reach_ratio: 0.10
+    geometry_only_minimum_peak_line_votes: 3
+    # GroundingDINO + SAM2가 주 분할 경로다. GrabCut은 저대비 꼬치 끝을
+    # 줄일 수 있어 기본값을 끄고, 배경 과보존 사례에서만 선택적으로 켠다.
+    grabcut_refinement_enabled: false
+    grabcut_padding: 9
+    grabcut_allowed_dilation: 5
+    grabcut_minimum_pixels: 24
+    grabcut_strong_vote_threshold: 5
+    grabcut_preserve_vote_threshold: 6
+    grabcut_minimum_seed_pixels: 8
+    grabcut_iterations: 2
+    grabcut_minimum_retained_ratio: 0.25
+    grabcut_maximum_growth_ratio: 1.20
+    minimum_component_area: 12
+    maximum_component_plate_area_ratio: 0.025
+    maximum_total_plate_area_ratio: 0.04
   plate_mask:
-    # 원본 접시 외곽을 별도 레이어로 보존한다. 허용 범위 안의 원형·타원형 윤곽만 보완한다.
+    # 원형·타원형은 ellipse로, 사각·비정형 용기는 실제 contour로 보완한다.
+    # 형태 신뢰도가 낮으면 완성 도형을 만들지 않고 원본 연결 성분을 유지한다.
     enabled: true
     minimum_area_ratio: 0.08
     maximum_aspect_ratio: 1.65
     minimum_ellipse_iou: 0.65
     maximum_ellipse_area_ratio: 1.35
-    # 접시 외곽의 작은 결손은 원본 RGB를 유지한 채 알파만 제한적으로 복구한다.
+    minimum_shape_confidence: 0.60
+    contour_completion_enabled: true
+    minimum_contour_solidity: 0.72
+    minimum_rectangularity: 0.78
+    maximum_contour_area_ratio: 1.25
+    polygon_epsilon_ratio: 0.025
+    maximum_polygon_vertices: 6
     edge_repair_kernel: 7
+  mask_quality:
+    # 음식과 용기를 독립적으로 검수한다. preserve 모드는 실패 시 합성 림만
+    # 비활성화하고, generated_plate는 음식 마스크 실패 시 안전하게 중단한다.
+    reject_generated_plate_on_food_failure: true
+    food:
+      minimum_area_ratio: 0.002
+      maximum_area_ratio: 0.70
+      minimum_largest_component_ratio: 0.18
+      maximum_border_touch_ratio: 0.20
+      minimum_plate_overlap_ratio: 0.10
+      minimum_confidence: 0.55
+      border_width: 3
+    plate:
+      minimum_area_ratio: 0.03
+      maximum_area_ratio: 0.85
+      minimum_largest_component_ratio: 0.90
+      maximum_border_touch_ratio: 0.12
+      maximum_hole_ratio: 0.03
+      minimum_solidity: 0.60
+      maximum_expansion_ratio: 1.40
+      minimum_confidence: 0.60
+      border_width: 3
   plate_preservation:
     # 접시 레이어는 원본 픽셀을 그대로 보존한다. BiRefNet의 일반 feathering을
     # 접시 외곽에 적용하지 않아 접시 테두리가 투명해지는 현상을 막는다.
@@ -182,10 +270,12 @@ models:
     method: telea
     restore_rim_line: true
     rim_line_width: 5
-    restore_inner_rim_line: true
+    restore_inner_rim_line: false
     inner_rim_line_width: 5
     inner_rim_line_inset: 22
-    color_aligned_rim_enabled: true
+    # 이전 초록색 HSV 전용 경로는 비활성화한다. 아래 adaptive 관찰이
+    # 실제 경계의 색상 군집과 밝기 기울기를 이미지마다 다시 측정한다.
+    color_aligned_rim_enabled: false
     color_aligned_rim_line_width: 5
     color_aligned_rim_inset_min: 4
     color_aligned_rim_inset_max: 42
@@ -193,15 +283,29 @@ models:
     color_aligned_rim_top_ratio: 0.36
     color_aligned_rim_allow_food_overlap: false
     color_aligned_rim_min_overlap_pixels: 32
+    # Fit the repair geometry to real colored rim pixels. This prevents the
+    # synthetic line from following a slightly different plate-mask ellipse.
+    observed_rim_fit_enabled: false
+    observed_rim_fit_line_width: 5
+    observed_rim_fit_boundary_width: 52
+    observed_rim_fit_plate_dilation: 9
+    observed_rim_fit_min_component_area: 8
+    observed_rim_fit_min_pixels: 256
+    observed_rim_fit_observed_dilation: 7
+    observed_rim_fit_min_overlap_ratio: 0.55
+    observed_rim_fit_max_aspect_ratio: 1.35
+    observed_rim_fit_min_area_ratio: 0.55
+    observed_rim_fit_max_area_ratio: 1.05
+    observed_rim_fit_max_center_shift_ratio: 0.08
     rim_line_target_dilation: 9
     rim_line_min_samples: 128
     rim_line_opacity: 0.0
     rim_line_feather_kernel: 7
-    rim_line_bridge_occlusions: true
+    rim_line_bridge_occlusions: false
     rim_line_bridge_dilation: 65
     rim_line_bridge_top_ratio: 0.34
     rim_line_bridge_horizontal_margin: 42
-    rim_missing_detection_enabled: true
+    rim_missing_detection_enabled: false
     rim_missing_top_ratio: 0.34
     rim_missing_color_distance: 42.0
     rim_missing_anchor_dilation: 95
@@ -212,7 +316,7 @@ models:
     rim_color_interpolation_observed_dilation: 5
     rim_color_interpolation_inpaint_radius: 5.0
     rim_color_interpolation_min_pixels: 96
-    rim_missing_surface_fill_enabled: true
+    rim_missing_surface_fill_enabled: false
     rim_missing_surface_top_ratio: 0.34
     rim_missing_surface_dilation: 17
     rim_missing_surface_close_kernel: 9
@@ -224,15 +328,63 @@ models:
     rim_missing_core_blend_enabled: false
     rim_missing_core_opacity: 0.94
     rim_missing_core_feather_kernel: 3
+    quality_gate_enabled: true
+    adaptive_rim_observation:
+      enabled: true
+      line_width: 5
+      boundary_width: 48
+      plate_guard_dilation: 12
+      gradient_percentile: 68.0
+      minimum_gradient: 18.0
+      color_cluster_count: 4
+      minimum_observed_pixels: 96
+      observed_dilation: 7
+      expected_line_dilation: 15
+      food_core_erosion: 9
+      color_contrast_scale: 90.0
+      minimum_confidence: 0.53
+      maximum_ellipse_aspect_ratio: 2.2
+      minimum_ellipse_area_ratio: 0.45
+      maximum_ellipse_area_ratio: 1.20
+      maximum_center_shift_ratio: 0.12
+    # 관측된 실제 림 픽셀은 합성 색보다 우선해 원본 RGB로 복원하고,
+    # 접시 마스크 바깥의 실제 림만 알파에 제한적으로 추가한다.
+    observed_source_rim_preservation_enabled: true
+    observed_source_rim_dilation: 3
+    observed_source_rim_feather_kernel: 3
+    protected_detail_guard_width: 5
+    protected_detail_feather_kernel: 3
     synthetic_rim_bridge_enabled: true
+    synthetic_rim_bridge_mode: observed_contour_gap
     synthetic_rim_bridge_top_ratio: 0.30
-    synthetic_rim_bridge_dilation: 95
+    synthetic_rim_bridge_dilation: 45
     synthetic_rim_bridge_horizontal_margin: 64
-    synthetic_rim_bridge_connect_full_top: true
+    synthetic_rim_bridge_connect_full_top: false
+    synthetic_rim_bridge_gap_observed_dilation: 7
+    synthetic_rim_bridge_gap_anchor_close_kernel: 5
+    synthetic_rim_bridge_gap_min_width: 3
+    synthetic_rim_bridge_gap_max_width: 280
+    synthetic_rim_bridge_gap_min_length: 3
+    synthetic_rim_bridge_gap_max_length: 160
+    synthetic_rim_bridge_gap_max_count: 4
+    synthetic_rim_bridge_gap_max_total_fraction: 0.16
+    # 타원 접시는 측면 음식 위에 짧은 선이 생기지 않도록 상단 림만 보완한다.
+    # 사각·비정형 용기는 실제 contour 전체에서 보수적으로 결손을 찾는다.
+    synthetic_rim_bridge_ellipse_top_only: true
+    synthetic_rim_bridge_ellipse_top_ratio: 0.36
+    synthetic_rim_bridge_gap_endpoint_margin: 4
+    synthetic_rim_bridge_plate_outside_tolerance: 9
     synthetic_rim_bridge_dilate: true
     synthetic_rim_bridge_extra_width: 3
+    synthetic_rim_bridge_max_plate_area_ratio: 0.008
+    synthetic_rim_bridge_allow_food_overlap: false
+    # 두꺼운 음식은 보호하되, 음식 마스크에 포함된 가는 꼬치는 림 복원 후보를 허용한다.
+    synthetic_rim_bridge_allow_thin_foreground_overlap: true
+    synthetic_rim_bridge_thin_foreground_radius: 4
     synthetic_rim_bridge_opacity: 0.98
     synthetic_rim_bridge_feather_kernel: 3
+    plate_edge_alpha_extension_enabled: true
+    plate_edge_alpha_extension_feather_kernel: 3
     synthetic_rim_band_enabled: false
     synthetic_rim_band_width: 5
     synthetic_rim_band_top_ratio: 0.30
@@ -240,6 +392,7 @@ models:
     synthetic_rim_band_feather_kernel: 7
     synthetic_rim_band_allow_food_overlap: false
     synthetic_rim_color_min_samples: 48
+    # 아래 HSV 값은 adaptive 관찰을 명시적으로 끈 경우에만 쓰는 레거시 fallback이다.
     synthetic_rim_color_saturation_min: 45
     synthetic_rim_color_value_min: 30
     synthetic_rim_color_value_max: 210

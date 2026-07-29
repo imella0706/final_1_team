@@ -33,8 +33,14 @@
 | `plate_edge_repair.synthetic_rim_bridge_dilate` | 만든 브리지 마스크를 조금 두껍게 만들어 실제 초록 림이 충분히 보이게 하는 옵션이다. |
 | `plate_edge_repair.synthetic_rim_band_enabled` | 별도의 림 밴드를 그리는 실험 옵션이다. 현재 기본값은 `false`이므로 사용하지 않는다. |
 | `plate_edge_repair.plate_mask_rim_completion_enabled` | `plate_mask` 기준으로 림을 완성하는 실험 옵션이다. 현재 기본값은 `false`이므로 최종 결과에 영향을 주지 않는다. |
+| `models.plate_mask.minimum_shape_confidence`와 `contour_completion_enabled` | 오전 9시 35분 이후 추가된 용기 일반화 설정이다. 현재 코드는 타원·사각형 계열·비정형을 나누고, 저신뢰 형태는 임의 완성하지 않는다. |
+| `models.mask_quality` | 오전 9시 35분 이후 추가된 음식·접시 독립 품질 검사다. 이 문서의 당시 흐름에는 없지만 현재 보고서의 `step_2c_mask_quality`에 기록된다. |
+| `models.food_support_recovery` | 오전 9시 35분 이후 추가된 꼬치형 지지 구조 보호 단계다. preserve 모드에서만 실행하며 기하학만으로는 채택하지 않는다. |
+| `plate_edge_repair.adaptive_rim_observation` | 현재는 고정 초록색 범위보다 원본 RGB의 실제 림 관찰을 우선한다. 신뢰도가 `0.53` 미만이면 합성 림과 알파 확장을 차단한다. |
 
 즉, 오전 9시 35분 기준 핵심 해결책은 여전히 **HQ-SAM 보조 마스크 + 원본 접시 보존 + Big-LaMA 제거 + synthetic rim bridge**다. 이후에 보이는 비활성 옵션들은 다음 실험을 빠르게 켜기 위한 스위치로 보면 된다.
+
+현재 운영 코드를 설명할 때는 이 시점 문서만 사용하지 말고 `README.md`와 `docs/ARCHITECTURE.md`를 우선한다. 음식 지지 구조를 모든 후처리 뒤 최상단 RGB 레이어로 다시 합성하는 후속 실험은 취소됐으며 현재 코드에는 `step_5e_food_support_layer`가 없다.
 
 ---
 
