@@ -96,14 +96,10 @@ flowchart TD
     ARTIFACT --> WEB
 ```
 
-### 독립 분석 파이프라인 및 데이터베이스
+### CCTV 상권 유동 분석 파이프라인 및 음식 Retrieval DB
 
 ```mermaid
 flowchart TD
-    subgraph AIHUB["AIHub 음식 광고 Retrieval DB"]
-        RAG["AIHub 음식 광고 Retrieval DB"]
-    end
-
     subgraph CCTV_ANALYTICS["CCTV 상권 유동 분석 파이프라인"]
         CCTV_SRC["AIHub CCTV 영상 :<br/>관측 샘플"]
         CV_ENGINE["YOLO11s · ROI 필터링 :<br/>Privacy Masking · Line Crossing"]
@@ -119,6 +115,14 @@ flowchart TD
         LLM_CMO --> CCTV_DASH
     end
 ```
+
+```mermaid
+flowchart TD
+    subgraph AIHUB["AIHub 음식 광고 Retrieval DB"]
+        RAG["AIHub 음식 광고 Retrieval DB"]
+    end
+```
+
 
 
 * **AIHub 음식 광고 Retrieval DB:** 음식 이미지와 캡션을 검색할 수 있는 오프라인 데이터베이스입니다.
