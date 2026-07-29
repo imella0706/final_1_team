@@ -353,7 +353,7 @@ node --check ..\web\app.js
 ```
 
 ## 주요 문서
-
+- 1조 조원 협업일지: https://app.notion.com/p/397e900739a380d5a3d1d7467451f0f4?source=copy_link
 - 인증 백엔드 구현 범위: [docs/Backend.md](docs/Backend.md)
 - 로컬 Qwen + ComfyUI FLUX 온보딩: [docs/LOCAL_AI_PIPELINE_ONBOARDING.md](docs/LOCAL_AI_PIPELINE_ONBOARDING.md)
 - API 실행 문서: [apps/api/README.md](apps/api/README.md)
