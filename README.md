@@ -508,10 +508,6 @@ node --check apps\web\sw.js
 
 이미지 보정, CosyVoice와 유동 분석은 모델·GPU·데이터 요구 사항이 다르므로 각 하위 README의 테스트 명령을 사용합니다.
 
-## 제출 자료
-
-- [1조 조원 협업일지](https://app.notion.com/p/397e900739a380d5a3d1d7467451f0f4?source=copy_link)
-- [최종 프로젝트 보고서](https://drive.google.com/file/d/1xuIoya-BDLyGxLTm8TnsaxeV0EMa3Om4/view?usp=drive_link)
 
 ## 문서
 
