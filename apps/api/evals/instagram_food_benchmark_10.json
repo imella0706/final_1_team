@@ -1,0 +1,169 @@
+{
+  "version": 1,
+  "channel": "instagram",
+  "selection": {
+    "method": "category quotas plus distinct product groups",
+    "category_quotas": {
+      "bakery": 2,
+      "cafe": 2,
+      "pub": 2,
+      "restaurant": 4
+    },
+    "metadata": "data/images/prompt_metadata (1).csv"
+  },
+  "cases": [
+    {
+      "id": "food-01-DIV_IMG_000010",
+      "image_id": "DIV_IMG_000010",
+      "image_path": "data/images/DIV_IMG_000010.jpg",
+      "food": {
+        "product_name": "마늘빵",
+        "original_food_name": "마늘빵",
+        "business_category": "bakery",
+        "product_group": "bread",
+        "caption": "a bowl of food",
+        "prompt_keywords": "bakery, bread, 마늘빵, FC10S05, a bowl of food",
+        "ad_use_case": "bakery_product_promotion",
+        "visual_style_hint": "bakery_bread"
+      },
+      "instagram_request": {
+        "business_name": "마늘빵 테스트 가게",
+        "business_type": "bakery",
+        "situation": "new_menu",
+        "age_groups": [
+          "twenties",
+          "thirties"
+        ],
+        "target_audiences": [
+          "office_workers",
+          "couples"
+        ],
+        "tone": "emotional",
+        "product_names": [
+          "마늘빵"
+        ],
+        "features": [
+          "업로드 사진 속 마늘빵의 실제 형태와 색감을 중심으로 소개"
+        ],
+        "channel": "instagram",
+        "promotion": null,
+        "required_terms": [
+          "마늘빵"
+        ],
+        "prohibited_terms": [
+          "최고",
+          "무조건",
+          "무료"
+        ],
+        "interests": [
+          "맛집",
+          "마늘빵"
+        ],
+        "audience_detail": "음식 사진을 보고 방문이나 주문을 고려하는 인스타그램 이용자",
+        "additional_request": "업로드 사진에 없는 재료나 효능을 만들지 말고, 음식명과 실제 사진을 중심으로 자연스러운 한국어 인스타그램 광고를 작성하세요."
+      }
+    },
+    {
+      "id": "food-02-DIV_IMG_000046",
+      "image_id": "DIV_IMG_000046",
+      "image_path": "data/images/DIV_IMG_000046.jpg",
+      "food": {
+        "product_name": "감자토스트",
+        "original_food_name": "감자토스트",
+        "business_category": "bakery",
+        "product_group": "sandwich",
+        "caption": "a white plate with a sandwich on it",
+        "prompt_keywords": "bakery, sandwich, 감자토스트, FC10S04, a white plate with a sandwich on it",
+        "ad_use_case": "bakery_product_promotion",
+        "visual_style_hint": "bakery_sandwich"
+      },
+      "instagram_request": {
+        "business_name": "감자토스트 테스트 가게",
+        "business_type": "bakery",
+        "situation": "new_menu",
+        "age_groups": [
+          "twenties",
+          "thirties"
+        ],
+        "target_audiences": [
+          "office_workers",
+          "couples"
+        ],
+        "tone": "emotional",
+        "product_names": [
+          "감자토스트"
+        ],
+        "features": [
+          "업로드 사진 속 감자토스트의 실제 형태와 색감을 중심으로 소개"
+        ],
+        "channel": "instagram",
+        "promotion": null,
+        "required_terms": [
+          "감자토스트"
+        ],
+        "prohibited_terms": [
+          "최고",
+          "무조건",
+          "무료"
+        ],
+        "interests": [
+          "맛집",
+          "감자토스트"
+        ],
+        "audience_detail": "음식 사진을 보고 방문이나 주문을 고려하는 인스타그램 이용자",
+        "additional_request": "업로드 사진에 없는 재료나 효능을 만들지 말고, 음식명과 실제 사진을 중심으로 자연스러운 한국어 인스타그램 광고를 작성하세요."
+      }
+    },
+    {
+      "id": "food-03-DIV_IMG_000065",
+      "image_id": "DIV_IMG_000065",
+      "image_path": "data/images/DIV_IMG_000065.jpg",
+      "food": {
+        "product_name": "BLT샌드위치",
+        "original_food_name": "BLT샌드위치",
+        "business_category": "cafe",
+        "product_group": "brunch",
+        "caption": "a sandwich on a plate",
+        "prompt_keywords": "cafe, brunch, BLT샌드위치, FC10S04, a sandwich on a plate",
+        "ad_use_case": "cafe_menu_promotion",
+        "visual_style_hint": "cafe_brunch"
+      },
+      "instagram_request": {
+        "business_name": "BLT샌드위치 테스트 가게",
+        "business_type": "cafe",
+        "situation": "new_menu",
+        "age_groups": [
+          "twenties",
+          "thirties"
+        ],
+        "target_audiences": [
+          "office_workers",
+          "couples"
+        ],
+        "tone": "emotional",
+        "product_names": [
+          "BLT샌드위치"
+        ],
+        "features": [
+          "업로드 사진 속 BLT샌드위치의 실제 형태와 색감을 중심으로 소개"
+        ],
+        "channel": "instagram",
+        "promotion": null,
+        "required_terms": [
+          "BLT샌드위치"
+        ],
+        "prohibited_terms": [
+          "최고",
+          "무조건",
+          "무료"
+        ],
+        "interests": [
+          "맛집",
+          "BLT샌드위치"
+        ],
+        "audience_detail": "음식 사진을 보고 방문이나 주문을 고려하는 인스타그램 이용자",
+        "additional_request": "업로드 사진에 없는 재료나 효능을 만들지 말고, 음식명과 실제 사진을 중심으로 자연스러운 한국어 인스타그램 광고를 작성하세요."
+      }
+    }
+  ]
+}

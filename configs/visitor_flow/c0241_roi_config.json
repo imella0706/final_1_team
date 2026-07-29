@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "camera_id": "C0241",
+  "primary_roi_id": "in_front_of_shop",
+  "label": "Storefront pedestrian lane",
+  "coordinate_space": "normalized_image",
+  "position_point": "bbox_bottom_center",
+  "definition_source": "manual_polygon",
+  "boundary_inclusive": true,
+  "polygon": [
+    {
+      "x": 0.29375,
+      "y": 0.240809
+    },
+    {
+      "x": 0.607812,
+      "y": 0.236213
+    },
+    {
+      "x": 0.688021,
+      "y": 0.991728
+    },
+    {
+      "x": 0.000521,
+      "y": 0.995404
+    },
+    {
+      "x": 0.027083,
+      "y": 0.738051
+    },
+    {
+      "x": 0.292187,
+      "y": 0.237132
+    }
+  ],
+  "notes": [
+    "Manual ROI selected from a fixed-camera reference frame.",
+    "A detection is counted when its bbox bottom-center point is inside this polygon.",
+    "Recalibrate this polygon if the camera position or crop changes."
+  ]
+}

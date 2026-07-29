@@ -1,0 +1,6 @@
+# 운영 GPU 서버에서 이미지 생성/CLIP 평가 환경을
+# 로컬 검증 기준인 CUDA 12.1 PyTorch wheel로 고정한다. 일반 API 서버
+# 의존성이 아니라 이미지 모델 평가용 GPU production profile이다.
+torch==2.5.1+cu121
+torchvision==0.20.1+cu121
+-e .[image]

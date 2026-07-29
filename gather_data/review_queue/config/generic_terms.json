@@ -1,0 +1,26 @@
+{
+  "schema_version": "1.0",
+  "description": "Generic terms that should be penalized or reviewed before ranking. They are not hard-deleted.",
+  "generic_terms": [
+    "게임",
+    "리뷰",
+    "추천",
+    "영화",
+    "드라마",
+    "카페",
+    "맛집",
+    "후기",
+    "이번",
+    "처음",
+    "너무",
+    "하는",
+    "하다",
+    "프로그램",
+    "예약",
+    "행사",
+    "강의",
+    "분석",
+    "하이라이트",
+    "스토리"
+  ]
+}

@@ -1,0 +1,76 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080">
+  <defs>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="10" stdDeviation="15" flood-color="#49372c" flood-opacity=".11"/></filter>
+    <marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto"><path d="M0,0 L12,6 L0,12 Z" fill="#d7785a"/></marker>
+    <style>
+      .title{font:700 48px 'Noto Sans KR','Malgun Gothic',sans-serif;fill:#332c28}
+      .sub{font:400 23px 'Noto Sans KR','Malgun Gothic',sans-serif;fill:#756b64}
+      .head{font:800 27px 'Noto Sans KR','Malgun Gothic',sans-serif;fill:#332c28}
+      .field{font:700 19px Consolas,'Malgun Gothic',monospace;fill:#486b59}
+      .value{font:500 17px Consolas,'Malgun Gothic',monospace;fill:#796d65}
+      .section{font:800 18px Arial,'Malgun Gothic',sans-serif;fill:#d7785a}
+      .line{font:500 16px 'Noto Sans KR','Malgun Gothic',sans-serif;fill:#615852}
+    </style>
+  </defs>
+  <rect width="1920" height="1080" fill="#fbf7f1"/>
+  <text x="105" y="110" class="title">Visual Brief를 이미지 모델용 프롬프트로 정규화</text>
+  <text x="105" y="153" class="sub">LLM의 자유로운 문장 대신 제한된 Enum을 받아, 백엔드가 동일한 영어 프롬프트를 생성합니다.</text>
+
+  <g filter="url(#shadow)">
+    <rect x="100" y="235" width="500" height="690" rx="30" fill="#fff"/>
+    <text x="145" y="295" class="head">VISUAL BRIEF</text>
+    <text x="145" y="355" class="field">products_to_show</text><text x="355" y="355" class="value">크림빵 · main</text>
+    <line x1="145" y1="380" x2="555" y2="380" stroke="#eee5dc"/>
+    <text x="145" y="425" class="field">camera_angle</text><text x="345" y="425" class="value">45_degree_close_up</text>
+    <text x="145" y="495" class="field">composition</text><text x="345" y="495" class="value">centered_product_hero</text>
+    <text x="145" y="565" class="field">lighting</text><text x="345" y="565" class="value">soft_natural_window_light</text>
+    <text x="145" y="635" class="field">background</text><text x="345" y="635" class="value">minimal_korean_local_cafe</text>
+    <text x="145" y="705" class="field">empty_space</text><text x="345" y="705" class="value">poster_safe_margin</text>
+    <text x="145" y="775" class="field">avoid</text><text x="345" y="775" class="value">text · logo · people</text>
+    <rect x="145" y="835" width="410" height="50" rx="14" fill="#e6efe8"/>
+    <text x="177" y="868" style="font:700 18px 'Noto Sans KR','Malgun Gothic';fill:#486b59">정해진 값만 허용 → 모델별 표현 차이 축소</text>
+  </g>
+
+  <path d="M625 575 H760" stroke="#d7785a" stroke-width="6" marker-end="url(#arrow)"/>
+  <circle cx="690" cy="520" r="45" fill="#d7785a"/>
+  <path d="M672 520h36M690 502v36" stroke="#fff" stroke-width="7" stroke-linecap="round"/>
+  <text x="626" y="650" style="font:800 19px 'Noto Sans KR','Malgun Gothic';fill:#6b4a3e">BACKEND CODE</text>
+  <text x="630" y="682" class="line">결정론적 매핑</text>
+
+  <g filter="url(#shadow)">
+    <rect x="780" y="235" width="700" height="690" rx="30" fill="#fff"/>
+    <text x="825" y="295" class="head">NORMALIZED IMAGE PROMPT</text>
+    <rect x="825" y="335" width="610" height="74" rx="15" fill="#fff0ea"/>
+    <text x="850" y="365" class="section">TASK</text>
+    <text x="850" y="392" class="line">Create a realistic commercial product ad image.</text>
+    <rect x="825" y="425" width="610" height="94" rx="15" fill="#f5f1eb"/>
+    <text x="850" y="455" class="section">PRODUCT IDENTITY LOCK</text>
+    <text x="850" y="484" class="line">Cream bread as the only main product.</text>
+    <rect x="825" y="535" width="610" height="126" rx="15" fill="#edf4ef"/>
+    <text x="850" y="565" class="section">COMPOSITION · CAMERA · LIGHTING</text>
+    <text x="850" y="594" class="line">Centered hero · 45-degree close-up</text>
+    <text x="850" y="623" class="line">Soft natural window light · safe text margin</text>
+    <rect x="825" y="677" width="610" height="94" rx="15" fill="#f5f1eb"/>
+    <text x="850" y="707" class="section">POSTER TEXT PLAN</text>
+    <text x="850" y="736" class="line">Leave clean space. Do not render readable text.</text>
+    <rect x="825" y="787" width="610" height="94" rx="15" fill="#f8e5e2"/>
+    <text x="850" y="817" class="section">NEGATIVE PROMPT</text>
+    <text x="850" y="846" class="line">No text · logo · watermark · hands · extra food</text>
+  </g>
+
+  <path d="M1505 575 H1630" stroke="#d7785a" stroke-width="6" marker-end="url(#arrow)"/>
+  <g filter="url(#shadow)">
+    <rect x="1650" y="320" width="190" height="510" rx="32" fill="#293e34"/>
+    <rect x="1670" y="345" width="150" height="230" rx="18" fill="#eac28e"/>
+    <ellipse cx="1745" cy="500" rx="55" ry="18" fill="#9a6a42"/>
+    <path d="M1700 493c13-60 77-60 91 0" fill="#e3a15b"/>
+    <path d="M1712 477h67" stroke="#fff3d2" stroke-width="12" stroke-linecap="round"/>
+    <rect x="1680" y="610" width="115" height="13" rx="6" fill="#fff"/>
+    <rect x="1680" y="642" width="135" height="8" rx="4" fill="#b9c9c0"/>
+    <rect x="1680" y="670" width="92" height="8" rx="4" fill="#b9c9c0"/>
+    <rect x="1680" y="742" width="110" height="32" rx="16" fill="#d99a66"/>
+  </g>
+
+  <rect x="285" y="970" width="1350" height="58" rx="18" fill="#332c28"/>
+  <text x="350" y="1007" style="font:700 21px 'Noto Sans KR','Malgun Gothic';fill:#fff">효과: 공정한 모델 비교 · 상품 보존 · 환각 감소 · 프롬프트 저장과 재현</text>
+</svg>

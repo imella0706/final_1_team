@@ -1,0 +1,38 @@
+{
+  "marketing_strategy": {
+    "core_message": "바쁜 점심 이후 잠시 즐기는 따뜻한 디저트",
+    "customer_emotion": "작은 휴식과 기대감",
+    "marketing_angle": "매일 아침 직접 만드는 신선함",
+    "recommended_cta_direction": "매장 방문 유도"
+  },
+  "headlines": ["오늘의 작은 휴식, 크림빵"],
+  "body_copies": [
+    "매일 아침 직접 만드는 디저트 크림빵을 연남동에서 만나보세요."
+  ],
+  "ctas": ["오늘 오후의 조각에 들러보세요."],
+  "hashtags": ["#크림빵", "#연남동카페", "#디저트"],
+  "validation_check": {
+    "all_products_included": true,
+    "all_features_included": true,
+    "prohibited_terms_used": false,
+    "visual_brief_uses_enum_only": true,
+    "language_quality": "natural Korean"
+  },
+  "visual_brief": {
+    "products_to_show": [
+      {
+        "product_name": "크림빵",
+        "visual_role": "main",
+        "must_be_visible": true
+      }
+    ],
+    "camera_angle": "45_degree_close_up",
+    "composition": "centered_product_hero",
+    "lighting": "soft_natural_window_light",
+    "background": "minimal_korean_local_cafe",
+    "color_palette": ["warm_beige_cream"],
+    "depth_of_field": "shallow_depth_of_field",
+    "empty_space": "poster_safe_margin",
+    "avoid": ["readable_text", "logo", "watermark", "extra_food"]
+  }
+}

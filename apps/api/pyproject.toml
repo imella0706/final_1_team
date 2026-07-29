@@ -1,0 +1,52 @@
+[project]
+name = "brandmate-api"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = [
+  "alembic>=1.18,<2.0",
+  "asyncpg>=0.30,<1.0",
+  "email-validator>=2.2,<3.0",
+  "fastapi>=0.115",
+  "huggingface-hub>=0.34",
+  "httpx>=0.27",
+  "pillow>=10.0",
+  "pydantic>=2.0",
+  "pwdlib[argon2]>=0.3,<1.0",
+  "pyjwt>=2.10,<3.0",
+  "pydantic-settings>=2.0",
+  "sqlalchemy>=2.0.51,<2.1",
+  "uvicorn[standard]>=0.30",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.0",
+  "ruff>=0.8",
+  "pytest-asyncio>=0.23",
+]
+image = [
+  "accelerate>=0.33",
+  "diffusers>=0.30",
+  "pillow>=10.0",
+  "safetensors>=0.4",
+  "torch>=2.3",
+  "transformers>=4.43",
+]
+
+notebook = [
+  "jupyterlab>=4.0",
+  "ipykernel>=6.0",
+  "ipywidgets>=8.0",  
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+
+[tool.setuptools.packages.find]
+include = ["app*"]
+exclude = ["evals*", "scripts*", "tests*"]
+
+[tool.ruff]
+line-length = 100

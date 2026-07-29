@@ -1,0 +1,272 @@
+service_category_schema:
+  business_categories:
+    cafe:
+      korean_name: "카페"
+      description: "카페, 브런치카페, 테마카페"
+      product_groups:
+        coffee:
+          korean_name: "커피"
+          keywords:
+            - "커피"
+            - "아메리카노"
+            - "카페라떼"
+            - "라떼"
+            - "카푸치노"
+            - "에스프레소"
+            - "모카"
+            - "마끼아또"
+        tea:
+          korean_name: "차"
+          keywords:
+            - "차"
+            - "티"
+            - "녹차"
+            - "홍차"
+            - "밀크티"
+            - "허브티"
+            - "아이스티"
+        ade_juice:
+          korean_name: "에이드/주스"
+          keywords:
+            - "에이드"
+            - "주스"
+            - "과일주스"
+            - "레몬에이드"
+            - "자몽에이드"
+            - "청포도에이드"
+            - "오렌지주스"
+        smoothie:
+          korean_name: "스무디"
+          keywords:
+            - "스무디"
+            - "쉐이크"
+            - "프라페"
+            - "블렌디드"
+        brunch:
+          korean_name: "브런치"
+          keywords:
+            - "브런치"
+            - "토스트"
+            - "샌드위치"
+            - "샐러드"
+            - "팬케이크"
+
+    bakery:
+      korean_name: "베이커리"
+      description: "베이커리 전문점"
+      product_groups:
+        bread:
+          korean_name: "빵"
+          keywords:
+            - "빵"
+            - "식빵"
+            - "소금빵"
+            - "바게트"
+            - "모닝빵"
+            - "단팥빵"
+            - "크림빵"
+        pastry:
+          korean_name: "페이스트리"
+          keywords:
+            - "크루아상"
+            - "크로와상"
+            - "데니시"
+            - "파이"
+            - "페이스트리"
+        bagel:
+          korean_name: "베이글"
+          keywords:
+            - "베이글"
+            - "크림치즈베이글"
+        sandwich:
+          korean_name: "샌드위치"
+          keywords:
+            - "샌드위치"
+            - "에그샌드위치"
+            - "햄치즈샌드위치"
+            - "토스트"
+
+    dessert:
+      korean_name: "디저트"
+      description: "디저트 전문점"
+      product_groups:
+        cake:
+          korean_name: "케이크"
+          keywords:
+            - "케이크"
+            - "티라미수"
+            - "치즈케이크"
+            - "딸기케이크"
+            - "초코케이크"
+            - "롤케이크"
+            - "파운드케이크"
+        cookie_macaron:
+          korean_name: "쿠키/마카롱"
+          keywords:
+            - "쿠키"
+            - "마카롱"
+            - "다쿠아즈"
+            - "휘낭시에"
+            - "스콘"
+        ice_cream:
+          korean_name: "아이스크림"
+          keywords:
+            - "아이스크림"
+            - "젤라토"
+            - "소프트아이스크림"
+        shaved_ice:
+          korean_name: "빙수"
+          keywords:
+            - "빙수"
+            - "팥빙수"
+            - "과일빙수"
+            - "망고빙수"
+
+    restaurant:
+      korean_name: "음식점"
+      description: "한식, 중식, 일식, 양식, 고기집, 치킨, 피자, 배달음식 등"
+      product_groups:
+        korean_food:
+          korean_name: "한식"
+          keywords:
+            - "한식"
+            - "비빔밥"
+            - "김치찌개"
+            - "된장찌개"
+            - "불고기"
+            - "제육"
+            - "국밥"
+            - "냉면"
+            - "갈비탕"
+            - "김밥"
+            - "떡볶이"
+        chinese_food:
+          korean_name: "중식"
+          keywords:
+            - "중식"
+            - "짜장면"
+            - "짬뽕"
+            - "탕수육"
+            - "마라탕"
+            - "볶음밥"
+        japanese_food:
+          korean_name: "일식"
+          keywords:
+            - "일식"
+            - "초밥"
+            - "스시"
+            - "라멘"
+            - "우동"
+            - "돈카츠"
+            - "돈까스"
+            - "덮밥"
+        western_food:
+          korean_name: "양식"
+          keywords:
+            - "양식"
+            - "파스타"
+            - "스테이크"
+            - "리조또"
+            - "샐러드"
+            - "버거"
+            - "햄버거"
+        meat_grill:
+          korean_name: "고기/구이"
+          keywords:
+            - "고기"
+            - "구이"
+            - "삼겹살"
+            - "갈비"
+            - "불고기"
+            - "닭갈비"
+            - "목살"
+            - "곱창"
+            - "막창"
+        chicken:
+          korean_name: "치킨"
+          keywords:
+            - "치킨"
+            - "후라이드"
+            - "양념치킨"
+            - "닭강정"
+        pizza:
+          korean_name: "피자"
+          keywords:
+            - "피자"
+            - "페퍼로니"
+            - "치즈피자"
+            - "고구마피자"
+        delivery_food:
+          korean_name: "배달음식"
+          keywords:
+            - "배달"
+            - "족발"
+            - "보쌈"
+            - "떡볶이"
+            - "분식"
+            - "야식"
+            - "도시락"
+
+    pub:
+      korean_name: "주점"
+      description: "주점, 이자카야, 호프집, 와인바, 하이볼바"
+      product_groups:
+        alcohol:
+          korean_name: "주류"
+          keywords:
+            - "맥주"
+            - "하이볼"
+            - "칵테일"
+            - "와인"
+            - "소주"
+            - "막걸리"
+            - "위스키"
+        fried_side:
+          korean_name: "튀김안주"
+          keywords:
+            - "감자튀김"
+            - "튀김"
+            - "치킨"
+            - "닭강정"
+            - "새우튀김"
+        grilled_side:
+          korean_name: "구이안주"
+          keywords:
+            - "꼬치"
+            - "닭꼬치"
+            - "구이"
+            - "오징어구이"
+            - "소시지"
+        seafood_side:
+          korean_name: "해산물안주"
+          keywords:
+            - "회"
+            - "해산물"
+            - "오징어"
+            - "문어"
+            - "새우"
+            - "조개"
+        korean_pub_food:
+          korean_name: "한식안주"
+          keywords:
+            - "골뱅이"
+            - "골뱅이무침"
+            - "두부김치"
+            - "부대찌개"
+            - "전"
+            - "파전"
+            - "김치전"
+            - "육회"
+
+mapping_priority:
+  - product_name
+  - original_food_name
+  - original_sub_category
+  - original_middle_category
+  - original_major_category
+
+unmapped_policy:
+  default_business_category: "restaurant"
+  default_product_group: "delivery_food"
+  save_unmapped_report: true
+  unmapped_report_path: "outputs/reports/category_mapping/unmapped_items.csv"

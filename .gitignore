@@ -1,4 +1,82 @@
 node_modules/
 dist/
-.env
+.env*
 .DS_Store
+!.env.example
+!.env.gcp.example
+!.env.airflow.example
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.venv/
+*.egg-info/
+*.log
+
+# Next.js
+.next/
+coverage/
+
+# Generated/user assets
+storage/
+uploads/
+outputs/
+*.sqlite3
+*.sqlite
+
+# Local / large datasets
+# [Design Intent] Keep large dataset files out of Git while allowing DVC
+# pointer files under data/ to be committed.
+/data/**
+!/data/**/
+!/data/**/*.dvc
+
+# [Design Intent] gather_data는 크롤러 코드와 명세만 추적하고, 생성된
+# 크롤링 산출물은 repository root의 data/ 계층 또는 로컬 runtime 경로에서 관리한다.
+/gather_data/processed/
+/gather_data/trendcard copy.json
+/gather_data/crawling/*/data/
+/gather_data/crawling/*/data-smoke/
+/gather_data/crawling/*/data-smoke-detail/
+/gather_data/naver/*.csv
+/gather_data/naver/*.png
+/gather_data/youtube/*.csv
+/gather_data/youtube/*.png
+/gather_data/youtube/history/
+/gather_data/youtube/data/
+/gather_data/youtube/reports/
+/gather_data/**/.agents/
+
+# Editors and OS
+.idea/
+.vscode/
+Thumbs.db
+
+outputs
+/runtime/
+
+# Local CosyVoice runtime and disabled voice references
+/services/cosyvoice/.runtime/
+/services/cosyvoice/.venv/
+/services/cosyvoice/voices/man_whisper.wav
+/services/cosyvoice/voices/man_whisper2.wav
+
+# Airflow local runtime artifacts
+airflow/logs/
+airflow/mock_gcs/logs/
+airflow/gcs_data_cache/
+# Added by code-review-graph
+.code-review-graph/
+.codegraph/
+repomix-output.md
+repomix-output.xml
+
+# AIHub 학습 모델은 대용량 바이너리이므로 저장소에 포함하지 않는다.
+/apps/api/food-image-cleanup-pipeline/3-021.AI모델/
+/apps/api/food-image-cleanup-pipeline/data/training/
+/apps/api/food-image-cleanup-pipeline/runs/
+.kiro
+.3-021.AI모델

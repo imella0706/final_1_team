@@ -1,0 +1,28 @@
+{
+  "schema_version": "1.0",
+  "description": "Explicit sns_trend candidate aliases. Fuzzy matching is intentionally disabled.",
+  "aliases": [
+    {
+      "canonical": "밤티",
+      "aliases": ["밤티난다", "밤티 난다"]
+    },
+    {
+      "canonical": "에어팟 스위치 밈",
+      "aliases": ["Forgot Airpod", "Forgot Airpods trend", "Airpods Switch Trend"]
+    },
+    {
+      "canonical": "널 좋아하는 마음이 커졌어 막 공룡만 해",
+      "aliases": [
+        "널 좋아하는 맘이 커졌어 진짜 커 막 공룡만해",
+        "널 좋아하는 마음이 커졌어 막 공룡만 해"
+      ]
+    },
+    {
+      "canonical": "난 널 버리지 않아 옵옵옵",
+      "aliases": [
+        "난 널 버리지 않아 옵 옵 옵 옵 인간 여짜",
+        "난 널 버리지 않아 옵옵옵"
+      ]
+    }
+  ]
+}

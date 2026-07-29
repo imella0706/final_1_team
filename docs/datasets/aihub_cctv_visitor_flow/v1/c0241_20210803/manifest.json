@@ -1,0 +1,163 @@
+{
+  "dataset_name": "aihub_cctv_visitor_flow",
+  "version": "v1",
+  "dataset_stage": "curated",
+  "status": "experimental",
+  "artifact_role": "eval_subset",
+  "owner": "Sujin",
+  "created_at": "2026-07-22",
+  "source": {
+    "provider": "AIHub",
+    "source_dataset_id": "489",
+    "source_name": "유동 인구 분석을 위한 CCTV 영상 데이터",
+    "source_url": "https://aihub.or.kr/aihubdata/data/view.do?dataSetSn=489",
+    "raw_scope": "AIHub dataset 489 full source dataset",
+    "selected_source_scope": "Validation ju-ja files only",
+    "source_split": "Validation ju-ja",
+    "downloaded_files": [
+      {
+        "file": "VS3_ju-ja.zip",
+        "file_key": 65983,
+        "role": "validation source videos"
+      },
+      {
+        "file": "VL3_ju-ja.zip",
+        "file_key": 65995,
+        "role": "validation labeling data"
+      }
+    ],
+    "raw_uploaded_to_gcs": false,
+    "raw_gcs_policy": "Do not upload partial AIHub source files as raw. Full official AIHub raw can be reacquired by source URL/file keys; project-specific selected subsets are documented as curated.",
+    "annotation_preserved": true
+  },
+  "curation": {
+    "selected_count": 7,
+    "selected_video_count": 7,
+    "selected_label_count": 7,
+    "source_subset_artifact": "ju_ja_validation_selected",
+    "source_subset_video_count": 132,
+    "source_subset_label_count": 132,
+    "source_subset_size_gb": 8.1,
+    "target_size_gb": "TODO",
+    "actual_size_gb": 0.581,
+    "actual_size_gib": 0.541,
+    "actual_size_bytes": 581420216,
+    "du_size": "555M",
+    "selection_policy": "Select matched C0241 clips from 2021-08-03 as the fixed validation/date-comparison subset for visitor-flow MVP experiments. This subset is used to check whether thresholds selected on 2021-08-02 remain usable on a different date from the same camera/storefront context.",
+    "category_balanced": false,
+    "quality_filters": [
+      "same camera id C0241",
+      "same date 2021-08-03",
+      "matched mp4/json stem",
+      "storefront and pedestrian walkway visible",
+      "person bbox labels available"
+    ],
+    "path_mapping_available": true,
+    "curated_from": "data/curated/aihub_cctv_visitor_flow/v1/ju_ja_validation_selected/",
+    "selected_camera_id": "C0241",
+    "selected_date": "2021-08-03",
+    "selected_business_context": "TOM N TOMS COFFEE storefront CCTV",
+    "relation_to_primary_subset": "Primary dashboard lineage remains c0241_20210802. This c0241_20210803 subset is a validation/comparison date, not a replacement for the main Aug 2 sample."
+  },
+  "processing": {
+    "input_dataset": "data/curated/aihub_cctv_visitor_flow/v1/c0241_20210803/",
+    "artifact_name": "c0241_20210803_eval_subset",
+    "target_use": "evaluation",
+    "preprocessing_steps": [
+      "download AIHub Validation ju-ja source and label zip files",
+      "extract VS3_ju-ja.zip into local extracted video folder",
+      "extract VL3_ju-ja.zip into local extracted label folder",
+      "copy Validation ju-ja files into curated source subset ju_ja_validation_selected",
+      "select all matched C0241 clips from 2021-08-03",
+      "copy matched mp4/json pairs into the flat curated folder layout: videos/ and labels/",
+      "use this subset as the Aug 3 fixed-date validation input for L2-3a/L2-3b and as a comparison date for L2-4"
+    ],
+    "downstream_scripts": [
+      "scripts/visitor_flow_yolo_config_compare.py",
+      "scripts/archive/visitor_flow/L2/visitor_flow_l2_aggregate.py",
+      "scripts/visitor_flow_yolo_evaluate.py"
+    ],
+    "downstream_output_examples": [
+      "outputs/visitor_flow_mvp/c0241_20210802_20210803_yolo_l2_3/model_config_compare.csv",
+      "outputs/visitor_flow_mvp/c0241_20210802_20210803_yolo_l2_3/model_config_compare.json",
+      "outputs/visitor_flow_mvp/c0241_20210802_20210803_l2_4/frames.parquet"
+    ]
+  },
+  "storage": {
+    "gcs_path": "gs://ssakda/projects/brandmate/data/curated/aihub_cctv_visitor_flow/v1/c0241_20210803/",
+    "curated_layout": {
+      "videos_path": "videos/",
+      "labels_path": "labels/"
+    },
+    "source_subset_gcs_path": "gs://ssakda/projects/brandmate/data/curated/aihub_cctv_visitor_flow/v1/ju_ja_validation_selected/",
+    "source_subset_local_example_path": "data/curated/aihub_cctv_visitor_flow/v1/ju_ja_validation_selected/",
+    "local_example_path": "data/curated/aihub_cctv_visitor_flow/v1/c0241_20210803/",
+    "dvc_tracked": false,
+    "gcs_uploaded": false
+  },
+  "reproducibility": {
+    "generation_script_available": false,
+    "generation_script_path": "TODO: add reusable curation script if this subset becomes stable",
+    "generation_note_path": "docs/datasets/aihub_cctv_visitor_flow/v1/c0241_20210803/description.md#rebuild-from-source",
+    "aihub_downloader": {
+      "tool_name": "aihubshell",
+      "download_url": "https://api.aihub.or.kr/api/aihubshell.do",
+      "local_tool_path_example": "data/local/aihub_tools/aihubshell",
+      "git_tracked": false,
+      "install_commands": [
+        "mkdir -p data/local/aihub_tools",
+        "curl -L -o data/local/aihub_tools/aihubshell https://api.aihub.or.kr/api/aihubshell.do",
+        "chmod +x data/local/aihub_tools/aihubshell"
+      ],
+      "download_command": "data/local/aihub_tools/aihubshell -mode d -datasetkey 489 -filekey 65983,65995 -aihubapikey '<AIHUB_API_KEY>'"
+    },
+    "source_file_keys": [
+      {
+        "file": "VS3_ju-ja.zip",
+        "file_key": 65983,
+        "role": "Validation ju-ja source videos"
+      },
+      {
+        "file": "VL3_ju-ja.zip",
+        "file_key": 65995,
+        "role": "Validation ju-ja labels"
+      }
+    ],
+    "extraction_note": "Downloaded zip files are extracted into local working folders first, then copied into standard curated folders using videos/ and labels/. Any local folder named raw is only an extraction folder name, not the team dataset-stage raw.",
+    "random_seed": "none",
+    "can_rebuild": "yes, if AIHub access and the listed file keys are available"
+  },
+  "privacy_policy": {
+    "face_recognition": false,
+    "identity_tracking": false,
+    "raw_video_git_tracked": false,
+    "allowed_claims": [
+      "same-camera date comparison",
+      "time-bucket person observation density",
+      "frame-level person observation metrics",
+      "storefront pedestrian flow validation"
+    ],
+    "forbidden_claims": [
+      "actual TOM N TOMS visitor count",
+      "purchase conversion",
+      "customer identity",
+      "gender/age targeting",
+      "C0241-wide generalization beyond the sampled dates"
+    ]
+  },
+  "validation": {
+    "mp4_count": 7,
+    "json_count": 7,
+    "matched_stem_count": 7,
+    "all_stems_match_selected_camera": true,
+    "all_stems_match_selected_date": true,
+    "used_in_l2_3a": true,
+    "used_in_l2_3b_balanced_subset": true,
+    "used_in_l2_4_comparison": true
+  },
+  "todo": [
+    "Confirm exact GCS bucket/prefix before upload.",
+    "Convert manual curation commands into a reusable script if more date subsets are added.",
+    "Decide whether processed L2 outputs should be DVC-tracked after the MVP stabilizes."
+  ]
+}

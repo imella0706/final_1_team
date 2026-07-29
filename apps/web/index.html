@@ -1,0 +1,663 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="BrandMate 광고 문구와 이미지 생성 모델 통합 화면" />
+    <meta name="theme-color" content="#f3f0e9" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="BrandMate" />
+    <!-- [Design Intent] Leave empty for same-origin production. If the API uses a
+         separate HTTPS origin, set it here and add that exact origin to connect-src. -->
+    <meta name="brandmate-api-origin" content="" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; base-uri 'none'; object-src 'none'; script-src 'self'; worker-src 'self'; manifest-src 'self'; style-src 'self'; img-src 'self' data: blob:; media-src 'self' data: blob:; connect-src 'self' http://localhost:7660 http://127.0.0.1:7660 http://34.55.162.157:7660; form-action 'self'"
+    />
+    <title>BrandMate Ad Content Studio</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <link rel="icon" type="image/png" sizes="192x192" href="./icons/icon-192.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="./icons/apple-touch-icon.png" />
+    <link rel="stylesheet" href="./styles.css?v=pwa-result-tabs-20260729" />
+  </head>
+  <body>
+    <header class="topbar">
+      <a class="brand" href="#" aria-label="BrandMate">
+        <span class="brand-mark" aria-hidden="true">B</span>
+        <span>
+          <strong>BrandMate</strong>
+          <small>CONTENT STUDIO</small>
+        </span>
+      </a>
+      <div class="topbar-actions">
+        <div class="topbar-status">
+          <span class="status-dot" aria-hidden="true"></span>
+          <span id="api-state">인증 확인 중</span>
+        </div>
+        <div class="auth-user" id="auth-user" hidden>
+          <span id="auth-user-name"></span>
+          <button class="topbar-command" id="security-button" type="button">보안</button>
+          <button class="topbar-command" id="logout-button" type="button">로그아웃</button>
+        </div>
+      </div>
+    </header>
+
+    <dialog class="auth-dialog" id="auth-dialog" aria-labelledby="auth-title">
+      <section class="auth-surface">
+        <div class="auth-heading">
+          <span class="brand-mark" aria-hidden="true">B</span>
+          <div>
+            <p class="eyebrow">BRANDMATE</p>
+            <h1 id="auth-title">Content Studio</h1>
+          </div>
+        </div>
+
+        <div class="auth-tabs" id="auth-tabs" role="tablist" aria-label="인증 방식">
+          <button id="login-tab" type="button" role="tab" aria-selected="true">로그인</button>
+          <button id="signup-tab" type="button" role="tab" aria-selected="false">회원가입</button>
+        </div>
+
+        <form class="auth-form" id="login-form">
+          <label for="login-email">이메일</label>
+          <input id="login-email" name="email" type="email" autocomplete="username" maxlength="320" required />
+          <label for="login-password">비밀번호</label>
+          <input id="login-password" name="password" type="password" autocomplete="current-password" maxlength="128" required />
+          <p class="auth-error" id="login-error" role="alert" hidden></p>
+          <button class="auth-submit" type="submit">로그인</button>
+          <button class="auth-link-button" id="forgot-password-button" type="button">비밀번호를 잊으셨나요?</button>
+        </form>
+
+        <form class="auth-form" id="signup-form" hidden>
+          <label for="signup-name">이름</label>
+          <input id="signup-name" name="displayName" autocomplete="name" maxlength="100" required />
+          <label for="signup-email">이메일</label>
+          <input id="signup-email" name="email" type="email" autocomplete="username" maxlength="320" required />
+          <label for="signup-password">비밀번호</label>
+          <input id="signup-password" name="password" type="password" autocomplete="new-password" minlength="12" maxlength="128" required />
+          <label for="signup-password-confirm">비밀번호 확인</label>
+          <input id="signup-password-confirm" name="passwordConfirm" type="password" autocomplete="new-password" minlength="12" maxlength="128" required />
+          <p class="auth-error" id="signup-error" role="alert" hidden></p>
+          <button class="auth-submit" type="submit">계정 만들기</button>
+        </form>
+
+        <form class="auth-form" id="forgot-password-form" hidden>
+          <h2>비밀번호 재설정</h2>
+          <p class="auth-description">가입한 이메일로 일회용 재설정 링크를 보냅니다.</p>
+          <label for="forgot-password-email">이메일</label>
+          <input id="forgot-password-email" name="email" type="email" autocomplete="email" maxlength="320" required />
+          <p class="auth-error" id="forgot-password-error" role="alert" hidden></p>
+          <button class="auth-submit" type="submit">재설정 메일 보내기</button>
+          <button class="auth-link-button auth-back-button" type="button">로그인으로 돌아가기</button>
+        </form>
+
+        <form class="auth-form" id="reset-password-form" hidden>
+          <h2>새 비밀번호 설정</h2>
+          <label for="reset-password">새 비밀번호</label>
+          <input id="reset-password" name="password" type="password" autocomplete="new-password" minlength="12" maxlength="128" required />
+          <label for="reset-password-confirm">새 비밀번호 확인</label>
+          <input id="reset-password-confirm" name="passwordConfirm" type="password" autocomplete="new-password" minlength="12" maxlength="128" required />
+          <p class="auth-error" id="reset-password-error" role="alert" hidden></p>
+          <button class="auth-submit" type="submit">비밀번호 변경</button>
+          <button class="auth-link-button auth-back-button" type="button">로그인으로 돌아가기</button>
+        </form>
+      </section>
+    </dialog>
+
+    <dialog class="auth-dialog" id="security-dialog" aria-labelledby="security-title">
+      <section class="auth-surface">
+        <div class="security-heading">
+          <div>
+            <p class="eyebrow">ACCOUNT SECURITY</p>
+            <h1 id="security-title">계정 보안</h1>
+          </div>
+          <button class="topbar-command" id="security-close-button" type="button">닫기</button>
+        </div>
+
+        <section class="security-section">
+          <h2>로그인된 기기</h2>
+          <p class="auth-description">모르는 기기는 즉시 로그아웃시키세요.</p>
+          <div class="session-list" id="session-list"></div>
+        </section>
+
+        <form class="auth-form security-section" id="change-password-form">
+          <h2>비밀번호 변경</h2>
+          <label for="current-password">현재 비밀번호</label>
+          <input id="current-password" name="currentPassword" type="password" autocomplete="current-password" maxlength="128" required />
+          <label for="new-password">새 비밀번호</label>
+          <input id="new-password" name="newPassword" type="password" autocomplete="new-password" minlength="12" maxlength="128" required />
+          <label for="new-password-confirm">새 비밀번호 확인</label>
+          <input id="new-password-confirm" name="newPasswordConfirm" type="password" autocomplete="new-password" minlength="12" maxlength="128" required />
+          <p class="auth-error" id="change-password-error" role="alert" hidden></p>
+          <button class="auth-submit" type="submit">비밀번호 변경 후 전체 로그아웃</button>
+        </form>
+      </section>
+    </dialog>
+
+    <main id="app-main" hidden>
+      <section class="service-selection" id="service-selection" aria-labelledby="service-selection-title">
+        <div class="service-heading">
+          <p class="eyebrow">BRANDMATE WORKSPACE</p>
+          <h1 id="service-selection-title">무엇을 시작할까요?</h1>
+          <p>
+            광고 콘텐츠 생성은 기존 BrandMate 화면에서 진행하고, 상권 분석은 개발 중인
+            CCTV 보행 관측 대시보드 POC를 별도 창으로 엽니다.
+          </p>
+        </div>
+
+        <div class="service-grid" aria-label="서비스 선택">
+          <button class="service-card ad-card" id="open-ad-studio" type="button">
+            <span class="service-badge">A</span>
+            <strong>광고 생성</strong>
+            <small>매장 정보와 상품 정보를 바탕으로 광고 문구와 이미지를 만듭니다.</small>
+            <span class="service-action">광고 생성 시작</span>
+          </button>
+
+          <a
+            class="service-card analysis-card"
+            href="http://127.0.0.1:8503"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            <span class="service-badge">C</span>
+            <strong>상권 분석</strong>
+            <small>
+              CCTV 보행 관측량과 시간대별 상권 분석 결과를 Streamlit POC로 확인합니다.
+              추후 Brandmate 웹 화면으로 통합할 예정입니다.
+            </small>
+            <span class="service-note">로컬 Streamlit 서버 필요</span>
+            <span class="service-action">대시보드 새 탭 열기</span>
+          </a>
+        </div>
+      </section>
+
+      <section class="ad-studio" id="ad-studio" hidden>
+      <section class="intro">
+        <div>
+          <p class="eyebrow">COPY + IMAGE MODEL PIPELINE</p>
+          <h1>광고 문구와 이미지를<br /><em>한 번에 생성</em></h1>
+          <p class="intro-copy">
+            기존 광고 문구 모델 흐름에 이미지 생성 모델 선택을 더해, 입력한 광고 정보에 맞는
+            최종 광고 콘텐츠를 실제 이미지 모델 결과로 확인합니다.
+          </p>
+        </div>
+        <div class="flow-summary" aria-label="생성 흐름">
+          <button class="text-button" id="back-to-services" type="button">서비스 선택으로 돌아가기</button>
+          <span>입력</span><i></i><span>카피 모델</span><i></i><span>이미지 모델</span><i></i><span>콘텐츠</span>
+        </div>
+      </section>
+
+      <div class="workspace">
+        <section class="panel input-panel">
+          <div class="panel-heading">
+            <div>
+              <span class="step-number">01</span>
+              <h2>광고 정보</h2>
+            </div>
+            <button class="text-button" id="reset-button" type="button">초기화</button>
+          </div>
+
+          <form id="ad-form">
+            <div class="field">
+              <label for="reference-image" id="reference-image-label">참고 이미지(선택)</label>
+              <input id="reference-image" name="referenceImage" type="file" accept="image/*" multiple />
+              <label class="inline-toggle">
+                <input id="reference-cutout" name="referenceCutout" type="checkbox" checked />
+                <span>제품만 추출</span>
+              </label>
+              <div class="reference-preview" id="reference-preview" hidden>
+                <img id="reference-preview-image" alt="선택한 참고 이미지 미리보기" />
+                <div>
+                  <strong id="reference-preview-name"></strong>
+                  <small id="reference-preview-meta"></small>
+                  <button class="text-button" id="reference-preview-clear" type="button">사진 제거</button>
+                </div>
+              </div>
+            </div>
+
+            <div class="model-grid">
+              <div class="model-field">
+                <label for="copy-model">광고 문구 모델 <b>필수</b></label>
+                <select id="copy-model" name="copyModel"></select>
+                <small id="copy-model-help">모델 정보를 불러오는 중입니다.</small>
+              </div>
+              <div class="model-field vision">
+                <label for="vision-model">사진 분석 모델</label>
+                <select id="vision-model" name="visionModel"></select>
+                <label class="inline-toggle vision-analysis-toggle">
+                  <input id="use-vision-analysis" name="useVisionAnalysis" type="checkbox" checked />
+                  <span>업로드 사진 분석 사용</span>
+                </label>
+                <small id="vision-model-help">Vision 모델 정보를 불러오는 중입니다.</small>
+              </div>
+              <div class="model-field image">
+                <label for="image-model">이미지 생성 모델 <b>필수</b></label>
+                <select id="image-model" name="imageModel"></select>
+                <small id="image-model-help">모델 정보를 불러오는 중입니다.</small>
+              </div>
+            </div>
+
+            <fieldset class="channel-first">
+              <legend>채널</legend>
+              <select id="channel-select" name="channel">
+                <option value="instagram">인스타그램</option>
+                <option value="naver_blog">네이버 블로그</option>
+                <option value="delivery_app">배달앱</option>
+                <option value="store_poster">매장 포스터</option>
+              </select>
+              <small>선택한 채널에 따라 입력 항목과 모델 프롬프트 구성이 달라집니다.</small>
+            </fieldset>
+
+            <fieldset class="trend-card-panel" id="trend-card-panel">
+              <div class="trend-card-heading">
+                <div>
+                  <legend>밈 활용 <span>Instagram</span></legend>
+                  <small>검수된 TrendCard의 문장 구조를 광고 문구에 적용합니다.</small>
+                </div>
+                <label class="inline-toggle trend-card-toggle">
+                  <input id="use-trend-card" name="useTrendCard" type="checkbox" checked />
+                  <span>밈 사용</span>
+                </label>
+              </div>
+              <label class="trend-card-select-label" for="trend-card-select">사용할 밈</label>
+              <select id="trend-card-select" name="trendCardId">
+                <option value="">TrendCard를 불러오는 중입니다.</option>
+              </select>
+              <div class="trend-card-detail" id="trend-card-detail" hidden>
+                <div class="trend-card-title-row">
+                  <strong id="trend-card-name"></strong>
+                  <span id="trend-card-risk"></span>
+                </div>
+                <p id="trend-card-meaning"></p>
+                <div class="trend-card-marker">
+                  핵심 표현
+                  <b id="trend-card-markers"></b>
+                </div>
+                <details>
+                  <summary>사용 규칙과 주의사항</summary>
+                  <div class="trend-card-rules">
+                    <div>
+                      <strong>사용 규칙</strong>
+                      <ul id="trend-card-usage-rules"></ul>
+                    </div>
+                    <div>
+                      <strong>피해야 할 사용</strong>
+                      <ul id="trend-card-prohibited-usage"></ul>
+                    </div>
+                  </div>
+                </details>
+              </div>
+              <p class="trend-card-disabled-note" id="trend-card-disabled-note" hidden>
+                밈을 끄면 일반 광고 문구로 생성합니다.
+              </p>
+            </fieldset>
+
+            <fieldset>
+              <legend>업종</legend>
+              <div class="choice-grid five">
+                <label><input type="radio" name="businessType" value="cafe" checked /><span>카페</span></label>
+                <label><input type="radio" name="businessType" value="bakery" /><span>베이커리</span></label>
+                <label><input type="radio" name="businessType" value="dessert" /><span>디저트</span></label>
+                <label><input type="radio" name="businessType" value="restaurant" /><span>음식점</span></label>
+                <label><input type="radio" name="businessType" value="pub" /><span>주점</span></label>
+              </div>
+            </fieldset>
+
+            <fieldset>
+              <legend>상황</legend>
+              <div class="choice-grid three">
+                <label><input type="radio" name="situation" value="new_menu" checked /><span>신메뉴</span></label>
+                <label><input type="radio" name="situation" value="discount" /><span>세트메뉴 할인</span></label>
+                <label><input type="radio" name="situation" value="event" /><span>이벤트</span></label>
+                <label><input type="radio" name="situation" value="delivery" /><span>배달</span></label>
+                <label><input type="radio" name="situation" value="takeout" /><span>포장</span></label>
+                <label><input type="radio" name="situation" value="visit" /><span>방문 유도</span></label>
+              </div>
+            </fieldset>
+
+            <fieldset>
+              <legend>나이대</legend>
+              <div class="choice-grid five">
+                <label><input type="radio" name="ageGroup" value="teens" /><span>10대</span></label>
+                <label><input type="radio" name="ageGroup" value="twenties" checked /><span>20대</span></label>
+                <label><input type="radio" name="ageGroup" value="thirties" /><span>30대</span></label>
+                <label><input type="radio" name="ageGroup" value="forties" /><span>40대</span></label>
+                <label><input type="radio" name="ageGroup" value="fifties_plus" /><span>50대 이상</span></label>
+              </div>
+            </fieldset>
+
+            <fieldset>
+              <legend>성별</legend>
+              <div class="choice-grid three">
+                <label><input type="radio" name="gender" value="all" checked /><span>전체</span></label>
+                <label><input type="radio" name="gender" value="female" /><span>여성</span></label>
+                <label><input type="radio" name="gender" value="male" /><span>남성</span></label>
+              </div>
+            </fieldset>
+
+            <fieldset>
+              <legend>직업군</legend>
+              <div class="choice-grid four">
+                <label><input type="radio" name="occupationGroup" value="none" checked /><span>해당 없음</span></label>
+                <label><input type="radio" name="occupationGroup" value="office_worker" /><span>직장인</span></label>
+                <label><input type="radio" name="occupationGroup" value="student" /><span>학생</span></label>
+                <label><input type="radio" name="occupationGroup" value="self_employed" /><span>자영업</span></label>
+                <label><input type="radio" name="occupationGroup" value="freelancer" /><span>프리랜서</span></label>
+                <label><input type="radio" name="occupationGroup" value="professional" /><span>전문직</span></label>
+                <label><input type="radio" name="occupationGroup" value="homemaker" /><span>주부</span></label>
+                <label><input type="radio" name="occupationGroup" value="job_seeker" /><span>취준생</span></label>
+                <label><input type="radio" name="occupationGroup" value="other" /><span>기타</span></label>
+              </div>
+            </fieldset>
+
+            <fieldset>
+              <legend>타겟</legend>
+              <div class="choice-grid four">
+                <label><input type="checkbox" name="target" value="office_workers" checked /><span>직장인</span></label>
+                <label><input type="checkbox" name="target" value="students" /><span>학생</span></label>
+                <label><input type="checkbox" name="target" value="middle_school_students" /><span>중학생</span></label>
+                <label><input type="checkbox" name="target" value="high_school_students" /><span>고등학생</span></label>
+                <label><input type="checkbox" name="target" value="college_students" /><span>대학생</span></label>
+                <label><input type="checkbox" name="target" value="families" /><span>가족</span></label>
+                <label><input type="checkbox" name="target" value="couples" /><span>커플</span></label>
+                <label><input type="checkbox" name="target" value="solo" /><span>혼자</span></label>
+              </div>
+            </fieldset>
+
+            <fieldset>
+              <legend>톤</legend>
+              <select name="tone">
+                <option value="emotional">감성적</option>
+                <option value="friendly">친근한</option>
+                <option value="playful">재치있는</option>
+                <option value="premium">고급스러운</option>
+              </select>
+            </fieldset>
+
+            <div class="field">
+              <label for="business-name">가게명 <b>필수</b></label>
+              <input id="business-name" name="businessName" value="오후의 조각" maxlength="100" required />
+            </div>
+
+            <div class="field">
+              <label>상품과 가격 <b>필수</b></label>
+              <div class="product-list" id="product-list">
+                <div class="product-row">
+                  <input name="productName" placeholder="상품명" required />
+                  <input name="productPrice" placeholder="가격" maxlength="80" />
+                </div>
+              </div>
+              <button class="text-button add-product-button" id="add-product-button" type="button">상품 추가</button>
+              <small>각 상품 옆에 가격을 입력하면 모델에는 상품명과 가격 정보가 함께 전달됩니다.</small>
+            </div>
+
+            <div class="field">
+              <label for="features">강조할 특징</label>
+              <textarea id="features" name="features" rows="3">매일 아침 직접 만드는 디저트
+평일 오전 11시부터 오후 2시까지 런치 세트 운영</textarea>
+            </div>
+
+            <div class="field">
+              <label for="operating-info">운영 안내</label>
+              <input id="operating-info" name="operatingInfo" placeholder="예: 평일 오전 11시 ~ 오후 2시 런치 세트 운영" maxlength="300" />
+              <small>입력한 내용만 네이버 블로그 원고의 매장 안내에 표시됩니다.</small>
+            </div>
+
+            <div class="field">
+              <label for="interests">관심사</label>
+              <input id="interests" name="interests" value="디저트 투어, 감성 카페, 사진 찍기" maxlength="160" />
+            </div>
+
+            <div class="two-columns">
+              <div class="field">
+                <label for="region">지역</label>
+                <input id="region" name="region" value="서울 마포구 연남동" maxlength="120" />
+              </div>
+              <div class="field">
+                <label for="trade-area">상권</label>
+                <input id="trade-area" name="tradeArea" value="연남동 골목상권, 주말 데이트 동선" maxlength="160" />
+              </div>
+            </div>
+
+            <div class="field">
+              <label for="audience-detail">세부 타겟 메모</label>
+              <textarea id="audience-detail" name="audienceDetail" rows="3">인스타그램에 디저트 사진을 자주 올리는 고객
+점심 이후 가볍게 들르는 근처 직장인</textarea>
+            </div>
+
+            <div class="field">
+              <label for="prohibited">금지 표현</label>
+              <input id="prohibited" name="prohibited" value="최고, 무조건, 인생 맛집" />
+            </div>
+
+            <button class="generate-button" type="submit">
+              <span>광고 콘텐츠 생성</span>
+              <span aria-hidden="true">→</span>
+            </button>
+          </form>
+        </section>
+
+        <section class="result-column" aria-live="polite">
+          <div class="panel process-panel">
+            <div class="panel-heading">
+              <div>
+                <span class="step-number">02</span>
+                <h2>처리 과정</h2>
+              </div>
+              <span class="run-state" id="run-state">대기</span>
+            </div>
+
+            <ol class="pipeline" id="pipeline">
+              <li data-stage="input"><span>IN</span><strong>입력 정리</strong><small>대기</small></li>
+              <li data-stage="copy"><span>M1</span><strong>광고 문구 모델</strong><small>대기</small></li>
+              <li data-stage="bridge"><span>BR</span><strong>이미지 프롬프트</strong><small>대기</small></li>
+              <li data-stage="image"><span>M2</span><strong>이미지 생성 모델</strong><small>대기</small></li>
+            </ol>
+
+            <div class="error-box" id="error-box" hidden>
+              <strong>생성에 실패했습니다</strong>
+              <p id="error-message"></p>
+            </div>
+
+            <details class="payload-box">
+              <summary>모델 간 전달 데이터 보기 <span>JSON</span></summary>
+              <pre id="payload-preview">아직 생성된 데이터가 없습니다.</pre>
+            </details>
+          </div>
+
+          <div class="panel output-panel is-empty" id="output-panel">
+            <div class="empty-state" id="empty-state">
+              <strong>아직 만들어진 광고가 없습니다</strong>
+              <p>광고 정보를 확인하고 콘텐츠 생성을 실행해 주세요.</p>
+            </div>
+
+            <div class="generated-content" id="generated-content" hidden>
+              <div class="panel-heading output-heading">
+                <div>
+                  <span class="step-number">03</span>
+                  <h2>최종 광고 콘텐츠</h2>
+                </div>
+                <span class="complete-badge">완료</span>
+              </div>
+
+              <div class="result-mode-tabs" role="tablist" aria-label="광고 결과 형식">
+                <button
+                  class="result-mode-tab is-active"
+                  id="image-result-tab"
+                  type="button"
+                  role="tab"
+                  aria-selected="true"
+                  aria-controls="image-result-panel"
+                  data-result-mode="image"
+                >
+                  <span>이미지 광고</span>
+                  <small>포스터와 채널 게시 문구</small>
+                </button>
+                <button
+                  class="result-mode-tab"
+                  id="voice-result-tab"
+                  type="button"
+                  role="tab"
+                  aria-selected="false"
+                  aria-controls="voice-result-panel"
+                  data-result-mode="voice"
+                >
+                  <span>음성 광고</span>
+                  <small>생성된 문구로 내레이션 제작</small>
+                </button>
+              </div>
+
+              <section
+                class="result-mode-panel"
+                id="image-result-panel"
+                role="tabpanel"
+                aria-labelledby="image-result-tab"
+                data-result-panel="image"
+              >
+                <div class="result-grid">
+                <article class="copy-result">
+                  <div class="result-label">광고 문구 <span id="result-copy-model"></span></div>
+                  <p class="context-line" id="context-line"></p>
+                  <div class="result-trend-card" id="result-trend-card" hidden>
+                    <span>적용된 밈</span>
+                    <strong id="result-trend-card-name"></strong>
+                    <small id="result-trend-card-id"></small>
+                  </div>
+                  <h3 id="headline"></h3>
+                  <p class="body-copy" id="body-copy"></p>
+                  <div class="result-block">
+                    <small>CTA</small>
+                    <strong id="cta"></strong>
+                  </div>
+                  <div class="result-block">
+                    <small>HASHTAGS</small>
+                    <p class="hashtag-list" id="hashtags"></p>
+                  </div>
+                  <div class="channel-recommendation">
+                    <small id="channel-format"></small>
+                    <strong>채널 게시물</strong>
+                    <div class="publish-package">
+                      <span>이미지 제목</span>
+                      <h4 id="overlay-headline"></h4>
+                      <span>인스타 캡션</span>
+                      <p id="instagram-caption"></p>
+                      <span>CTA</span>
+                      <p id="publish-cta"></p>
+                      <span>해시태그</span>
+                      <p class="hashtag-list" id="publish-hashtags"></p>
+                      <span>게시 제목</span>
+                      <h4 id="publish-title"></h4>
+                      <span>완성 게시 본문</span>
+                      <p id="publish-body"></p>
+                      <span>홍보 양식</span>
+                      <pre id="promotion-template"></pre>
+                      <span id="blog-layout-label">블로그 구성</span>
+                      <pre id="blog-layout"></pre>
+                      <span id="naver-blog-copy-label" hidden>네이버 블로그 복붙 원고</span>
+                      <pre class="naver-blog-copy-preview" id="naver-blog-copy-preview" hidden></pre>
+                      <button class="text-button naver-blog-copy-button" id="copy-naver-blog-button" type="button" hidden>
+                        네이버 블로그 원고 복사
+                      </button>
+                    </div>
+                    <strong>글과 사진 배치 추천</strong>
+                    <p id="channel-writing"></p>
+                    <p id="channel-image"></p>
+                    <p id="channel-placement"></p>
+                    <p id="image-insert-guide"></p>
+                  </div>
+                  <div class="safety-check">
+                    <span>✓</span>
+                    <div><strong>금지어 검토 결과</strong><small id="safety-copy"></small></div>
+                  </div>
+                </article>
+
+                <article class="image-result">
+                  <div class="result-label">광고 이미지 <span id="result-image-model"></span></div>
+                  <figure class="generated-image-frame poster-preview">
+                    <img id="generated-image" alt="생성된 광고 이미지" />
+                    <figcaption class="poster-copy">
+                      <strong id="poster-headline"></strong>
+                      <small id="poster-subtitle"></small>
+                    </figcaption>
+                  </figure>
+                  <div class="image-actions">
+                    <button class="text-button" id="download-poster-button" type="button">
+                      이미지+글자 저장
+                    </button>
+                    <button class="text-button" id="copy-poster-button" type="button">
+                      이미지+글자 복사
+                    </button>
+                  </div>
+                  <p class="image-caption" id="image-caption"></p>
+                </article>
+                </div>
+              </section>
+
+              <section
+                class="result-mode-panel voice-ad-section"
+                id="voice-result-panel"
+                role="tabpanel"
+                aria-labelledby="voice-result-tab voice-ad-title"
+                data-result-panel="voice"
+                hidden
+              >
+                <div class="voice-ad-heading">
+                  <div>
+                    <div class="result-label">음성 광고 <span id="result-audio-model">gpt-4o-mini-tts</span></div>
+                    <h3 id="voice-ad-title">광고 문구를 음성으로 만들기</h3>
+                  </div>
+                  <span class="voice-state" id="voice-state">준비됨</span>
+                </div>
+
+                <div class="voice-ad-layout">
+                  <div class="field voice-script-field">
+                    <label for="voice-script">내레이션 대본</label>
+                    <textarea id="voice-script" rows="6" maxlength="4096"></textarea>
+                    <small><span id="voice-script-count">0</span> / 4096자</small>
+                  </div>
+
+                  <div class="voice-settings">
+                    <div class="field">
+                      <label for="voice-select">목소리</label>
+                      <select id="voice-select">
+                        <option value="coral" selected>Coral · 밝고 자연스러움</option>
+                        <option value="nova">Nova · 활기차고 친근함</option>
+                        <option value="alloy">Alloy · 균형 잡힌 중성</option>
+                        <option value="onyx">Onyx · 낮고 차분함</option>
+                        <option value="shimmer">Shimmer · 부드럽고 밝음</option>
+                        <option value="echo">Echo · 또렷하고 안정적</option>
+                        <option value="ash">Ash · 차분하고 자연스러움</option>
+                        <option value="sage">Sage · 따뜻하고 신뢰감 있음</option>
+                        <option value="fable">Fable · 표현력이 풍부함</option>
+                      </select>
+                    </div>
+
+                    <div class="field speed-field">
+                      <label for="voice-speed">말하기 속도 <output id="voice-speed-value">1.0×</output></label>
+                      <input id="voice-speed" type="range" min="0.75" max="1.5" value="1" step="0.05" />
+                    </div>
+
+                    <button class="generate-voice-button" id="generate-voice-button" type="button">
+                      음성 광고 생성
+                    </button>
+                  </div>
+                </div>
+
+                <div class="voice-error" id="voice-error" hidden></div>
+                <div class="voice-output" id="voice-output" hidden>
+                  <audio id="voice-player" controls preload="metadata"></audio>
+                  <button class="text-button" id="download-voice-button" type="button">MP3 저장</button>
+                </div>
+                <p class="ai-voice-notice">이 음성은 AI로 생성되었습니다.</p>
+              </section>
+            </div>
+          </div>
+        </section>
+      </div>
+      </section>
+    </main>
+
+    <script src="./app.js?v=pwa-models-result-tabs-20260729"></script>
+  </body>
+</html>

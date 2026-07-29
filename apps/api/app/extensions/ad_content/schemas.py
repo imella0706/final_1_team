@@ -1,0 +1,147 @@
+from enum import StrEnum
+
+from pydantic import BaseModel, ConfigDict, Field
+
+from app.modules.ad_copy.schemas import AdCopyRequest, AdCopyResponse
+
+
+class ImageModel(StrEnum):
+    OPENAI_GPT_IMAGE_1_MINI = "openai/gpt-image-1-mini"
+    OPENAI_GPT_IMAGE_1 = "openai/gpt-image-1"
+    OPENAI_GPT_IMAGE_2 = "openai/gpt-image-2"
+    OPENAI_GPT_5_2_IMAGE_TOOL = "openai-responses/gpt-5.2-2025-12-11"
+    OPENAI_GPT_5_5_IMAGE_TOOL = "openai-responses/gpt-5.5"
+    FLUX_SCHNELL = "black-forest-labs/FLUX.1-schnell"
+    SDXL_BASE = "stabilityai/stable-diffusion-xl-base-1.0"
+    SDXL_TURBO = "stabilityai/sdxl-turbo"
+    OPENJOURNEY = "prompthero/openjourney"
+
+
+class VisionModel(StrEnum):
+    OPENAI_GPT_5_4_MINI = "openai/gpt-5.4-mini"
+    LOCAL_QWEN_2_5_VL_7B = "local/qwen2.5vl:7b"
+    LOCAL_QWEN_3_VL_2B = "local/qwen3-vl:2b"
+    LOCAL_QWEN_3_VL_4B = "local/qwen3-vl:4b"
+    LOCAL_QWEN_3_VL_8B = "local/qwen3-vl:8b"
+    QWEN_2_5_VL_7B = "Qwen/Qwen2.5-VL-7B-Instruct"
+    QWEN_3_VL_2B = "Qwen/Qwen3-VL-2B-Instruct"
+    QWEN_3_VL_4B = "Qwen/Qwen3-VL-4B-Instruct"
+    QWEN_3_VL_8B = "Qwen/Qwen3-VL-8B-Instruct"
+    INTERNVL_3_2B = "OpenGVLab/InternVL3-2B"
+    INTERNVL_3_8B = "OpenGVLab/InternVL3-8B"
+
+
+class VisionModelOption(BaseModel):
+    id: VisionModel
+    name: str
+    provider: str
+    availability: str
+    enabled: bool = True
+    recommended: bool = False
+    note: str
+
+
+class ImageModelAvailability(StrEnum):
+    HOSTED = "hosted"
+    GATED = "gated"
+
+
+class ImageModelOption(BaseModel):
+    id: ImageModel
+    name: str
+    provider: str
+    availability: ImageModelAvailability
+    enabled: bool = True
+    recommended: bool = False
+    note: str
+
+
+class AdImageRequest(BaseModel):
+    model: ImageModel = ImageModel.OPENAI_GPT_IMAGE_1_MINI
+    prompt: str = Field(min_length=1, max_length=4000)
+    negative_prompt: str | None = Field(default=None, max_length=2000)
+    reference_image_data_url: str | None = Field(default=None, max_length=4_000_000)
+    width: int = Field(default=1024, ge=512, le=1536)
+    height: int = Field(default=1280, ge=512, le=1536)
+    guidance_scale: float = Field(default=3.5, ge=1, le=20)
+    num_inference_steps: int = Field(default=28, ge=1, le=60)
+    seed: int | None = Field(default=None, ge=0, le=2**32 - 1)
+
+
+class AdImageResponse(BaseModel):
+    model: str
+    prompt: str
+    image_base64: str
+    media_type: str
+    latency_ms: int
+
+
+class AdAudioRequest(BaseModel):
+    input: str = Field(min_length=1, max_length=4096)
+    voice: str | None = Field(default=None, min_length=1, max_length=80)
+    instructions: str | None = Field(default=None, max_length=1000)
+    speed: float = Field(default=1.0, ge=0.25, le=4.0)
+
+
+class AdAudioResponse(BaseModel):
+    provider: str = "openai"
+    requested_provider: str = "openai"
+    model: str
+    requested_model: str
+    fallback_used: bool = False
+    voice: str
+    media_type: str
+    audio_base64: str
+    latency_ms: int
+
+
+class AudioProviderStatus(BaseModel):
+    provider: str
+    configured: bool
+    available: bool
+    model: str
+    selected: bool = False
+    fallback_enabled: bool = False
+    voices: list[str] = Field(default_factory=list)
+    instructions_supported: bool = True
+    detail: str = ""
+
+
+class BlogImageInput(BaseModel):
+    id: str = Field(min_length=1, max_length=40)
+    name: str = Field(default="", max_length=120)
+    data_url: str = Field(min_length=1, max_length=4_000_000)
+
+
+class AdContentRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    copy_request: AdCopyRequest = Field(alias="copy")
+    use_vision_analysis: bool = True
+    vision_model: VisionModel = VisionModel.OPENAI_GPT_5_4_MINI
+    image_model: ImageModel = ImageModel.OPENAI_GPT_IMAGE_1_MINI
+    image_width: int = Field(default=1024, ge=512, le=1536)
+    image_height: int = Field(default=1280, ge=512, le=1536)
+    reference_image_data_url: str | None = Field(default=None, max_length=4_000_000)
+    blog_images: list[BlogImageInput] = Field(default_factory=list, max_length=8)
+
+
+class AdContentResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    input: dict[str, object] = Field(default_factory=dict)
+    ad_copy: dict[str, list[str]] = Field(default_factory=dict)
+    copy_result: AdCopyResponse = Field(alias="copy")
+    marketing_strategy: dict[str, object] = Field(default_factory=dict)
+    channel_recommendation: dict[str, object] = Field(default_factory=dict)
+    visual_brief: dict[str, object] = Field(default_factory=dict)
+    product_visualization: dict[str, object] = Field(default_factory=dict)
+    image: AdImageResponse
+    llm_prompt: dict[str, object] = Field(default_factory=dict)
+    vision_prompt: dict[str, object] = Field(default_factory=dict)
+    image_prompt: str
+    negative_prompt: str = ""
+    image_url: str = ""
+    validation: dict[str, object] = Field(default_factory=dict)
+    models: dict[str, str | None] = Field(default_factory=dict)
+    artifacts: dict[str, str] = Field(default_factory=dict)
