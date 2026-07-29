@@ -57,7 +57,7 @@ x-airflow-common: &airflow-common
     BRANDMATE_AIRFLOW_INCLUDE_DIR: /opt/airflow/include
     CLOUDSDK_CONFIG: /home/airflow/.config/gcloud
     GOOGLE_CLOUD_PROJECT: ${GOOGLE_CLOUD_PROJECT:-ssakda}
-    PYTHONPATH: /opt/airflow/include:/opt/airflow/apps/api:/opt/airflow/gather_data/youtube
+    PYTHONPATH: /opt/airflow/include:/opt/airflow/apps/api:/opt/airflow/gather_data:/opt/airflow/gather_data/youtube
   volumes:
     - ./airflow/dags:/opt/airflow/dags:ro
     - ./airflow/include:/opt/airflow/include:ro

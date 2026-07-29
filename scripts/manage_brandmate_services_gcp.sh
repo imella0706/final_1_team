@@ -500,13 +500,8 @@ ensure_airflow() {
     return 0
   fi
 
-  if is_ready "$AIRFLOW_URL/health"; then
-    echo "[ok] Airflow webserver already running: $AIRFLOW_URL"
-    return 0
-  fi
-
   if [[ -f "$PROJECT_ROOT/scripts/airflow/up.sh" ]]; then
-    echo "[start] Airflow via scripts/airflow/up.sh"
+    echo "[start] Airflow containers (webserver & scheduler) via scripts/airflow/up.sh"
     bash "$PROJECT_ROOT/scripts/airflow/up.sh" >/dev/null 2>&1 || {
       echo "[warn] Airflow startup failed or timed out"
     }
