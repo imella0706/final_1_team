@@ -227,3 +227,61 @@ def upload_json_to_gcs(
         "gcs_uri": gcs_uri,
         "size": len(body.encode("utf-8")),
     }
+
+
+def upload_dir_to_gcs(
+    *,
+    local_dir: Path,
+    gcs_prefix: str,
+    client: Any | None = None,
+) -> dict[str, Any]:
+    """Upload all files from a local directory to a GCS URI prefix.
+
+    [Design Intent] Used by landing collection DAGs to push raw crawler run
+    artifacts to gs://ssakda/projects/brandmate/data/landing/sns_trend/...
+    """
+    if not local_dir.is_dir():
+        raise StorageError(f"Local target directory does not exist: {local_dir}")
+
+    bucket_name, prefix = parse_gcs_uri(gcs_prefix)
+    active_client = client or _storage_client()
+    bucket = active_client.bucket(bucket_name)
+
+    prefix_normalized = prefix.rstrip("/")
+    uploaded_files: list[dict[str, Any]] = []
+
+    for file_path in sorted(local_dir.rglob("*")):
+        if not file_path.is_file():
+            continue
+        rel_parts = file_path.relative_to(local_dir).parts
+        blob_name = f"{prefix_normalized}/" + "/".join(rel_parts)
+        blob = bucket.blob(blob_name)
+
+        if hasattr(blob, "upload_from_filename"):
+            try:
+                blob.upload_from_filename(str(file_path))
+            except Exception as error:  # pragma: no cover - external GCS error path
+                raise StorageError(
+                    f"Failed to upload file to GCS: {file_path} -> gs://{bucket_name}/{blob_name}"
+                ) from error
+        else:
+            body = file_path.read_text(encoding="utf-8", errors="replace")
+            if hasattr(blob, "upload_from_string"):
+                blob.upload_from_string(body, content_type="application/octet-stream")
+
+        uploaded_files.append(
+            {
+                "local_path": str(file_path),
+                "gcs_uri": f"gs://{bucket_name}/{blob_name}",
+                "size": file_path.stat().st_size,
+            }
+        )
+
+    return {
+        "status": "uploaded",
+        "gcs_prefix": f"gs://{bucket_name}/{prefix_normalized}/",
+        "local_dir": str(local_dir),
+        "file_count": len(uploaded_files),
+        "files": uploaded_files,
+    }
+

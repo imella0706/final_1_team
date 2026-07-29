@@ -9,6 +9,7 @@ from sns_trend.storage import (
     discover_latest_gcs_processed_version,
     parse_gcs_uri,
     sync_gcs_prefix_to_local,
+    upload_dir_to_gcs,
     upload_json_to_gcs,
 )
 
@@ -24,9 +25,14 @@ class FakeBlob:
     def download_to_filename(self, filename: str) -> None:
         Path(filename).write_text(self.body, encoding="utf-8")
 
-    def upload_from_string(self, body: str, *, content_type: str) -> None:
+    def upload_from_string(self, body: str, *, content_type: str = "application/octet-stream") -> None:
         self.uploaded = body
         self.content_type = content_type
+        self.size = len(body.encode("utf-8"))
+
+    def upload_from_filename(self, filename: str) -> None:
+        body = Path(filename).read_text(encoding="utf-8")
+        self.uploaded = body
         self.size = len(body.encode("utf-8"))
 
 
@@ -177,3 +183,34 @@ def test_upload_json_to_gcs_writes_json_body() -> None:
     assert result["status"] == "uploaded"
     assert upload.content_type == "application/json; charset=utf-8"
     assert '"status": "passed"' in (upload.uploaded or "")
+
+
+def test_upload_dir_to_gcs_uploads_all_files(tmp_path: Path) -> None:
+    client = FakeClient()
+    sub_dir = tmp_path / "sub"
+    sub_dir.mkdir()
+    (tmp_path / "file1.csv").write_text("col1,col2\nval1,val2", encoding="utf-8")
+    (sub_dir / "file2.json").write_text('{"key": "value"}', encoding="utf-8")
+
+    result = upload_dir_to_gcs(
+        local_dir=tmp_path,
+        gcs_prefix="gs://ssakda/projects/brandmate/data/landing/sns_trend/week=2026-W31/raw/youtube/run_id=test_run/",
+        client=client,
+    )
+
+    assert result["status"] == "uploaded"
+    assert result["file_count"] == 2
+
+    bucket_uploads = client.buckets["ssakda"].uploads
+    assert "projects/brandmate/data/landing/sns_trend/week=2026-W31/raw/youtube/run_id=test_run/file1.csv" in bucket_uploads
+    assert "projects/brandmate/data/landing/sns_trend/week=2026-W31/raw/youtube/run_id=test_run/sub/file2.json" in bucket_uploads
+
+
+def test_upload_dir_to_gcs_raises_error_for_missing_dir(tmp_path: Path) -> None:
+    non_existent = tmp_path / "missing_folder"
+    with pytest.raises(StorageError, match="Local target directory does not exist"):
+        upload_dir_to_gcs(
+            local_dir=non_existent,
+            gcs_prefix="gs://ssakda/projects/brandmate/data/landing/sns_trend/test/",
+        )
+

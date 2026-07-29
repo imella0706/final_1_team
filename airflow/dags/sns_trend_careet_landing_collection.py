@@ -408,9 +408,38 @@ def sns_trend_careet_landing_collection() -> None:
     def verify_careet_landing_contract(config: dict[str, Any]) -> dict[str, Any]:
         return _verify_careet_landing_artifacts(config)
 
+    @task
+    def upload_careet_landing_to_gcs(config: dict[str, Any]) -> dict[str, Any]:
+        if not config.get("upload_gcs", True):
+            return {**config, "gcs_landing_upload": {"status": "skipped", "reason": "upload_gcs is False"}}
+
+        from sns_trend.storage import StorageError, upload_dir_to_gcs
+
+        run_dir = Path(config["run_dir"])
+        week = config["week"]
+        source = config["source"]
+        run_id = config["run_id"]
+        gcs_landing_prefix = str(
+            config.get("gcs_landing_prefix")
+            or f"gs://ssakda/projects/brandmate/data/landing/sns_trend/week={week}/raw/{source}/run_id={run_id}/"
+        )
+
+        try:
+            upload_result = upload_dir_to_gcs(
+                local_dir=run_dir,
+                gcs_prefix=gcs_landing_prefix,
+            )
+            return {**config, "gcs_landing_upload": upload_result}
+        except StorageError as error:
+            raise AirflowException(
+                f"Failed to upload Careet landing artifacts to GCS: {error}"
+            ) from error
+
     resolved_config = resolve_careet_landing_context()
     collected = collect_careet_landing(resolved_config)
-    verify_careet_landing_contract(collected)
+    verified = verify_careet_landing_contract(collected)
+    upload_careet_landing_to_gcs(verified)
 
 
 sns_trend_careet_landing_collection()
+
