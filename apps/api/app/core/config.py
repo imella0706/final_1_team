@@ -120,6 +120,7 @@ class Settings(BaseSettings):
     comfyui_img2img_denoise: float = 0.58
     comfyui_timeout_seconds: float = 300
     comfyui_poll_interval_seconds: float = 1
+    comfyui_health_timeout_seconds: float = 1
     image_validation_enabled: bool = False
     image_validator_model_name: str | None = None
     image_validation_threshold: float = 0.24

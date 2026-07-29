@@ -15,6 +15,10 @@ class TextModelConfig:
     api_key_setting: str
 
 
+class TextModelEndpointNotConfiguredError(ValueError):
+    """Raised when a local text model has no configured runtime endpoint."""
+
+
 MODEL_MAP: dict[str, TextModelConfig] = {
     "local/qwen2.5:1.5b": TextModelConfig(
         display_name="Qwen2.5 1.5B · Local",
@@ -175,17 +179,22 @@ def resolve_base_url(config: TextModelConfig) -> str:
     if model_base_url:
         return model_base_url
     local_base_url = settings.local_llm_base_url
+    if config.provider in {
+        TextRuntimeProvider.LM_STUDIO,
+        TextRuntimeProvider.OLLAMA,
+        TextRuntimeProvider.VLLM,
+    }:
+        if local_base_url:
+            return local_base_url
+        raise TextModelEndpointNotConfiguredError(
+            f"{config.display_name} 로컬 모델을 사용하려면 "
+            "BRANDMATE_LOCAL_LLM_BASE_URL을 설정해야 합니다."
+        )
     if (
         local_base_url
         and config.provider not in {TextRuntimeProvider.OPENAI, TextRuntimeProvider.NVIDIA}
         and (_setting(config.model_setting) or settings.local_llm_model)
     ):
-        return local_base_url
-    if config.provider in {
-        TextRuntimeProvider.LM_STUDIO,
-        TextRuntimeProvider.OLLAMA,
-        TextRuntimeProvider.VLLM,
-    } and local_base_url:
         return local_base_url
     if config.provider == TextRuntimeProvider.OPENAI:
         return settings.openai_base_url

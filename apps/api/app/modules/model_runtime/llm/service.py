@@ -11,6 +11,7 @@ from app.modules.model_runtime.llm.clients import (
     VllmClient,
 )
 from app.modules.model_runtime.llm.registry import (
+    TextModelEndpointNotConfiguredError,
     get_text_model_config,
     infer_provider,
     resolve_api_key,
@@ -41,7 +42,10 @@ async def generate_text(request: LlmGenerateRequest) -> LlmGenerateResponse:
     except KeyError as error:
         raise LlmRuntimeError(str(error)) from error
 
-    base_url = resolve_base_url(config)
+    try:
+        base_url = resolve_base_url(config)
+    except TextModelEndpointNotConfiguredError as error:
+        raise LlmRuntimeError(str(error)) from error
     model_name = resolve_model_name(config)
     api_key = resolve_api_key(config)
     provider = infer_provider(base_url, config.provider)

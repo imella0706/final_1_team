@@ -51,6 +51,7 @@ class ImageModelOption(BaseModel):
     name: str
     provider: str
     availability: ImageModelAvailability
+    enabled: bool = True
     recommended: bool = False
     note: str
 

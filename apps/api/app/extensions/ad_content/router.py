@@ -1,4 +1,5 @@
 import asyncio
+import logging
 
 from fastapi import APIRouter, HTTPException, status
 
@@ -15,6 +16,7 @@ from app.extensions.ad_content.image_service import (
     ImageModelNotConfiguredError,
     ImageModelProviderError,
     generate_ad_image,
+    is_comfyui_available,
 )
 from app.extensions.ad_content.image_prompt import describe_blog_images, describe_reference_image
 from app.extensions.ad_content.naver_background_prompts import build_naver_background_prompt
@@ -58,6 +60,7 @@ from app.modules.ad_copy.trend_context import (
 )
 
 router = APIRouter(prefix="/ad-content", tags=["ad-content"])
+logger = logging.getLogger("brandmate.ad_content")
 
 TRANSPARENT_PNG_BASE64 = (
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII="
@@ -90,7 +93,12 @@ def _uploaded_blog_image_response(request: AdContentRequest) -> AdImageResponse:
 
 @router.get("/image-models", response_model=list[ImageModelOption])
 async def image_models() -> list[ImageModelOption]:
-    return list_image_model_options()
+    comfyui_available = (
+        await is_comfyui_available()
+        if settings.image_provider.lower() == "comfyui"
+        else False
+    )
+    return list_image_model_options(comfyui_available=comfyui_available)
 
 
 @router.post("/audio/generate", response_model=AdAudioResponse)
@@ -288,6 +296,11 @@ async def generate_content(request: AdContentRequest) -> AdContentResponse:
         ImageModelProviderError,
         VisionModelProviderError,
     ) as error:
+        logger.warning(
+            "Ad-content provider stage failed (%s): %s",
+            type(error).__name__,
+            error,
+        )
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=str(error),

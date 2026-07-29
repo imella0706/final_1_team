@@ -47,6 +47,7 @@ class ModelOption(BaseModel):
     provider: str
     availability: ModelAvailability
     note: str
+    enabled: bool = True
     recommended: bool = False
 
 

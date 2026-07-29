@@ -8,7 +8,11 @@ from app.core.config import settings
 from app.extensions.ad_content.main import app
 from app.extensions.ad_content.schemas import AdImageRequest, AdImageResponse, VisionModel
 from app.extensions.ad_content.image_prompt import build_ad_image_prompt
-from app.extensions.ad_content.image_service import _build_comfyui_workflow, generate_ad_image
+from app.extensions.ad_content.image_service import (
+    _build_comfyui_workflow,
+    generate_ad_image,
+    is_comfyui_available,
+)
 from app.extensions.ad_content.product_visualizer import ProductVisualization
 from app.extensions.ad_content.reference_search import search_reference_images
 from app.extensions.ad_content.reference_store import ProductVisualProfileStore
@@ -53,7 +57,14 @@ def test_generate_content_rejects_unknown_nested_trend_card() -> None:
 
 
 def test_image_model_catalog_is_exposed(monkeypatch) -> None:
+    async def fake_is_comfyui_available() -> bool:
+        return True
+
     monkeypatch.setattr(settings, "image_provider", "comfyui")
+    monkeypatch.setattr(
+        "app.extensions.ad_content.router.is_comfyui_available",
+        fake_is_comfyui_available,
+    )
 
     response = get(app, "/api/v1/ad-content/image-models")
 
@@ -62,6 +73,7 @@ def test_image_model_catalog_is_exposed(monkeypatch) -> None:
     models_by_id = {model["id"]: model for model in models}
     assert models[0]["id"] == "stabilityai/stable-diffusion-xl-base-1.0"
     assert models[0]["provider"] == "Local ComfyUI"
+    assert models[0]["enabled"] is True
     assert models[0]["recommended"] is True
     assert models_by_id["openai/gpt-image-1-mini"]["provider"] == "OpenAI"
     assert models_by_id["openai/gpt-image-1-mini"]["recommended"] is False
@@ -73,6 +85,84 @@ def test_image_model_catalog_is_exposed(monkeypatch) -> None:
     assert models_by_id["black-forest-labs/FLUX.1-schnell"]["provider"] == (
         "Local ComfyUI"
     )
+
+
+def test_image_model_catalog_falls_back_to_openai_when_comfyui_is_unavailable(
+    monkeypatch,
+) -> None:
+    async def fake_is_comfyui_available() -> bool:
+        return False
+
+    monkeypatch.setattr(settings, "image_provider", "comfyui")
+    monkeypatch.setattr(settings, "openai_api_key", SecretStr("openai-test-token"))
+    monkeypatch.setattr(settings, "llm_api_key", None)
+    monkeypatch.setattr(
+        "app.extensions.ad_content.router.is_comfyui_available",
+        fake_is_comfyui_available,
+    )
+
+    response = get(app, "/api/v1/ad-content/image-models")
+
+    assert response.status_code == 200
+    models = response.json()
+    models_by_id = {model["id"]: model for model in models}
+    assert models_by_id["stabilityai/stable-diffusion-xl-base-1.0"]["enabled"] is False
+    assert models_by_id["stabilityai/stable-diffusion-xl-base-1.0"]["recommended"] is False
+    assert models_by_id["openai/gpt-image-1-mini"]["enabled"] is True
+    assert models_by_id["openai/gpt-image-1-mini"]["recommended"] is True
+    assert sum(model["recommended"] for model in models if model["enabled"]) == 1
+
+
+def test_image_model_catalog_disables_unconfigured_hosted_models(monkeypatch) -> None:
+    async def fake_is_comfyui_available() -> bool:
+        return False
+
+    monkeypatch.setattr(settings, "image_provider", "comfyui")
+    monkeypatch.setattr(settings, "openai_api_key", None)
+    monkeypatch.setattr(settings, "llm_api_key", None)
+    monkeypatch.setattr(
+        "app.extensions.ad_content.router.is_comfyui_available",
+        fake_is_comfyui_available,
+    )
+
+    response = get(app, "/api/v1/ad-content/image-models")
+
+    assert response.status_code == 200
+    models = response.json()
+    assert all(model["enabled"] is False for model in models)
+    assert all(model["recommended"] is False for model in models)
+
+
+def test_comfyui_availability_uses_system_stats(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    class FakeAsyncClient:
+        def __init__(self, **kwargs) -> None:
+            captured["timeout"] = kwargs["timeout"]
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args) -> None:
+            del args
+
+        async def get(self, url):
+            captured["url"] = url
+            return httpx.Response(200, request=httpx.Request("GET", url))
+
+    monkeypatch.setattr(settings, "image_provider", "comfyui")
+    monkeypatch.setattr(settings, "comfyui_base_url", "http://127.0.0.1:8188")
+    monkeypatch.setattr(settings, "comfyui_health_timeout_seconds", 0.25)
+    monkeypatch.setattr(
+        "app.extensions.ad_content.image_service.httpx.AsyncClient",
+        FakeAsyncClient,
+    )
+
+    assert asyncio.run(is_comfyui_available()) is True
+    assert captured == {
+        "timeout": 0.25,
+        "url": "http://127.0.0.1:8188/system_stats",
+    }
 
 
 def test_local_sdxl_reference_workflow_uses_uploaded_image(monkeypatch) -> None:
