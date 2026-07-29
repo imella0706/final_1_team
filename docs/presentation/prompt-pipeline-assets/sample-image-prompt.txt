@@ -1,0 +1,30 @@
+Task:
+Conservatively enhance the uploaded food photo.
+This is photo retouching, not food generation.
+
+Products:
+- Cream bread as the only main product
+
+Product Identity Lock:
+- Cream bread
+
+Reference Preservation Mode:
+- Keep the exact original food shape, portions, ingredients, toppings,
+  texture, plating, tableware, arrangement, camera angle, crop,
+  and background geometry.
+- Change mood, color temperature, exposure, and light only.
+- Do not add, remove, move, enlarge, duplicate, or regenerate food.
+
+Poster Text Plan:
+- Leave clean negative space for a short title added after generation.
+- Do not render readable text inside the image.
+
+Negative Prompt:
+No readable text. No logo. No watermark. No people. No hands.
+No extra food. No product substitution. No gibberish text.
+No malformed Hangul.
+
+Priority:
+1. Preserve the uploaded photograph and food identity exactly.
+2. Improve warm mood and lighting only.
+3. Do not alter composition or add visual details.

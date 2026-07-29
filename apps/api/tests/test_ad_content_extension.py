@@ -149,8 +149,15 @@ def test_generate_content_reports_image_provider_stage(monkeypatch) -> None:
         copy_request,
         product_visualization,
         reference_image_context,
+        reference_image_provided=False,
     ):
-        del copy, copy_request, product_visualization, reference_image_context
+        del (
+            copy,
+            copy_request,
+            product_visualization,
+            reference_image_context,
+            reference_image_provided,
+        )
         return "image prompt", "negative prompt"
 
     async def fake_generate_ad_image(request):
@@ -207,7 +214,10 @@ def test_image_model_catalog_is_exposed(monkeypatch) -> None:
     assert models[0]["recommended"] is True
     assert models_by_id["openai/gpt-image-1-mini"]["provider"] == "OpenAI"
     assert models_by_id["openai/gpt-image-1-mini"]["recommended"] is False
-    assert models_by_id["openai-responses/gpt-5.5"]["provider"] == "OpenAI Responses API"
+    assert "openai/gpt-image-1" not in models_by_id
+    assert "openai/gpt-image-2" not in models_by_id
+    assert "openai-responses/gpt-5.2-2025-12-11" not in models_by_id
+    assert "openai-responses/gpt-5.5" not in models_by_id
     assert models_by_id["stabilityai/stable-diffusion-xl-base-1.0"]["provider"] == (
         "Local ComfyUI"
     )
@@ -568,6 +578,7 @@ def test_hugging_face_reference_image_uses_image_to_image(monkeypatch) -> None:
         "hf_image_edit_model",
         "black-forest-labs/FLUX.1-Kontext-dev",
     )
+    monkeypatch.setattr(settings, "hf_img2img_strength", 0.22)
     monkeypatch.setattr(settings, "llm_api_key", SecretStr("hf-test-token"))
     monkeypatch.setattr(
         "app.extensions.ad_content.image_service.InferenceClient",
@@ -585,9 +596,11 @@ def test_hugging_face_reference_image_uses_image_to_image(monkeypatch) -> None:
     )
 
     assert captured["image"] == b"image"
-    assert "attached reference image as the primary visual source" in captured["prompt"]
+    assert "conservative photo enhancement" in captured["prompt"]
+    assert "Do not redesign, recompose, replace, redraw, or regenerate" in captured["prompt"]
     assert captured["request"]["model"] == "black-forest-labs/FLUX.1-Kontext-dev"
     assert captured["request"]["target_size"] == {"width": 1024, "height": 1280}
+    assert captured["request"]["strength"] == 0.22
     assert response.model == "black-forest-labs/FLUX.1-Kontext-dev"
     assert response.image_base64 == "ZWRpdGVkLWltYWdl"
 
@@ -637,7 +650,10 @@ def test_openai_image_generation_sends_reference_image_as_edit(monkeypatch) -> N
     assert response.image_base64 == "aW1hZ2U="
     assert captured["url"].endswith("/images/edits")
     assert captured["data"]["model"] == "gpt-image-1-mini"
-    assert "attached reference image as the primary visual source" in captured["data"]["prompt"]
+    assert "conservative photo enhancement" in captured["data"]["prompt"]
+    assert "Do not redesign, recompose, replace, redraw, or regenerate" in (
+        captured["data"]["prompt"]
+    )
     assert "Make a cafe poster background" in captured["data"]["prompt"]
     assert captured["json"] is None
     assert captured["files"]["image"][0] == "reference.png"
@@ -863,7 +879,12 @@ def test_generate_content_orchestrates_copy_and_image_models(
     assert captured_image_request["reference_image_data_url"] == "data:image/png;base64,aW1hZ2U="
     assert captured_image_request["width"] == 1024
     assert captured_image_request["height"] == 1280
-    assert "commercial product ad image" in captured_image_request["prompt"]
+    assert "Conservatively enhance the uploaded food photo" in (
+        captured_image_request["prompt"]
+    )
+    assert "Change mood, color temperature, and light only" in (
+        captured_image_request["prompt"]
+    )
     assert "strawberry tiramisu" in captured_image_request["prompt"]
     assert (
         "참고 이미지: 딸기 디저트와 음료가 함께 보이는 사진"
@@ -951,11 +972,16 @@ def test_image_prompt_uses_korean_and_reference_image_context() -> None:
         request,
         None,
         reference_image_context="참고 이미지: 딸기 크림층이 선명하게 보이는 디저트",
+        reference_image_provided=True,
     )
 
-    assert "commercial product ad image" in prompt
+    assert "Conservatively enhance the uploaded food photo" in prompt
+    assert "photo retouching, not food generation" in prompt
     assert "Reference image analysis" in prompt
     assert "Product Identity Lock" in prompt
+    assert "Do not redesign, recompose, redraw, replace, or regenerate the food" in prompt
+    assert "slightly warmer white balance" in prompt
+    assert "Change mood, color temperature, and light only" in prompt
     assert "딸기 크림층" in prompt
     assert "photorealistic" not in prompt.lower()
     assert "No readable text" in negative_prompt
@@ -1036,6 +1062,7 @@ def test_image_prompt_locks_user_products_and_blocks_fake_text() -> None:
         safety_notes=[],
         model=request.model.value,
         prompt_version="test",
+        trend_card_id="gogumafarm:1bf390d89536004b",
         latency_ms=1,
     )
 
@@ -1070,6 +1097,8 @@ def test_image_prompt_locks_user_products_and_blocks_fake_text() -> None:
     assert "visible cream layers" in prompt
     assert "Product Identity Lock" in prompt
     assert "realistic product photography" in prompt
+    assert "short product-and-meme title with 2-3 emojis" in prompt
+    assert "Do not render the meme phrase, caption, CTA, price, hashtags" in prompt
     assert "no signs, no posters, no menu boards, no readable text" in prompt
     assert "unlisted product" in negative_prompt
     assert "chocolate cake" in negative_prompt

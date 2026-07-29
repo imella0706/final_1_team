@@ -480,6 +480,7 @@ def build_ad_image_prompt(
     request: AdCopyRequest,
     product_visualization: ProductVisualization | None = None,
     reference_image_context: str | None = None,
+    reference_image_provided: bool = False,
 ) -> tuple[str, str]:
     brief = copy.visual_brief
     business_type = BUSINESS_TYPE_LABELS.get(
@@ -498,6 +499,51 @@ def build_ad_image_prompt(
     )
     reference_context = _reference_context_block(reference_image_context)
     channel = _channel_direction(request.channel.value)
+    poster_text_plan = (
+        """Poster Text Plan:
+- Leave one clean area for a short product-and-meme title with 2-3 emojis, added after image generation.
+- Do not render the meme phrase, caption, CTA, price, hashtags, or any other copy inside the image."""
+        if copy.trend_card_id
+        else """Poster Text Plan:
+- Leave clean negative space for text that may be added after image generation.
+- Do not render any readable copy inside the image."""
+    )
+
+    if reference_image_provided:
+        image_prompt = f"""Task:
+Conservatively enhance the uploaded food photo. This is photo retouching, not food generation.
+
+Template:
+{template}
+
+Reference Image:
+{reference_context}
+
+Products:
+{product_lines}
+
+Product Identity Lock:
+{product_names}
+
+Reference Preservation Mode:
+- Keep the exact original food shape, portions, ingredients, toppings, texture, plating, tableware, arrangement, camera angle, crop, and background geometry.
+- Do not redesign, recompose, redraw, replace, or regenerate the food.
+- Do not add, remove, move, enlarge, or duplicate any food or object.
+- Only apply a slightly warmer white balance, gentle exposure and contrast correction, softer warm light, and subtle cozy color grading.
+- The result must still look like the same photograph, with a warm and inviting mood.
+
+{poster_text_plan}
+
+Negative prompt:
+{negative_prompt}
+
+Priority:
+1. Preserve the uploaded photograph and food identity exactly.
+2. Change mood, color temperature, and light only.
+3. Do not alter composition or introduce new visual details.
+4. Do not render readable text inside the image.
+"""
+        return image_prompt, negative_prompt
 
     image_prompt = f"""Task:
 Create one realistic commercial product ad image for a Korean small business.
@@ -536,6 +582,8 @@ Style:
 - realistic product photography
 - clean SNS ad image
 - {palette}
+
+{poster_text_plan}
 
 Negative prompt:
 {negative_prompt}

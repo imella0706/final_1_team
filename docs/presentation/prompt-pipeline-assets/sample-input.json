@@ -1,0 +1,22 @@
+{
+  "copy_model": "openai/gpt-5.4-mini",
+  "vision_model": "local/qwen3-vl:4b",
+  "image_model": "gpt-image-1-mini",
+  "copy": {
+    "business_name": "오후의 조각",
+    "business_type": "cafe",
+    "product_names": ["크림빵"],
+    "features": [
+      "매일 아침 직접 만드는 디저트",
+      "평일 오전 11시부터 오후 2시까지 런치 세트 운영"
+    ],
+    "target_audiences": ["office_workers"],
+    "channel": "instagram",
+    "tone": "emotional",
+    "required_terms": ["크림빵", "연남동"],
+    "prohibited_terms": ["최고", "무조건", "인생 맛집"]
+  },
+  "use_vision_analysis": true,
+  "image_width": 1024,
+  "image_height": 1280
+}

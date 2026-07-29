@@ -420,6 +420,27 @@ def _validate_card_gate(
             f"TrendCard '{card.meme_id}'의 필수 표현과 금지 표현이 충돌합니다: "
             f"{', '.join(conflicting_terms)}"
         )
+def list_trend_cards(
+    *,
+    require_asset: str | None = "copy",
+    require_channel: str | None = None,
+) -> list[TrendCard]:
+    """공식 v2 artifact에서 검수 및 사용 조건을 만족하는 카드를 반환한다."""
+
+    cards: list[TrendCard] = []
+    for card in load_trend_cards():
+        try:
+            _validate_card_gate(
+                card,
+                requested_meme_id=card.meme_id,
+                require_asset=require_asset,
+                require_channel=require_channel,
+                prohibited_terms=None,
+            )
+        except (TrendCardDataError, TrendCardNotUsableError):
+            continue
+        cards.append(card)
+    return cards
 
 
 def load_trend_card(

@@ -1,0 +1,8 @@
+{
+  "valid": false,
+  "warnings": [
+    "원본 음식의 형태와 개수가 변경되었습니다.",
+    "원본에 없던 장식이 추가되었습니다."
+  ],
+  "regeneration_prompt_suffix": "Preserve the exact original food shape, count, ingredients, plating, and camera angle. Change lighting and color mood only."
+}

@@ -9,7 +9,7 @@ from app.modules.ad_copy.trend_context import (
     TrendCard,
 )
 
-PROMPT_VERSION = "channel-split-pipeline-v13-trend-structure"
+PROMPT_VERSION = "channel-split-pipeline-v16-customer-ready-korean-copy"
 
 
 def _copy_structure_prompt_rules(card: TrendCard) -> str:
@@ -517,7 +517,7 @@ STEP 2. 광고 문구 작성
 
 반드시 지켜야 할 규칙:
 1. 모든 product_name은 광고 문구 어딘가에 최소 1회 이상 포함하세요.
-2. feature_text는 Marketing Intent로 해석한 뒤 자연스러운 광고 문장으로 바꾸세요.
+2. feature_text는 Marketing Intent로 해석하되, "업로드 사진", "사진 속", "중심으로 소개", "작성하세요", "만들지 말"처럼 제작자에게 지시하는 문장은 고객용 광고 문구에 쓰지 마세요.
 3. "성별 타겟:", "타겟:", "관심사:", "상권:", "세부 타겟:" 같은 내부 데이터 라벨을 고객 문구에 그대로 쓰지 마세요.
 4. 기간, 시간, 할인율, 가격, 지역 같은 사실 정보가 있으면 삭제하지 마세요.
 5. prohibited_terms는 사용하지 마세요.
@@ -531,6 +531,8 @@ STEP 2. 광고 문구 작성
 13. 모든 product_name은 입력 원문을 철자까지 그대로 유지하세요. 번역, 음역, 축약하거나 비슷한 다른 상품명으로 바꾸지 마세요.
 14. required_terms는 입력된 정확한 문자열 그대로 고객 노출 문구에 최소 한 번 포함하세요.
 15. 입력에 근거가 없는 건강·효능·인증·수상·무료·예약·주문·배송 등의 주장을 추가하지 마세요.
+16. "마늘빵을(를)", "마늘빵이(가)"처럼 선택형 조사를 출력하지 말고, 앞말의 받침에 맞는 조사 하나만 사용하세요.
+17. 내부 작업 지시문이나 사진 분석 절차를 고객에게 설명하지 마세요. 고객 문구에는 상품의 확인 가능한 정보와 방문 유도 문장만 남기세요.
 채널별 작성 방향:
 - Instagram: 인스타 피드 캡션처럼 첫 문장은 짧게, 이어서 상품 매력과 방문/주문 유도를 자연스럽게 작성
 - Naver Blog: 블로그 본문처럼 정보성, 스토리텔링, 방문 맥락이 보이도록 문단형 문구 작성
@@ -554,9 +556,12 @@ channel_recommendation을 작성하세요.
 image_insert_guide에는 생성 이미지와 글을 어디에 넣으면 좋은지 구체적으로 적으세요.
 
 이미지용 overlay_headline은 상품 설명이나 CTA를 넣지 않은 짧은 맥락 문구로 작성하세요. 지역, 업종, 가게명 중심으로 20자 안팎을 권장하며, 상품명과 상세 소개는 caption 또는 publish_title에 작성하세요.
+TrendCard가 있으면 overlay_headline과 publish_title은 "대표 product_name + 밈의 짧은 핵심 표현 + 이모지 최대 1개" 구조로 작성하세요. 예: "마늘빵 니가 좋아~ 💛". 포스터 제목에는 이유 문장, 상품 설명, CTA, 가격, 해시태그를 넣지 말고, 자세한 설명과 방문 유도는 caption과 publish_body에 작성하세요.
 
 Instagram 캡션 작성 규칙:
 - 내부 데이터 라벨을 그대로 쓰지 마세요.
+- "업로드 사진 속 상품의 실제 형태와 색감을 중심으로 소개" 같은 제작 지시문은 caption에 절대 노출하지 마세요.
+- 입력에 맛이나 식감 정보가 없으면 "바삭한", "촉촉한", "버터 풍미", "치즈가 가득한" 같은 표현을 임의로 추가하지 마세요.
 - caption의 첫 문장은 headlines[0] 또는 body_copies[0]과 같은 핵심 방향을 유지하고, TrendCard가 있으면 copy_markers 중 하나를 정확히 포함하세요.
 - caption에는 모든 product_name을 입력 원문 그대로 자연스럽게 포함하세요. 여러 상품은 쉼표로 나열하지 말고 실제 조합이나 관계로 연결하세요.
 - caption에는 모든 required_terms를 입력 문자열 그대로 포함하세요.

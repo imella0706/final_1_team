@@ -16,7 +16,9 @@ import hashlib
 import json
 import shutil
 import sys
+import unicodedata
 from collections import Counter, defaultdict
+from contextlib import AsyncExitStack
 from datetime import UTC, datetime
 from io import BytesIO
 from itertools import product
@@ -45,6 +47,7 @@ PROJECT_ROOT = API_ROOT.parents[1]
 DEFAULT_IMAGES_DIR = PROJECT_ROOT / "data" / "images"
 DEFAULT_OUTPUT_DIR = PROJECT_ROOT / "outputs" / "instagram-food-benchmark"
 DEFAULT_MANIFEST = API_ROOT / "evals" / "instagram_food_benchmark_10.json"
+DEFAULT_TREND_CARD_ID = "gogumafarm:1bf390d89536004b"
 
 # This balanced set compares local, Hugging Face, NVIDIA and OpenAI copy runtimes.
 # A user can replace or narrow any list with repeated CLI options.
@@ -137,6 +140,18 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--max-runs", type=int)
     parser.add_argument("--concurrency", type=int, default=1)
+    parser.add_argument(
+        "--local-llm-concurrency",
+        type=int,
+        default=1,
+        help="Maximum simultaneous trials using an Ollama LLM.",
+    )
+    parser.add_argument(
+        "--local-image-concurrency",
+        type=int,
+        default=1,
+        help="Maximum simultaneous trials using a local ComfyUI image model.",
+    )
     parser.add_argument("--image-width", type=int, default=768)
     parser.add_argument("--image-height", type=int, default=1024)
     parser.add_argument(
@@ -153,6 +168,19 @@ def parse_args() -> argparse.Namespace:
         "--save-text-overlay",
         action="store_true",
         help="Also save a PNG with the generated Instagram headline rendered on it.",
+    )
+    parser.add_argument(
+        "--compare-meme",
+        action="store_true",
+        help=(
+            "Run paired without_meme and with_meme trials for every case and "
+            "model combination."
+        ),
+    )
+    parser.add_argument(
+        "--trend-card-id",
+        default=DEFAULT_TREND_CARD_ID,
+        help="TrendCard id used by the with_meme arm.",
     )
     parser.add_argument(
         "--render-overlays-from-run",
@@ -293,7 +321,9 @@ def select_cases(
             "promotion": None,
             "required_terms": [product_name],
             "prohibited_terms": ["최고", "무조건", "무료"],
-            "interests": ["맛집", row["product_group"].strip()],
+            # product_group is an internal English taxonomy value (for example
+            # "bread") and must not leak into Korean customer-facing hashtags.
+            "interests": ["맛집", product_name],
             "audience_detail": "음식 사진을 보고 방문이나 주문을 고려하는 인스타그램 이용자",
             "additional_request": (
                 "업로드 사진에 없는 재료나 효능을 만들지 말고, 음식명과 실제 사진을 "
@@ -373,11 +403,26 @@ def build_plan(
     cases: list[dict[str, Any]],
     combinations: list[dict[str, Any]],
     max_runs: int | None = None,
+    *,
+    compare_meme: bool = False,
+    trend_card_id: str = DEFAULT_TREND_CARD_ID,
 ) -> list[dict[str, str]]:
     plan = []
-    for case, combination in product(cases, combinations):
+    base_items = product(cases, combinations)
+    arms: tuple[tuple[str | None, bool | None, str | None], ...] = (
+        (
+            ("without_meme", False, None),
+            ("with_meme", True, trend_card_id),
+        )
+        if compare_meme
+        else ((None, None, None),)
+    )
+    for (case, combination), (meme_arm, use_trend_card, selected_card_id) in product(
+        base_items, arms
+    ):
         values = (
             case["id"],
+            *((meme_arm,) if meme_arm else ()),
             combination["llm_model"].value,
             combination["vision_model"].value,
             combination["image_model"].value,
@@ -395,6 +440,15 @@ def build_plan(
                 "llm_model": combination["llm_model"].value,
                 "vision_model": combination["vision_model"].value,
                 "image_model": combination["image_model"].value,
+                **(
+                    {
+                        "meme_arm": meme_arm,
+                        "use_trend_card": use_trend_card,
+                        "trend_card_id": selected_card_id,
+                    }
+                    if meme_arm
+                    else {}
+                ),
             }
         )
     return plan[:max_runs] if max_runs else plan
@@ -496,6 +550,12 @@ def render_text_overlay(
     subtitle: str = "",
 ) -> Path:
     """Render Korean Instagram copy over a generated image, preserving the source."""
+    # The Korean Windows font used for poster text has no color-emoji glyphs.
+    # Replace emoji symbols with a supported heart instead of rendering tofu boxes.
+    headline = "".join(
+        "♥" if unicodedata.category(character) == "So" else character
+        for character in headline
+    )
     with Image.open(image_path) as source:
         image = ImageOps.exif_transpose(source).convert("RGBA")
     width, height = image.size
@@ -532,14 +592,45 @@ def render_text_overlay(
     y = height - padding - total_height
 
     for line in headline_lines:
-        draw.text(
-            (padding, y),
-            line,
-            font=headline_font,
-            fill=(255, 255, 255, 255),
-            stroke_width=max(1, round(width * 0.002)),
-            stroke_fill=(0, 0, 0, 120),
-        )
+        stroke_width = max(1, round(width * 0.002))
+        if "♥" in line:
+            before_heart, _, after_heart = line.partition("♥")
+            draw.text(
+                (padding, y),
+                before_heart,
+                font=headline_font,
+                fill=(255, 255, 255, 255),
+                stroke_width=stroke_width,
+                stroke_fill=(0, 0, 0, 120),
+            )
+            heart_x = padding + draw.textlength(before_heart, font=headline_font)
+            draw.text(
+                (heart_x, y),
+                "♥",
+                font=headline_font,
+                fill=(255, 214, 64, 255),
+                stroke_width=stroke_width,
+                stroke_fill=(0, 0, 0, 120),
+            )
+            if after_heart:
+                after_x = heart_x + draw.textlength("♥", font=headline_font)
+                draw.text(
+                    (after_x, y),
+                    after_heart,
+                    font=headline_font,
+                    fill=(255, 255, 255, 255),
+                    stroke_width=stroke_width,
+                    stroke_fill=(0, 0, 0, 120),
+                )
+        else:
+            draw.text(
+                (padding, y),
+                line,
+                font=headline_font,
+                fill=(255, 255, 255, 255),
+                stroke_width=stroke_width,
+                stroke_fill=(0, 0, 0, 120),
+            )
         y += headline_height
     if subtitle_lines and subtitle_font:
         y += gap
@@ -591,16 +682,15 @@ def render_existing_run_overlays(run_dir: Path) -> list[dict[str, str]]:
             or next(iter(copy_payload.get("headlines", [])), "")
         )
         products = payload.get("input", {}).get("product_names", [])
-        subtitle = products[0] if products else ""
         if not headline:
             continue
         output_path = trial_dir / "generated-with-copy.png"
-        render_text_overlay(source_candidates[0], output_path, headline, subtitle)
+        render_text_overlay(source_candidates[0], output_path, headline)
         records.append(
             {
                 "trial_id": trial_dir.name,
                 "headline": headline,
-                "subtitle": subtitle,
+                "subtitle": "",
                 "source_image": str(source_candidates[0]),
                 "image_with_copy": str(output_path),
             }
@@ -665,6 +755,9 @@ def build_request(
         "model": plan_item["llm_model"],
         "channel": AdChannel.INSTAGRAM.value,
     }
+    if "use_trend_card" in plan_item:
+        copy_payload["use_trend_card"] = plan_item["use_trend_card"]
+        copy_payload["trend_card_id"] = plan_item.get("trend_card_id")
     return AdContentRequest(
         copy=copy_payload,
         use_vision_analysis=not args.disable_vision_analysis,
@@ -694,87 +787,104 @@ async def execute_trial(
     run_dir: Path,
     jsonl_path: Path,
     semaphore: asyncio.Semaphore,
+    local_llm_semaphore: asyncio.Semaphore,
+    local_image_semaphore: asyncio.Semaphore,
+    uses_comfyui: bool,
 ) -> dict[str, Any]:
-    async with semaphore:
+    async with AsyncExitStack() as resources:
+        if plan_item["llm_model"].startswith("local/"):
+            await resources.enter_async_context(local_llm_semaphore)
+        if uses_comfyui and not plan_item["image_model"].startswith("openai/"):
+            await resources.enter_async_context(local_image_semaphore)
+        # Acquire the broad concurrency slot last. Trials waiting for a scarce
+        # local runtime must not occupy slots that hosted API trials can use.
+        await resources.enter_async_context(semaphore)
+
         started = perf_counter()
         record: dict[str, Any] = {**plan_item, "success": False}
         try:
-            data_url, preprocessing = normalized_image_data_url(
-                resolve_project_path(case["image_path"])
-            )
-            request = build_request(case, plan_item, data_url, args)
-            # Lazy import keeps manifest generation usable even when server-only
-            # dependencies (database driver, credentials) are not installed.
-            from app.extensions.ad_content.router import generate_content
-
-            response = await generate_content(request)
-            output_dir = run_dir / "trials" / plan_item["trial_id"]
-            output_dir.mkdir(parents=True, exist_ok=True)
-            source_path = resolve_project_path(case["image_path"]).resolve()
-            saved_source_path = output_dir / f"source-original-{source_path.name}"
-            shutil.copy2(source_path, saved_source_path)
-            image_path = output_dir / f"generated.{_extension(response.image.media_type)}"
-            image_path.write_bytes(base64.b64decode(response.image.image_base64))
-            copy_result = response.copy_result
-            image_with_copy = None
-            if args.save_text_overlay:
-                recommendation = copy_result.channel_recommendation
-                overlay_headline = (
-                    recommendation.overlay_headline
-                    or recommendation.publish_title
-                    or copy_result.headlines[0]
+                data_url, preprocessing = normalized_image_data_url(
+                    resolve_project_path(case["image_path"])
                 )
+                request = build_request(case, plan_item, data_url, args)
+                # Lazy import keeps manifest generation usable even when server-only
+                # dependencies (database driver, credentials) are not installed.
+                from app.extensions.ad_content.router import generate_content
+
+                response = await generate_content(request)
+                output_dir = run_dir / "trials" / plan_item["trial_id"]
+                output_dir.mkdir(parents=True, exist_ok=True)
+                source_path = resolve_project_path(case["image_path"]).resolve()
+                saved_source_path = output_dir / f"source-original-{source_path.name}"
+                shutil.copy2(source_path, saved_source_path)
+                image_path = output_dir / f"generated.{_extension(response.image.media_type)}"
+                image_path.write_bytes(base64.b64decode(response.image.image_base64))
+                copy_result = response.copy_result
+                image_with_copy = None
+                if args.save_text_overlay:
+                    recommendation = copy_result.channel_recommendation
+                    overlay_headline = (
+                        recommendation.overlay_headline
+                        or recommendation.publish_title
+                        or copy_result.headlines[0]
+                    )
                 image_with_copy = render_text_overlay(
                     image_path,
                     output_dir / "generated-with-copy.png",
                     overlay_headline,
-                    case["food"]["product_name"],
                 )
-            response_payload = response.model_dump(mode="json", by_alias=True)
-            response_payload["image"]["image_base64"] = "[saved_to_generated_image]"
-            (output_dir / "result.json").write_text(
-                json.dumps(response_payload, ensure_ascii=False, indent=2),
-                encoding="utf-8",
-            )
-            fallback_used = any(
-                "fallback copy" in note.lower() for note in copy_result.safety_notes
-            )
-            record.update(
-                success=True,
-                preprocessing=preprocessing,
-                copy_model_routed=copy_result.routed_model,
-                copy_attempts=copy_result.attempts,
-                copy_output_repaired=copy_result.output_repaired,
-                fallback_copy_used=fallback_used,
-                copy_safety_notes=copy_result.safety_notes,
-                image_model_actual=response.image.model,
-                copy_latency_ms=copy_result.latency_ms,
-                image_latency_ms=response.image.latency_ms,
-                context_adherence_score=context_adherence_score(request.copy_request, copy_result),
-                tone_manner_proxy_score=tone_manner_proxy_score(
-                    request.copy_request, copy_result
-                ),
-                hashtag_compliance_rate=hashtag_compliance_rate(copy_result),
-                headline_diversity_score=headline_diversity_score(copy_result),
-                image_prompt_english=is_english_image_prompt(copy_result),
-                hallucination_terms=hallucination_terms(request.copy_request, copy_result),
-                toxicity_terms=toxicity_terms(copy_result),
-                generated_image=str(image_path.resolve()),
-                saved_source_image=str(saved_source_path.resolve()),
-                generated_image_with_copy=(
-                    str(image_with_copy.resolve()) if image_with_copy else None
-                ),
-                result_json=str((output_dir / "result.json").resolve()),
-                headline=copy_result.headlines[0],
-                instagram_caption=copy_result.channel_recommendation.caption,
-                validation=response.validation,
-            )
+                response_payload = response.model_dump(mode="json", by_alias=True)
+                response_payload["image"]["image_base64"] = "[saved_to_generated_image]"
+                (output_dir / "result.json").write_text(
+                    json.dumps(response_payload, ensure_ascii=False, indent=2),
+                    encoding="utf-8",
+                )
+                fallback_used = any(
+                    "fallback copy" in note.lower() for note in copy_result.safety_notes
+                )
+                record.update(
+                    success=True,
+                    preprocessing=preprocessing,
+                    copy_model_routed=copy_result.routed_model,
+                    copy_attempts=copy_result.attempts,
+                    copy_output_repaired=copy_result.output_repaired,
+                    fallback_copy_used=fallback_used,
+                    copy_safety_notes=copy_result.safety_notes,
+                    image_model_actual=response.image.model,
+                    copy_latency_ms=copy_result.latency_ms,
+                    image_latency_ms=response.image.latency_ms,
+                    context_adherence_score=context_adherence_score(
+                        request.copy_request, copy_result
+                    ),
+                    tone_manner_proxy_score=tone_manner_proxy_score(
+                        request.copy_request, copy_result
+                    ),
+                    hashtag_compliance_rate=hashtag_compliance_rate(copy_result),
+                    headline_diversity_score=headline_diversity_score(copy_result),
+                    image_prompt_english=is_english_image_prompt(copy_result),
+                    hallucination_terms=hallucination_terms(
+                        request.copy_request, copy_result
+                    ),
+                    toxicity_terms=toxicity_terms(copy_result),
+                    generated_image=str(image_path.resolve()),
+                    saved_source_image=str(saved_source_path.resolve()),
+                    generated_image_with_copy=(
+                        str(image_with_copy.resolve()) if image_with_copy else None
+                    ),
+                    result_json=str((output_dir / "result.json").resolve()),
+                    headline=copy_result.headlines[0],
+                    instagram_caption=copy_result.channel_recommendation.caption,
+                    validation=response.validation,
+                )
         except Exception as error:  # noqa: BLE001 - benchmark continues after failures
             record.update(error_type=type(error).__name__, error=str(error))
         record["wall_latency_ms"] = round((perf_counter() - started) * 1000, 2)
         _append_jsonl(jsonl_path, record)
         status = "OK" if record["success"] else "FAIL"
-        print(f"[{status}] {record['trial_id']} - {record['wall_latency_ms']}ms", flush=True)
+        print(
+            f"[{status}] {record['trial_id']} - {record['wall_latency_ms']}ms",
+            flush=True,
+        )
         return record
 
 
@@ -846,6 +956,8 @@ def write_manual_review_csv(path: Path, records: list[dict[str, Any]]) -> None:
         "llm_model",
         "vision_model",
         "image_model",
+        "meme_arm",
+        "trend_card_id",
         "generated_image",
         "generated_image_with_copy",
         "food_identity_1_to_5",
@@ -878,6 +990,10 @@ async def run(args: argparse.Namespace) -> int:
         settings.image_provider = args.image_provider_override
     if args.concurrency < 1:
         raise ValueError("concurrency must be at least 1.")
+    if args.local_llm_concurrency < 1:
+        raise ValueError("local-llm-concurrency must be at least 1.")
+    if args.local_image_concurrency < 1:
+        raise ValueError("local-image-concurrency must be at least 1.")
     if args.max_runs is not None and args.max_runs < 1:
         raise ValueError("max-runs must be at least 1.")
 
@@ -886,7 +1002,13 @@ async def run(args: argparse.Namespace) -> int:
     cases = select_cases(load_metadata(metadata_path), images_dir, args.case_limit)
     write_manifest(args.manifest, cases, metadata_path)
     combinations = model_combinations(args)
-    plan = build_plan(cases, combinations, args.max_runs)
+    plan = build_plan(
+        cases,
+        combinations,
+        args.max_runs,
+        compare_meme=args.compare_meme,
+        trend_card_id=args.trend_card_id,
+    )
 
     timestamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
     run_dir = args.output_dir / timestamp
@@ -905,9 +1027,24 @@ async def run(args: argparse.Namespace) -> int:
     case_map = {case["id"]: case for case in cases}
     jsonl_path = run_dir / "trials.jsonl"
     semaphore = asyncio.Semaphore(args.concurrency)
+    local_llm_semaphore = asyncio.Semaphore(args.local_llm_concurrency)
+    local_image_semaphore = asyncio.Semaphore(args.local_image_concurrency)
+    from app.core.config import settings
+
+    uses_comfyui = settings.image_provider == "comfyui"
     records = await asyncio.gather(
         *(
-            execute_trial(case_map[item["case_id"]], item, args, run_dir, jsonl_path, semaphore)
+            execute_trial(
+                case_map[item["case_id"]],
+                item,
+                args,
+                run_dir,
+                jsonl_path,
+                semaphore,
+                local_llm_semaphore,
+                local_image_semaphore,
+                uses_comfyui,
+            )
             for item in plan
         )
     )
@@ -943,6 +1080,11 @@ async def run(args: argparse.Namespace) -> int:
         "by_llm_model": aggregate(llm_records, "llm_model"),
         "by_vision_model": aggregate(vision_records, "vision_model"),
         "by_image_model": aggregate(image_records, "image_model"),
+        "by_meme_arm": (
+            aggregate(records, "meme_arm")
+            if any(record.get("meme_arm") for record in records)
+            else []
+        ),
         "trials": records,
     }
     report_path = run_dir / "report.json"

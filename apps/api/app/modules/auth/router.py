@@ -229,6 +229,33 @@ async def login(
     return token_response(issued)
 
 
+@router.post("/local-login", response_model=TokenResponse)
+async def local_login(
+    request: Request,
+    response: Response,
+    service: Annotated[AuthService, Depends(get_auth_service)],
+    config: Annotated[Settings, Depends(get_config)],
+) -> TokenResponse:
+    validate_browser_origin(request, config)
+    client_host = request.client.host if request.client else ""
+    is_local_client = client_host in {"127.0.0.1", "::1", "localhost", "testclient"}
+    if (
+        not config.auth_local_login_bypass
+        or config.environment.lower() in {"production", "prod"}
+        or not is_local_client
+    ):
+        raise ApiError(404, "AUTH_LOCAL_LOGIN_DISABLED", "로컬 자동 로그인을 사용할 수 없습니다.")
+
+    issued = await service.login_for_local_development(
+        email=config.auth_local_login_email,
+        display_name=config.auth_local_login_display_name,
+        device_name="로컬 테스트 페이지",
+    )
+    set_refresh_cookie(response, issued.refresh_token, config)
+    prevent_token_caching(response)
+    return token_response(issued)
+
+
 @router.post("/refresh", response_model=TokenResponse)
 async def refresh(
     request: Request,

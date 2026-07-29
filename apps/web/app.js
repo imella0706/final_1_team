@@ -4,6 +4,8 @@ const configuredApiOrigin = document
   ?.content.trim()
   .replace(/\/$/, "");
 const isStaticDevelopmentPort = ["5500", "5501"].includes(window.location.port);
+const isLocalTestPage =
+  isStaticDevelopmentPort && ["127.0.0.1", "localhost"].includes(pageHost);
 const defaultApiOrigin = isStaticDevelopmentPort
   ? `${window.location.protocol}//${pageHost}:7660`
   : window.location.origin;
@@ -22,6 +24,11 @@ const visionModelHelp = $("#vision-model-help");
 const imageModelHelp = $("#image-model-help");
 const apiState = $("#api-state");
 const channelSelect = $("#channel-select");
+const trendCardPanel = $("#trend-card-panel");
+const useTrendCardToggle = $("#use-trend-card");
+const trendCardSelect = $("#trend-card-select");
+const trendCardDetail = $("#trend-card-detail");
+const trendCardDisabledNote = $("#trend-card-disabled-note");
 const resetButton = $("#reset-button");
 const generateButton = form.querySelector(".generate-button");
 const runState = $("#run-state");
@@ -57,6 +64,8 @@ const voiceError = $("#voice-error");
 const voiceOutput = $("#voice-output");
 const voicePlayer = $("#voice-player");
 const downloadVoiceButton = $("#download-voice-button");
+const resultModeTabs = [...document.querySelectorAll("[data-result-mode]")];
+const resultModePanels = [...document.querySelectorAll("[data-result-panel]")];
 
 const openAiVoiceOptions = [
   ["coral", "Coral · 밝고 자연스러움"],
@@ -115,6 +124,7 @@ let latestNaverBlogPasteText = "";
 let accessToken = null;
 let currentUser = null;
 let refreshRequest = null;
+let trendCardCatalog = [];
 const initialActionParams = new URLSearchParams(window.location.hash.replace(/^#/, ""));
 let pendingResetToken = initialActionParams.get("reset_token");
 
@@ -134,6 +144,19 @@ const fallbackCopyModels = [
     id: "mistralai/Mistral-7B-Instruct-v0.3",
     name: "Mistral 7B Instruct v0.3",
     note: "Featherless AI 라우팅으로 사용할 수 있는 비교 모델",
+  },
+];
+
+const fallbackTrendCards = [
+  {
+    meme_id: "gogumafarm:1bf390d89536004b",
+    display_name: "니가 좋아💖",
+    meaning: "대표 상품을 먼저 말하고 실제 상품 특징을 좋아하는 이유로 연결하는 밈입니다.",
+    copy_markers: ["니가 좋아"],
+    usage_rules: ["대표 상품을 먼저 말합니다.", "입력한 상품 특징을 좋아하는 이유로 사용합니다."],
+    prohibited_usage: ["입력하지 않은 맛·효능·혜택을 만들지 않습니다."],
+    rights_risk_level: "low",
+    is_mock: true,
   },
 ];
 
@@ -877,6 +900,18 @@ function showGeneratedState() {
   outputPanel.classList.remove("is-empty");
 }
 
+function showResultMode(mode = "image") {
+  resultModeTabs.forEach((tab) => {
+    const isActive = tab.dataset.resultMode === mode;
+    tab.classList.toggle("is-active", isActive);
+    tab.setAttribute("aria-selected", String(isActive));
+    tab.tabIndex = isActive ? 0 : -1;
+  });
+  resultModePanels.forEach((panel) => {
+    panel.hidden = panel.dataset.resultPanel !== mode;
+  });
+}
+
 function updateVoiceScriptCount() {
   if (voiceScriptCount && voiceScript) {
     voiceScriptCount.textContent = String(voiceScript.value.length);
@@ -1023,7 +1058,56 @@ function updateChannelMode() {
   if (referenceCutoutToggle) {
     referenceCutoutToggle.closest("label").hidden = isBlog;
   }
+  updateTrendCardUI();
   updateReferencePreview();
+}
+
+function selectedTrendCard() {
+  return trendCardCatalog.find((card) => card.meme_id === trendCardSelect?.value) || null;
+}
+
+function fillRuleList(element, items) {
+  if (!element) return;
+  element.replaceChildren();
+  (items || []).forEach((item) => {
+    const listItem = document.createElement("li");
+    listItem.textContent = item;
+    element.append(listItem);
+  });
+}
+
+function renderTrendCardDetail() {
+  const card = selectedTrendCard();
+  const enabled =
+    channelSelect?.value === "instagram" &&
+    Boolean(useTrendCardToggle?.checked) &&
+    Boolean(card);
+  if (trendCardDetail) trendCardDetail.hidden = !enabled;
+  if (trendCardDisabledNote) {
+    trendCardDisabledNote.hidden =
+      channelSelect?.value !== "instagram" || Boolean(useTrendCardToggle?.checked);
+  }
+  if (!card) return;
+
+  setText("#trend-card-name", card.display_name);
+  setText("#trend-card-meaning", card.meaning);
+  setText("#trend-card-markers", (card.copy_markers || []).join(", "));
+  setText(
+    "#trend-card-risk",
+    card.rights_risk_level === "low" ? "권리 위험 낮음" : `권리 위험 ${card.rights_risk_level}`,
+  );
+  fillRuleList($("#trend-card-usage-rules"), card.usage_rules);
+  fillRuleList($("#trend-card-prohibited-usage"), card.prohibited_usage);
+}
+
+function updateTrendCardUI() {
+  const isInstagram = channelSelect?.value === "instagram";
+  if (trendCardPanel) trendCardPanel.hidden = !isInstagram;
+  if (trendCardSelect) {
+    trendCardSelect.disabled =
+      !isInstagram || !useTrendCardToggle?.checked || trendCardCatalog.length === 0;
+  }
+  renderTrendCardDetail();
 }
 
 async function readForm() {
@@ -1089,6 +1173,11 @@ async function readForm() {
       seo_keywords: [],
       blog_length: null,
       additional_request: null,
+      use_trend_card: channel === "instagram" && Boolean(useTrendCardToggle?.checked),
+      trend_card_id:
+        channel === "instagram" && useTrendCardToggle?.checked
+          ? trendCardSelect?.value || null
+          : null,
       operating_info: `${data.get("operatingInfo") || ""}`.trim() || null,
     },
     audience: {
@@ -1347,6 +1436,17 @@ async function bootstrapAuth() {
     showAuthenticated(session);
     await Promise.all([loadModels(), loadAudioProviders()]);
   } catch {
+    if (isLocalTestPage) {
+      try {
+        const session = await authRequest("/auth/local-login", { method: "POST" });
+        showAuthenticated(session);
+        await loadModels();
+        return;
+      } catch {
+        // The regular login dialog remains the fallback when the local API or
+        // development bypass is unavailable.
+      }
+    }
     showAuthGate();
   }
 }
@@ -1463,6 +1563,26 @@ function fillImageSelect(models) {
   selectFirstEnabledIfNeeded(imageModelSelect);
 }
 
+function fillTrendCardSelect(cards) {
+  trendCardCatalog = Array.isArray(cards) ? cards : [];
+  trendCardSelect.replaceChildren();
+  trendCardCatalog.forEach((card, index) => {
+    const option = document.createElement("option");
+    option.value = card.meme_id;
+    option.textContent = `${card.display_name}${card.is_mock ? " · 검증용" : ""}`;
+    option.selected = index === 0;
+    trendCardSelect.append(option);
+  });
+  if (trendCardCatalog.length === 0) {
+    const option = document.createElement("option");
+    option.value = "";
+    option.textContent = "사용 가능한 TrendCard가 없습니다.";
+    trendCardSelect.append(option);
+    useTrendCardToggle.checked = false;
+  }
+  updateTrendCardUI();
+}
+
 function updateModelHelp() {
   const copyOption = copyModelSelect.selectedOptions[0];
   const visionOption = visionModelSelect.selectedOptions[0];
@@ -1479,17 +1599,20 @@ async function loadModels() {
   fillCopySelect(fallbackCopyModels);
   fillVisionSelect(fallbackVisionModels);
   fillImageSelect(fallbackImageModels);
+  fillTrendCardSelect(fallbackTrendCards);
   updateModelHelp();
 
   try {
-    const [copyModels, visionModels, imageModels] = await Promise.all([
+    const [copyModels, visionModels, imageModels, trendCards] = await Promise.all([
       fetchJson("/ad-copies/models"),
       fetchJson("/ad-content/vision-models"),
       fetchJson("/ad-content/image-models"),
+      fetchJson("/ad-copies/trend-cards?channel=instagram"),
     ]);
     fillCopySelect(copyModels);
     fillVisionSelect(visionModels);
     fillImageSelect(imageModels);
+    fillTrendCardSelect(trendCards);
     updateModelHelp();
     apiState.textContent = "API 연결됨";
     apiState.className = "online";
@@ -1573,6 +1696,18 @@ function renderResult(input, result) {
     defaultChannelRecommendation(input.copy.channel);
 
   setText("#context-line", buildContextLine(input));
+  const appliedTrendCard = trendCardCatalog.find(
+    (card) => card.meme_id === copy.trend_card_id,
+  );
+  const resultTrendCard = $("#result-trend-card");
+  if (resultTrendCard) {
+    resultTrendCard.hidden = !copy.trend_card_id;
+  }
+  setText(
+    "#result-trend-card-name",
+    appliedTrendCard?.display_name || (copy.trend_card_id ? "TrendCard" : ""),
+  );
+  setText("#result-trend-card-id", copy.trend_card_id || "");
   setText("#headline", headline);
   setText("#body-copy", copy.body_copies[0]);
   setText("#cta", copy.ctas[0]);
@@ -1676,6 +1811,7 @@ function renderResult(input, result) {
     2,
   );
 
+  showResultMode("image");
   showGeneratedState();
   outputPanel.scrollIntoView({ behavior: "smooth", block: "nearest" });
 }
@@ -1748,6 +1884,8 @@ copyModelSelect.addEventListener("change", updateModelHelp);
 visionModelSelect.addEventListener("change", updateModelHelp);
 useVisionAnalysisToggle?.addEventListener("change", updateModelHelp);
 imageModelSelect.addEventListener("change", updateModelHelp);
+useTrendCardToggle?.addEventListener("change", updateTrendCardUI);
+trendCardSelect?.addEventListener("change", renderTrendCardDetail);
 referenceImageInput?.addEventListener("change", updateReferencePreview);
 referenceCutoutToggle?.addEventListener("change", updateReferencePreview);
 referencePreviewClear?.addEventListener("click", clearReferencePreview);
@@ -1762,6 +1900,7 @@ resetButton.addEventListener("click", () => {
   clearReferencePreview();
   resetPipeline();
   updateModelHelp();
+  updateChannelMode();
   runState.textContent = "대기";
   runState.className = "run-state";
   payloadPreview.textContent = "아직 생성된 데이터가 없습니다.";
@@ -1779,6 +1918,9 @@ resetButton.addEventListener("click", () => {
 });
 
 voiceScript?.addEventListener("input", updateVoiceScriptCount);
+resultModeTabs.forEach((tab) => {
+  tab.addEventListener("click", () => showResultMode(tab.dataset.resultMode));
+});
 voiceSpeed?.addEventListener("input", () => {
   if (voiceSpeedValue) voiceSpeedValue.textContent = `${Number(voiceSpeed.value).toFixed(2).replace(/0$/, "")}×`;
 });

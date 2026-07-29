@@ -155,7 +155,7 @@ def valid_ad_copy_json(
 def test_build_prompt_uses_business_facts_and_safety_terms() -> None:
     prompt = build_prompt(AdCopyRequest.model_validate(sample_request()))
 
-    assert PROMPT_VERSION == "channel-split-pipeline-v13-trend-structure"
+    assert PROMPT_VERSION == "channel-split-pipeline-v16-customer-ready-korean-copy"
     assert "동네봄 카페" in prompt
     assert "수제 딸기 티라미수, 런치세트" in prompt
     assert "매일 손질한 생딸기" in prompt
@@ -188,6 +188,45 @@ def test_instagram_request_uses_server_active_card_without_client_id() -> None:
     assert load_trend_card(request.trend_card_id).meme_id == (
         "gogumafarm:1bf390d89536004b"
     )
+
+
+def test_instagram_request_can_explicitly_disable_trend_card(monkeypatch) -> None:
+    async def fake_call_model(
+        request,
+        *,
+        trend_card=None,
+        invalid_content=None,
+        repair_feedback=None,
+    ):
+        del request, invalid_content, repair_feedback
+        assert trend_card is None
+        return valid_ad_copy_json()
+
+    monkeypatch.setattr(
+        "app.modules.ad_copy.service._call_model",
+        fake_call_model,
+    )
+    request_data = sample_request()
+    request_data["use_trend_card"] = False
+
+    result = asyncio.run(generate_ad_copy(AdCopyRequest.model_validate(request_data)))
+
+    assert result.trend_card_id is None
+    assert result.headlines == ["딸기빛 오후를 한 조각"]
+
+
+def test_trend_card_catalog_endpoint_returns_web_options() -> None:
+    response = get(app, "/api/v1/ad-copies/trend-cards?channel=instagram")
+
+    assert response.status_code == 200
+    cards = response.json()
+    display_names = [card["display_name"] for card in cards]
+    assert "니가 좋아💖" in display_names
+    assert "파라파라나 춰야지💃" in display_names
+    assert len(cards) >= 3
+    assert len({card["meme_id"] for card in cards}) == len(cards)
+    assert cards[0]["copy_markers"] == ["니가 좋아"]
+    assert cards[0]["rights_risk_level"] == "low"
 
 
 def test_trend_prompt_block_separates_generic_rules_from_card_data() -> None:
@@ -442,6 +481,27 @@ def test_instagram_output_is_normalized_from_source_fields() -> None:
     )
 
 
+def test_meme_instagram_overlay_uses_short_marker_and_one_emoji() -> None:
+    request = AdCopyRequest.model_validate(sample_request())
+    trend_card = load_trend_card()
+    content = _parse_content(
+        valid_ad_copy_json(
+            headline=VALID_TREND_COPY,
+        )
+    )
+    content.channel_recommendation.overlay_headline = VALID_TREND_COPY
+    content.channel_recommendation.publish_title = VALID_TREND_COPY
+
+    normalized = normalize_copy_output(content, request, trend_card)
+
+    expected = f"{request.product_names[0]} 니가 좋아~ 💛"
+    assert normalized.channel_recommendation.overlay_headline == expected
+    assert normalized.channel_recommendation.publish_title == expected
+    assert "니가 좋아" in normalized.channel_recommendation.overlay_headline
+    assert normalized.channel_recommendation.overlay_headline.endswith("💛")
+    assert "니가 좋아" in normalized.channel_recommendation.caption
+
+
 def test_validator_returns_structured_codes_for_validation_failures() -> None:
     request = AdCopyRequest.model_validate(sample_request())
     trend_card = load_trend_card()
@@ -504,7 +564,74 @@ def test_fallback_copy_uses_selected_trend_card() -> None:
     assert request.product_names[0] in content.headlines[0]
     assert "니가 좋아" in content.channel_recommendation.caption
     assert "니가 좋아" in content.channel_recommendation.publish_body
+    expected_title = f"{request.product_names[0]} 니가 좋아~ 💛"
+    assert content.channel_recommendation.overlay_headline == expected_title
+    assert content.channel_recommendation.publish_title == expected_title
     assert validate_copy_output(content, request, trend_card).valid is True
+
+
+def test_garlic_bread_fallback_is_customer_ready_and_uses_correct_particles() -> None:
+    request_data = sample_request()
+    request_data.update(
+        {
+            "business_name": "마늘빵 테스트 가게",
+            "business_type": "bakery",
+            "product_names": ["마늘빵"],
+            "features": [
+                "업로드 사진 속 마늘빵의 실제 형태와 색감을 중심으로 소개"
+            ],
+            "required_terms": ["마늘빵"],
+            "interests": ["맛집", "마늘빵"],
+        }
+    )
+    request = AdCopyRequest.model_validate(request_data)
+    trend_card = load_trend_card()
+
+    content = normalize_copy_output(
+        build_fallback_copy(request, ["test fallback"], trend_card),
+        request,
+        trend_card,
+    )
+    recommendation = content.channel_recommendation
+
+    assert recommendation.overlay_headline == "마늘빵 니가 좋아~ 💛"
+    assert recommendation.caption.startswith("마늘빵 니가 좋아~ 💛")
+    assert "먹음직스러운 비주얼이 눈길을 끄는 신메뉴 마늘빵을 소개합니다." in (
+        recommendation.caption
+    )
+    assert recommendation.publish_cta == "마늘빵 테스트 가게에서 직접 만나보세요."
+    assert recommendation.publish_hashtags[:4] == [
+        "#마늘빵",
+        "#신메뉴",
+        "#베이커리",
+        "#디저트맛집",
+    ]
+    customer_text = " ".join(
+        [
+            *content.headlines,
+            *content.body_copies,
+            recommendation.caption,
+            recommendation.publish_body,
+        ]
+    )
+    assert "을(를)" not in customer_text
+    assert "이(가)" not in customer_text
+    assert "마늘빵를" not in customer_text
+    assert "업로드 사진" not in customer_text
+    assert "중심으로 소개" not in customer_text
+
+
+def test_validator_rejects_internal_instruction_and_broken_glyph() -> None:
+    request = AdCopyRequest.model_validate(sample_request())
+    content = _parse_content(valid_ad_copy_json())
+    content.channel_recommendation.caption = (
+        "업로드 사진 속 상품을 중심으로 소개합니다. □"
+    )
+
+    result = validate_copy_output(content, request)
+
+    assert "internal_instruction_leaked" in result.failure_codes
+    assert "broken_glyph_in_customer_copy" in result.failure_codes
 
 
 def test_fallback_preserves_latin_product_name_without_language_false_positive() -> None:
@@ -565,6 +692,41 @@ def test_naver_blog_post_and_fallback_use_selected_trend_card() -> None:
     assert valid_result.valid is True
     assert "니가 좋아" in fallback.channel_recommendation.publish_body
     assert "니가 좋아" not in fallback.channel_recommendation.publish_title
+
+
+def test_naver_blog_fallback_uses_business_type_and_correct_particles() -> None:
+    request_data = sample_request()
+    request_data.update(
+        {
+            "channel": "naver_blog",
+            "business_name": "마늘빵 테스트 가게",
+            "business_type": "bakery",
+            "product_names": ["마늘빵"],
+            "features": ["사진에서 확인되는 마늘빵의 실제 형태와 색감"],
+            "required_terms": ["마늘빵"],
+            "trend_card_id": None,
+            "use_trend_card": False,
+        }
+    )
+    request = AdCopyRequest.model_validate(request_data)
+
+    fallback = build_fallback_copy(request, ["test fallback"])
+    recommendation = fallback.channel_recommendation
+    customer_text = " ".join(
+        [
+            recommendation.publish_title,
+            recommendation.publish_body,
+            *(section["title"] for section in recommendation.blog_sections),
+            *(section["body"] for section in recommendation.blog_sections),
+        ]
+    )
+
+    assert recommendation.publish_title.startswith("베이커리 마늘빵 테스트 가게")
+    assert "마늘빵을 소개합니다" in customer_text
+    assert "마늘빵은 마늘빵 테스트 가게에서 준비한 메뉴입니다." in customer_text
+    assert "마늘빵를" not in customer_text
+    assert "마늘빵는" not in customer_text
+    assert "카페 마늘빵 테스트 가게" not in customer_text
 
 
 def test_unknown_trend_card_returns_validation_error_before_model_call() -> None:

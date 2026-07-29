@@ -810,6 +810,7 @@ async def generate_arm_copy(
                 normalized_initial_content = normalize_copy_output(
                     initial_content,
                     request,
+                    trend_card,
                 )
                 normalized_initial_validation = validate_copy_output(
                     normalized_initial_content,
@@ -867,6 +868,7 @@ async def generate_arm_copy(
                     repair_content = normalize_copy_output(
                         _parse_content(raw_repair_content),
                         request,
+                        trend_card,
                     )
                     repair_validation = validate_copy_output(
                         repair_content,

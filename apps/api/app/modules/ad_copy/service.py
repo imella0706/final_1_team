@@ -342,7 +342,10 @@ async def generate_ad_copy(request: AdCopyRequest) -> AdCopyResponse:
     started_at = perf_counter()
     model_spec = get_model_spec(request.model)
     use_active_trend_card = (
-        request.trend_card_id is not None or request.channel.value == "instagram"
+        request.use_trend_card
+        if request.use_trend_card is not None
+        else request.trend_card_id is not None
+        or request.channel.value == "instagram"
     )
     trend_card = (
         load_trend_card(
@@ -384,7 +387,11 @@ async def generate_ad_copy(request: AdCopyRequest) -> AdCopyResponse:
                 repair_feedback=repair_feedback,
             )
             parsed_candidate = _parse_content(raw_content)
-            candidate = normalize_copy_output(parsed_candidate, request)
+            candidate = normalize_copy_output(
+                parsed_candidate,
+                request,
+                trend_card,
+            )
             validation = validate_copy_output(candidate, request, trend_card)
             if validation.valid:
                 content = candidate
@@ -417,6 +424,7 @@ async def generate_ad_copy(request: AdCopyRequest) -> AdCopyResponse:
                 fallback = normalize_copy_output(
                     build_fallback_copy(request, warnings, trend_card),
                     request,
+                    trend_card,
                 )
                 fallback_validation = validate_copy_output(
                     fallback,

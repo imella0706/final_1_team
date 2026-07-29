@@ -138,11 +138,12 @@ def _decode_reference_image(data_url: str) -> tuple[bytes, str, str]:
 
 def _reference_guided_prompt(prompt: str) -> str:
     return (
-        "Use the attached reference image as the primary visual source. "
-        "Preserve the visible product identity, shape, color, material, arrangement, "
-        "camera angle, and overall mood from the reference image whenever they match "
-        "the requested products. Recompose it as a clean commercial advertising poster "
-        "background with space for text overlay. Do not introduce unrelated main products.\n\n"
+        "Perform a conservative photo enhancement of the attached reference image. "
+        "Keep the exact food, shape, portions, ingredients, toppings, plating, tableware, "
+        "arrangement, camera angle, crop, and background geometry unchanged. "
+        "Only make the color temperature slightly warmer, soften the light, improve "
+        "exposure and contrast gently, and add a subtle cozy mood. Do not redesign, "
+        "recompose, replace, redraw, or regenerate the food. Do not add any object.\n\n"
         f"{prompt}"
     )
 
@@ -469,6 +470,7 @@ def _generate_hugging_face_image(
             guidance_scale=request.guidance_scale,
             model=model,
             target_size={"width": request.width, "height": request.height},
+            strength=settings.hf_img2img_strength,
         )
     else:
         model = request.model.value
