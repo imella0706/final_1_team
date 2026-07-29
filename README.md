@@ -35,6 +35,7 @@ BrandMate AI는 광고 제작에 필요한 여러 작업을 하나의 흐름으�
 7. CosyVoice 또는 OpenAI TTS로 광고 문구를 음성 광고로 변환합니다.
 8. 별도의 CCTV 분석 파이프라인이 매장 전면 유동량, ROI 관측량과 이동 후보를 집계합니다.
 
+
 메인 광고 생성 경로는 `apps/web`과 `apps/api`가 담당합니다. 트렌드 데이터, 이미지 보정, 음성 합성, 음식 광고 검색 DB와 유동 분석은 독립적으로 실행할 수 있는 하위 서비스 또는 데이터 파이프라인으로 구성되어 있습니다.
 
 ## 핵심 기능
@@ -54,6 +55,9 @@ BrandMate AI는 광고 제작에 필요한 여러 작업을 하나의 흐름으�
 | 산출물 관리 | 광고 JSON·이미지·음성, 데이터 검증 결과와 분석 리포트 저장 | `outputs`, `data` |
 
 ## 전체 서비스 구조
+
+### 1. 메인 광고 생성 파이프라인
+
 
 ```mermaid
 flowchart TD
@@ -76,7 +80,7 @@ flowchart TD
         API <--> DB
     end
 
-    subgraph GENERATION["광고 생성"]
+    subgraph GENERATION["광고 생성 "]
         LLM["LLM Router<br/>광고 문구 · 전략 · 비주얼 브리프"]
         IMAGE["ComfyUI · OpenAI · Hugging Face<br/>광고 이미지"]
         CLEANUP["음식 이미지 보정<br/>네이버 채널 선택 기능"]
@@ -96,7 +100,7 @@ flowchart TD
     ARTIFACT --> WEB
 ```
 
-### CCTV 상권 유동 분석 파이프라인 및 음식 Retrieval DB
+### 2. CCTV 상권 유동 분석 파이프라인
 
 ```mermaid
 flowchart TD
@@ -116,18 +120,20 @@ flowchart TD
     end
 ```
 
+* **CCTV 상권 유동 분석:** 스트림릿 대시보드에서 매장 주변 유동인구를 분석하고 AI 마케팅 컨설팅 PDF 리포트를 생성하는 기능입니다.
+
+### 3. AIHub 음식 광고 Retrieval DB
+
 ```mermaid
 flowchart TD
     subgraph AIHUB["AIHub 음식 광고 Retrieval DB"]
-        RAG["AIHub 음식 광고 Retrieval DB"]
+        RAG["AIHub 음식 광고<br/>Retrieval DB&nbsp;&nbsp;&nbsp;&nbsp;"]
     end
 ```
 
 
-
 * **AIHub 음식 광고 Retrieval DB:** 음식 이미지와 캡션을 검색할 수 있는 오프라인 데이터베이스입니다.
 
-* **CCTV 상권 유동 분석:** 스트림릿 대시보드에서 매장 주변 유동인구를 분석하고 AI 마케팅 컨설팅 PDF 리포트를 생성하는 기능입니다.
 
 
 
