@@ -116,6 +116,10 @@ def _resolve_youtube_landing_config(
         conf.get("curated_version"),
         default=DEFAULT_CURATED_VERSION,
     )
+    upload_gcs = _bool_conf(
+        conf.get("upload_gcs"),
+        default=True,
+    )
     tokenizer = str(conf.get("tokenizer") or "regex").strip()
 
     if not re.fullmatch(r"\d{4}-W\d{2}", week):
@@ -151,6 +155,7 @@ def _resolve_youtube_landing_config(
         "region": region,
         "limit": limit,
         "tokenizer": tokenizer,
+        "upload_gcs": upload_gcs,
         "fail_if_exists": fail_if_exists,
         "emit_curated_meme_card_candidates": emit_curated,
         "curated_version": curated_version,
@@ -333,6 +338,7 @@ def _verify_youtube_landing_artifacts(config: dict[str, Any]) -> dict[str, Any]:
       "run_date": "2026-07-27",
       "run_id": "manual__youtube_phase4_smoke",
       "limit": 5,
+      "upload_gcs": true,
       "emit_curated_meme_card_candidates": true
     }
     ```
@@ -377,10 +383,39 @@ def sns_trend_youtube_landing_collection() -> None:
     def verify_youtube_landing_contract(config: dict[str, Any]) -> dict[str, Any]:
         return _verify_youtube_landing_artifacts(config)
 
+    @task
+    def upload_youtube_landing_to_gcs(config: dict[str, Any]) -> dict[str, Any]:
+        if not config.get("upload_gcs", True):
+            return {**config, "gcs_landing_upload": {"status": "skipped", "reason": "upload_gcs is False"}}
+
+        from sns_trend.storage import StorageError, upload_dir_to_gcs
+
+        run_dir = Path(config["run_dir"])
+        week = config["week"]
+        source = config["source"]
+        run_id = config["run_id"]
+        gcs_landing_prefix = str(
+            config.get("gcs_landing_prefix")
+            or f"gs://ssakda/projects/brandmate/data/landing/sns_trend/week={week}/raw/{source}/run_id={run_id}/"
+        )
+
+        try:
+            upload_result = upload_dir_to_gcs(
+                local_dir=run_dir,
+                gcs_prefix=gcs_landing_prefix,
+            )
+            return {**config, "gcs_landing_upload": upload_result}
+        except StorageError as error:
+            raise AirflowException(
+                f"Failed to upload YouTube landing artifacts to GCS: {error}"
+            ) from error
+
     resolved_config = resolve_youtube_landing_context()
     raw_collected = collect_youtube_trending_raw(resolved_config)
     keywords_built = build_youtube_keyword_snapshot(raw_collected)
-    verify_youtube_landing_contract(keywords_built)
+    verified = verify_youtube_landing_contract(keywords_built)
+    upload_youtube_landing_to_gcs(verified)
 
 
 sns_trend_youtube_landing_collection()
+

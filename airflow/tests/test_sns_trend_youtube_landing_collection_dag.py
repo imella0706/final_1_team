@@ -283,4 +283,6 @@ def test_sns_trend_youtube_landing_collection_dagbag_imports_when_airflow_is_ins
         "collect_youtube_trending_raw",
         "build_youtube_keyword_snapshot",
         "verify_youtube_landing_contract",
+        "upload_youtube_landing_to_gcs",
     }
+

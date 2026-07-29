@@ -332,4 +332,6 @@ def test_sns_trend_gogumafarm_landing_collection_dagbag_imports_when_airflow_is_
         "resolve_gogumafarm_landing_context",
         "collect_gogumafarm_landing",
         "verify_gogumafarm_landing_contract",
+        "upload_gogumafarm_landing_to_gcs",
     }
+

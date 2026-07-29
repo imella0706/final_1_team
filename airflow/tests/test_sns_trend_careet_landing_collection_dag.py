@@ -328,4 +328,6 @@ def test_sns_trend_careet_landing_collection_dagbag_imports_when_airflow_is_inst
         "resolve_careet_landing_context",
         "collect_careet_landing",
         "verify_careet_landing_contract",
+        "upload_careet_landing_to_gcs",
     }
+

@@ -95,15 +95,41 @@ flowchart LR
     VOICE --> ARTIFACT
     ARTIFACT --> WEB
 
-    subgraph ANALYTICS["독립 분석 및 데이터 자산"]
-        RAG["AIHub 음식 광고 Retrieval DB<br/>CLIP · FAISS"]
-        CCTV["CCTV 유동 분석<br/>YOLO · ROI · Privacy · QA"]
-        DASH["상권 분석 Streamlit"]
-        CCTV --> DASH
+
+
+    subgraph AIHUB["AIHub 음식 광고 Retrieval DB"]
+        RAG["AIHub 음식 광고 Retrieval DB"]
+    end
+
+
+
+    subgraph CCTV_ANALYTICS["CCTV 상권 유동 분석 파이프라인"]
+        CCTV_SRC["AIHub CCTV 영상<br/>관측 샘플"]
+        CV_ENGINE["YOLO11s · ROI 필터링<br/>Privacy Masking · Line Crossing"]
+        SEOUL_DATA["서울시 상권분석 API<br/>유동인구 · 연령대·성별 데이터"]
+        MAP_OVERLAY["네이버 지도 Static Map<br/>입간판·배너 위치 시각화"]
+        LLM_CMO["OpenAI LLM<br/>F&B CMO 마케팅 전략 컨설팅"]
+        CCTV_DASH["상권 분석 Streamlit 대시보드 &<br/>고객 전달용 PDF 리포트"]
+
+        CCTV_SRC --> CV_ENGINE
+        CV_ENGINE --> LLM_CMO
+        SEOUL_DATA --> LLM_CMO
+        MAP_OVERLAY --> LLM_CMO
+        LLM_CMO --> CCTV_DASH
     end
 ```
 
-`Retrieval DB`와 CCTV 유동 분석은 저장소에 포함된 독립 데이터/분석 경로입니다. 메인 광고 생성 API의 모든 요청이 이 두 경로를 자동 호출하는 구조는 아닙니다.
+* **AIHub 음식 광고 Retrieval DB:** 음식 이미지와 캡션을 검색할 수 있는 오프라인 데이터베이스입니다.
+
+* **CCTV 상권 유동 분석:** 스트림릿 대시보드에서 매장 주변 유동인구를 분석하고 AI 마케팅 컨설팅 PDF 리포트를 생성하는 기능입니다.
+
+
+
+
+
+
+
+
 
 ## 코드 실행 흐름
 
