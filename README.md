@@ -56,7 +56,7 @@ BrandMate AI는 광고 제작에 필요한 여러 작업을 하나의 흐름으�
 ## 전체 서비스 구조
 
 ```mermaid
-flowchart LR
+flowchart TD
     subgraph DATA["트렌드 데이터 파이프라인"]
         SOURCES["YouTube · 고구마팜 · 캐릿"]
         NAVER["네이버 참고 신호<br/>독립 수집"]
@@ -94,24 +94,23 @@ flowchart LR
     CLEANUP --> ARTIFACT
     VOICE --> ARTIFACT
     ARTIFACT --> WEB
+```
 
+### 독립 분석 파이프라인 및 데이터베이스
 
-
+```mermaid
+flowchart TD
     subgraph AIHUB["AIHub 음식 광고 Retrieval DB"]
         RAG["AIHub 음식 광고 Retrieval DB"]
     end
 
-
-
     subgraph CCTV_ANALYTICS["CCTV 상권 유동 분석 파이프라인"]
-        CCTV_SRC["AIHub CCTV 영상 :<br/>관측 샘플&nbsp;&nbsp;"]
-        CV_ENGINE["YOLO11s · ROI 필터링 :<br/>Privacy Masking · Line Crossing&nbsp;&nbsp;"]
-        SEOUL_DATA["서울시 상권분석 API :<br/>유동인구 · 연령대 · 성별 데이터&nbsp;&nbsp;"]
-        MAP_OVERLAY["네이버 지도 Static Map :<br/>입간판 · 배너 위치 시각화&nbsp;&nbsp;"]
-        LLM_CMO["OpenAI LLM :<br/>F&B CMO 마케팅 전략 컨설팅&nbsp;&nbsp;"]
-        CCTV_DASH["상권 분석 Streamlit 대시보드 :<br/>고객 전달용 PDF 리포트&nbsp;&nbsp;&nbsp;&nbsp;"]
-
-
+        CCTV_SRC["AIHub CCTV 영상 :<br/>관측 샘플"]
+        CV_ENGINE["YOLO11s · ROI 필터링 :<br/>Privacy Masking · Line Crossing"]
+        SEOUL_DATA["서울시 상권분석 API :<br/>유동인구 · 연령대 · 성별 데이터"]
+        MAP_OVERLAY["네이버 지도 Static Map :<br/>입간판 · 배너 위치 시각화"]
+        LLM_CMO["OpenAI LLM :<br/>F&B CMO 마케팅 전략 컨설팅"]
+        CCTV_DASH["상권 분석 Streamlit 대시보드 :<br/>고객 전달용 PDF 리포트"]
 
         CCTV_SRC --> CV_ENGINE
         CV_ENGINE --> LLM_CMO
@@ -120,6 +119,7 @@ flowchart LR
         LLM_CMO --> CCTV_DASH
     end
 ```
+
 
 * **AIHub 음식 광고 Retrieval DB:** 음식 이미지와 캡션을 검색할 수 있는 오프라인 데이터베이스입니다.
 
